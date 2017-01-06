@@ -26,7 +26,7 @@ describe "dashboard" do
 
     it "should display assignment to grade in to do list for a teacher", priority: "1", test_id: 216397 do
       assignment = assignment_model({:submission_types => 'online_text_entry', :course => @course})
-      student = user_with_pseudonym(:active_user => true, :username => 'student@example.com', :password => 'qwerty')
+      student = user_with_pseudonym(:active_user => true, :username => 'student@example.com', :password => 'qwertyuiop')
       @course.enroll_user(student, "StudentEnrollment", :enrollment_state => 'active')
       assignment.reload
       assignment.submit_homework(student, {:submission_type => 'online_text_entry', :body => 'ABC'})
@@ -41,8 +41,8 @@ describe "dashboard" do
 
     it "should be able to ignore an assignment until the next submission", priority: "1", test_id: 216399 do
       assignment = assignment_model({:submission_types => 'online_text_entry', :course => @course})
-      student = user_with_pseudonym(:active_user => true, :username => 'student@example.com', :password => 'qwerty')
-      student2 = user_with_pseudonym(:active_user => true, :username => 'student2@example.com', :password => 'qwerty')
+      student = user_with_pseudonym(:active_user => true, :username => 'student@example.com', :password => 'qwertyuiop')
+      student2 = user_with_pseudonym(:active_user => true, :username => 'student2@example.com', :password => 'qwertyuiop')
       @course.enroll_user(student, "StudentEnrollment", :enrollment_state => 'active')
       @course.enroll_user(student2, "StudentEnrollment", :enrollment_state => 'active')
       assignment.reload
@@ -82,7 +82,7 @@ describe "dashboard" do
       it 'shows an assignment stream item under Recent Activity in dashboard', priority: "1", test_id: 108723 do
         assignment_model({:submission_types => ['online_text_entry'], :course => @course})
         get "/"
-        f('#dashboardToggleButton').click if ENV['CANVAS_FORCE_USE_NEW_STYLES']
+        f('#dashboardToggleButton').click
         find('.toggle-details').click
         expect(fj('.fake-link:contains("Unnamed")')).to be_present
       end
@@ -174,7 +174,7 @@ describe "dashboard" do
     describe "Todo Ignore Options Focus Management" do
       before :each do
         assignment = assignment_model({:submission_types => 'online_text_entry', :course => @course})
-        @student = user_with_pseudonym(:active_user => true, :username => 'student@example.com', :password => 'qwerty')
+        @student = user_with_pseudonym(:active_user => true, :username => 'student@example.com', :password => 'qwertyuiop')
         @course.enroll_user(@student, "StudentEnrollment", :enrollment_state => 'active')
         assignment.submit_homework(@student, {:submission_type => 'online_text_entry', :body => 'ABC'})
       end
@@ -208,7 +208,7 @@ describe "dashboard" do
     it "should not display assignment to grade in to do list for a designer", priority: "1", test_id: 216402 do
       course_with_designer_logged_in(:active_all => true)
       assignment = assignment_model({:submission_types => 'online_text_entry', :course => @course})
-      student = user_with_pseudonym(:active_user => true, :username => 'student@example.com', :password => 'qwerty')
+      student = user_with_pseudonym(:active_user => true, :username => 'student@example.com', :password => 'qwertyuiop')
       @course.enroll_user(student, "StudentEnrollment", :enrollment_state => 'active')
       assignment.reload
       assignment.submit_homework(student, {:submission_type => 'online_text_entry', :body => 'ABC'})
@@ -247,15 +247,8 @@ describe "dashboard" do
 
         get "/"
 
-        if ENV['CANVAS_FORCE_USE_NEW_STYLES']
-          f('#global_nav_courses_link').click
-          expect(fj('.ic-NavMenu-list-item a:contains("All Courses")')).to be_present
-        else
-          course_menu_item = f("#courses_menu_item")
-          hover(course_menu_item)
-          expect(course_menu_item).to include_text('My Courses')
-          expect(course_menu_item).to include_text('View All or Customize')
-        end
+        f('#global_nav_courses_link').click
+        expect(fj('.ic-NavMenu-list-item a:contains("All Courses")')).to be_present
       end
     end
   end

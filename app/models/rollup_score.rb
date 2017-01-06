@@ -23,12 +23,14 @@ class RollupScore
   attr_reader :outcome_results, :outcome, :score, :count, :title, :submitted_at
   def initialize(outcome_results, opts={})
     @outcome_results = outcome_results
+    @aggregate = opts[:aggregate_score]
     @outcome = @outcome_results.first.learning_outcome
     @count = @outcome_results.size
+    @points_possible = @outcome.rubric_criterion[:points_possible]
     @calculation_method = @outcome.calculation_method || "highest"
     @calculation_int = @outcome.calculation_int
-    @score = opts[:aggregate_score] ? aggregate_score : calculate_results
-    latest_result unless opts[:aggregate_score]
+    @score = @aggregate ? aggregate_score : calculate_results
+    latest_result unless @aggregate
   end
 
   # TODO - do send(@calculation_method) instead of the case to streamline this more
@@ -42,9 +44,9 @@ class RollupScore
       return nil if @outcome_results.length < @calculation_int
       n_mastery
     when 'latest'
-      scores.first
+      scores.first.round(PRECISION)
     when 'highest'
-      scores.max
+      scores.max.round(PRECISION)
     end
   end
 
@@ -73,6 +75,5 @@ class RollupScore
     older_avg_weighted = (tmp_scores.sum / tmp_scores.length) * (0.01 * (100 - weight))
     (latest_weighted + older_avg_weighted).round(PRECISION)
   end
-
 
 end

@@ -19,7 +19,10 @@ describe "account admin outcomes" do
 
     it "should be able to manage course rubrics" do
       get "/courses/#{@course.id}/outcomes"
-      expect_new_page_load { f('.manage_rubrics').click }
+      expect_new_page_load do
+        f('#popoverMenu button').click
+        f('[data-reactid*="manage-rubrics"]').click
+      end
 
       expect(f('.add_rubric_link')).to be_displayed
     end
@@ -42,28 +45,12 @@ describe "account admin outcomes" do
         should_delete_a_learning_outcome
       end
 
-      it "should validate mastery points", priority: "1", test_id: 250233 do
-        should_validate_mastery_points
+      it "should validate decaying average_range", priority: "2", test_id: 250235 do
+        should_validate_decaying_average_range
       end
 
-      it "should_validate_calculation_method_dropdown", priority: "2", test_id: 250234 do
-        should_validate_calculation_method_dropdown
-      end
-
-      it "should validate decaying average_above_range", priority: "2", test_id: 250235 do
-        should_validate_decaying_average_above_range
-      end
-
-      it "should validate decaying average_below_range", priority: "2", test_id: 299445 do
-         should_validate_decaying_average_below_range
-      end
-
-      it "should validate n mastery_above_range", priority: "2", test_id: 299447 do
-        should_validate_n_mastery_above_range
-      end
-
-      it "should validate n mastery_below_range", priority: "2", test_id: 250236 do
-        should_validate_n_mastery_below_range
+      it "should validate n mastery_range", priority: "2", test_id: 250236 do
+        should_validate_n_mastery_range
       end
     end
 

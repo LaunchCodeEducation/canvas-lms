@@ -42,6 +42,35 @@ describe Course do
     expect(@course.apply_group_weights?).to eq true
   end
 
+  it "should return course visibility flag" do
+    @course.update_attribute(:is_public, nil)
+    @course.update_attribute(:is_public_to_auth_users, nil)
+
+    expect(@course.course_visibility).to eq('course')
+    @course.update_attribute(:is_public, nil)
+    @course.update_attribute(:is_public_to_auth_users, nil)
+
+    @course.update_attribute(:is_public_to_auth_users, true)
+    expect(@course.course_visibility).to eq('institution')
+
+    @course.update_attribute(:is_public, true)
+    expect(@course.course_visibility).to eq('public')
+  end
+
+  it "should return syllabus visibility flag" do
+    @course.update_attribute(:public_syllabus, nil)
+    @course.update_attribute(:public_syllabus_to_auth, nil)
+    expect(@course.syllabus_visibility_option).to eq('course')
+
+    @course.update_attribute(:public_syllabus, nil)
+    @course.update_attribute(:public_syllabus_to_auth, true)
+    expect(@course.syllabus_visibility_option).to eq('institution')
+
+    @course.update_attribute(:public_syllabus, true)
+    expect(@course.syllabus_visibility_option).to eq('public')
+
+  end
+
   describe "soft-concluded?" do
     before :once do
       @term = Account.default.enrollment_terms.create!
@@ -396,6 +425,27 @@ describe Course do
       expect(@course.grants_right?(@admin2, :reset_content)).to be_falsey
     end
 
+    it "should grant create_tool_manually to the proper individuals" do
+      course_with_teacher(:active_all => true)
+      @teacher = user(:active_all => true)
+      @course.enroll_teacher(@teacher).accept!
+
+      @ta = user(:active_all => true)
+      @course.enroll_ta(@ta).accept!
+
+      @designer = user(:active_all => true)
+      @course.enroll_designer(@designer).accept!
+
+      @student = user(:active_all => true)
+      @course.enroll_student(@student).accept!
+
+      clear_permissions_cache
+      expect(@course.grants_right?(@teacher, :create_tool_manually)).to be_truthy
+      expect(@course.grants_right?(@ta, :create_tool_manually)).to be_truthy
+      expect(@course.grants_right?(@designer, :create_tool_manually)).to be_truthy
+      expect(@course.grants_right?(@student, :create_tool_manually)).to be_falsey
+    end
+
     def make_date_completed
       @enrollment.reload
       @enrollment.start_at = 4.days.ago
@@ -609,6 +659,7 @@ describe Course do
       expect(@course.lti_context_id).not_to be_nil
 
       @new_course.reload
+      expect(@new_course).to be_created
       expect(@new_course.course_sections).not_to be_empty
       expect(@new_course.students).to eq [@student]
       expect(@new_course.discussion_topics).to be_empty
@@ -686,7 +737,6 @@ describe Course do
       expect(@course.uuid).not_to eq @new_course.uuid
       expect(@course.replacement_course_id).to eq @new_course.id
     end
-
   end
 
   context "group_categories" do
@@ -831,6 +881,32 @@ describe Course, "participants" do
     it "should return participating_admins and participating_students" do
       [@student, @ta, @teach].each { |usr| expect(@course.participants).to be_include(usr) }
     end
+
+    it "should use date-based logic if requested" do
+      expect(@course.participating_students_by_date).to include(@student)
+      expect(@course.participants(:by_date => true)).to include(@student)
+
+      @course.reload
+      @course.start_at = 2.days.from_now
+      @course.conclude_at = 4.days.from_now
+      @course.restrict_enrollments_to_course_dates = true
+      @course.save!
+
+      participants = @course.participants
+      expect(participants).to include(@student)
+
+      expect(@course.participating_students_by_date).to_not include(@student)
+      expect(@course.participating_admins_by_date).to include(@ta)
+
+      by_date = @course.participants(:by_date => true)
+      expect(by_date).to_not include(@student)
+      expect(by_date).to include(@ta)
+
+      @course.enrollment_term.set_overrides(@course.root_account, 'TaEnrollment' => { start_at: 3.days.ago, end_at: 2.days.ago })
+      @course.reload
+      expect(@course.participants(:by_date => true)).to_not include(@ta)
+      expect(@course.participating_admins_by_date).to_not include(@ta)
+    end
   end
 
   context "including obervers" do
@@ -845,7 +921,7 @@ describe Course, "participants" do
     end
 
     it "should return participating_admins, participating_students, and observers" do
-      participants = @course.participants(true)
+      participants = @course.participants(include_observers: true)
       [@student, @ta, @teach, @course_level_observer, @student_following_observer].each do |usr|
         expect(participants).to be_include(usr)
       end
@@ -853,18 +929,18 @@ describe Course, "participants" do
 
     context "excluding specific students" do
       it "should reject observers only following one of the excluded students" do
-        partic = @course.participants(true, excluded_user_ids: [@student.id, @student_following_observer.id])
+        partic = @course.participants(include_observers: true, excluded_user_ids: [@student.id, @student_following_observer.id])
         [@student, @student_following_observer].each { |usr| expect(partic).to_not be_include(usr) }
       end
       it "should include admins and course level observers" do
-        partic = @course.participants(true, excluded_user_ids: [@student.id, @student_following_observer.id])
+        partic = @course.participants(include_observers: true, excluded_user_ids: [@student.id, @student_following_observer.id])
         [@ta, @teach, @course_level_observer].each { |usr| expect(partic).to be_include(usr) }
       end
     end
   end
 
   it "should exclude some student when passed their id" do
-    partic = @course.participants(false, excluded_user_ids: [@student.id])
+    partic = @course.participants(include_observers: false, excluded_user_ids: [@student.id])
     [@ta, @teach].each { |usr| expect(partic).to be_include(usr) }
     expect(partic).to_not be_include(@student)
   end
@@ -4438,8 +4514,6 @@ describe Course, 'touch_root_folder_if_necessary' do
       expect { course.broadcast_notifications }.to_not raise_error
     end
   end
-
-  it { is_expected.to have_many(:submission_comments).conditions(-> { published }) }
 end
 
 describe Course, 'invited_count_visible_to' do
@@ -4567,5 +4641,30 @@ describe Course, "#image" do
 
   it "returns nil if image_id and image_url are not set" do
     expect(@course.image).to be_nil
+  end
+end
+
+describe Course, "#filter_users_by_permission" do
+  it "filters out course users that don't have a permission based on their enrollment roles" do
+    permission = :moderate_forum # happens to be true for ta's, but available to students
+    super_student_role = custom_student_role("superstudent", :account => Account.default)
+    Account.default.role_overrides.create!(:role => super_student_role, :permission => permission, :enabled => true)
+    unsuper_ta_role = custom_ta_role("unsuperta", :account => Account.default)
+    Account.default.role_overrides.create!(:role => unsuper_ta_role, :permission => permission, :enabled => false)
+
+    course(:active_all => true)
+    reg_student = student_in_course(:course => @course).user
+    super_student = student_in_course(:course => @course, :role => super_student_role).user
+    reg_ta = ta_in_course(:course => @course).user
+    unsuper_ta = ta_in_course(:course => @course, :role => unsuper_ta_role).user
+
+    users = [reg_student, super_student, reg_ta, unsuper_ta]
+    expect(@course.filter_users_by_permission(users, :read_forum)).to eq users # should be on by default for all
+    expect(@course.filter_users_by_permission(users, :moderate_forum)).to eq [super_student, reg_ta]
+
+    @course.complete!
+
+    expect(@course.filter_users_by_permission(users, :read_forum)).to eq users # should still work since it is a retroactive permission
+    expect(@course.filter_users_by_permission(users, :moderate_forum)).to be_empty # unlike this one
   end
 end

@@ -21,7 +21,7 @@ require File.expand_path(File.dirname(__FILE__) + '/../spec_helper.rb')
 describe BrandableCSS do
   describe "all_brand_variable_values" do
     it "returns defaults if called without a brand config" do
-      expect(BrandableCSS.all_brand_variable_values["ic-link-color"]).to eq '#0081bd'
+      expect(BrandableCSS.all_brand_variable_values["ic-link-color"]).to eq '#008EE2'
     end
 
     it "includes image_url asset path for default images" do
@@ -30,11 +30,7 @@ describe BrandableCSS do
         BrandableCSS.remove_instance_variable(:@variables_map_with_image_urls)
       end
       url = "https://test.host/image.png"
-      if CANVAS_RAILS4_0
-        DummyControllerWithCorrectAssetUrls.helpers.stubs(:image_url).returns(url)
-      else
-        ActionController::Base.helpers.stubs(:image_url).returns(url)
-      end
+      ActionController::Base.helpers.stubs(:image_url).returns(url)
       tile_wide = BrandableCSS.all_brand_variable_values["ic-brand-msapplication-tile-wide"]
       expect(tile_wide).to eq url
     end
@@ -42,7 +38,6 @@ describe BrandableCSS do
     describe "when called with a brand config" do
       before :once do
         parent_account = Account.default
-        parent_account.enable_feature!(:use_new_styles)
         parent_config = BrandConfig.create(variables: {"ic-brand-primary" => "#321"})
 
         subaccount_bc = BrandConfig.for(
@@ -66,7 +61,7 @@ describe BrandableCSS do
       end
 
       it "includes default variables not found in brand config" do
-        expect(@brand_variables["ic-link-color"]).to eq '#0081bd'
+        expect(@brand_variables["ic-link-color"]).to eq '#008EE2'
       end
     end
   end
@@ -74,7 +69,7 @@ describe BrandableCSS do
   describe "default_json" do
     it "includes default variables not found in brand config" do
       brand_variables = JSON.parse(BrandableCSS.default_json)
-      expect(brand_variables["ic-link-color"]).to eq '#0081bd'
+      expect(brand_variables["ic-link-color"]).to eq '#008EE2'
     end
   end
 

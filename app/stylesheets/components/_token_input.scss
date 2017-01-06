@@ -69,7 +69,7 @@
 }
 
 .ic-tokeninput-header{
-  font-weight: 700;
+  font-weight: bold;
 }
 
 .ic-tokeninput-header:focus {
@@ -109,7 +109,7 @@ $ic-token-padding: 3px 15px;
 .ic-token {
   background-color: $ic-bg-light-neutral;
   border: none;
-  color: $ic-color-dark;
+  color: $ic-font-color-dark;
   border-radius: 3px;
   padding: 0;
   margin: 2px;
@@ -228,4 +228,3 @@ $ic-token-padding: 3px 15px;
 .token_input.active {
   box-shadow: 0 0 3px 2px #68B4DF;
 }
-

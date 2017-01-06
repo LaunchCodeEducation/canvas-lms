@@ -1,10 +1,11 @@
 define [
   'react'
+  'react-dom'
+  'react-addons-test-utils'
   'react-modal'
   'jsx/external_apps/components/AddApp'
-], (React, Modal, AddApp) ->
+], (React, ReactDOM, TestUtils, Modal, AddApp) ->
 
-  TestUtils = React.addons.TestUtils
   Simulate = TestUtils.Simulate
   wrapper = document.getElementById('fixtures')
 
@@ -20,7 +21,7 @@ define [
     })
 
   renderComponent = (data) ->
-    React.render(createElement(data), wrapper)
+    ReactDOM.render(createElement(data), wrapper)
 
   getDOMNodes = (data) ->
     component = renderComponent(data)
@@ -42,7 +43,7 @@ define [
         "status": "active"
       }
     teardown: ->
-      React.unmountComponentAtNode wrapper
+      ReactDOM.unmountComponentAtNode wrapper
 
   test 'renders', ->
     data =
@@ -61,6 +62,20 @@ define [
     equal options[0].props.name, 'name'
     equal options[1].props.name, 'consumer_key'
     equal options[2].props.name, 'shared_secret'
+
+  test 'configSettings', ->
+    @app['config_options'] = [{"name": "param1","param_type": "text", "default_value": "val1"}]
+
+    data =
+      handleToolInstalled: handleToolInstalled
+      app: @app
+    [ component, addToolButtonNode, modalNode ] = getDOMNodes(data)
+
+    correctSettings =
+      param1: 'val1'
+      name: 'Acclaim'
+
+    deepEqual component.configSettings(), correctSettings
 
   test 'mounting sets fields onto state', ->
     data =

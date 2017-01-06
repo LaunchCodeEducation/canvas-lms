@@ -3,13 +3,6 @@ body.modal {
     max-width: $modal_box_width - (2 * $modal_box_padding);
     width: auto;
   }
-  
-  @if $use_new_styles == false {
-    #footer {
-      max-width: $modal_box_width + 20px;
-      width: auto;
-    } 
-  }
 
   #login-box .btn {
     float: none;
@@ -21,8 +14,8 @@ body.modal {
     line-height: 1.6;
   }
   body,
-  body.no-headers #wrapper,
-  body.embedded #wrapper
+  body.no-headers .ic-Layout-wrapper,
+  body.embedded .ic-Layout-wrapper
   {
     min-width: 0;
     padding: 0;
@@ -70,8 +63,8 @@ body.modal {
       margin: 0;
     }
   }
-  body.no-headers #content,
-  body.embedded #content {
+  body.no-headers .ic-Layout-contentMain,
+  body.embedded .ic-Layout-contentMain {
     padding: 10px;
   }
   #login_form {

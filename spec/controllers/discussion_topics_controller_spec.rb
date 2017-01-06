@@ -155,6 +155,40 @@ describe DiscussionTopicsController do
       expect(response).to be_success
       expect(assigns["topics"]).to include(@topic)
     end
+
+    it "does not filter module locked discussion by default" do
+      course_topic(user: @teacher)
+      @locked_topic = @topic
+      course_topic(user: @teacher)
+      @module = @course.context_modules.create!(name: 'some module')
+      @module.add_item(type: 'discussion_topic', id: @topic.id)
+      @locked_module = @course.context_modules.create!(name: 'some locked module')
+      @locked_module.add_item(type: 'discussion_topic', id: @locked_topic.id)
+      @locked_module.unlock_at = 2.months.from_now
+      @locked_module.save!
+      user_session(@student)
+
+      get 'index', course_id: @course.id
+      expect(response).to be_success
+      expect(assigns["topics"]).to include(@locked_topic)
+    end
+
+    it "filters module locked discussions when asked to" do
+      course_topic(user: @teacher)
+      @locked_topic = @topic
+      course_topic(user: @teacher)
+      @module = @course.context_modules.create!(name: 'some module')
+      @module.add_item(type: 'discussion_topic', id: @topic.id)
+      @locked_module = @course.context_modules.create!(name: 'some locked module')
+      @locked_module.add_item(type: 'discussion_topic', id: @locked_topic.id)
+      @locked_module.unlock_at = 2.months.from_now
+      @locked_module.save!
+      user_session(@student)
+
+      get 'index', course_id: @course.id, exclude_context_module_locked_topics: true
+      expect(response).to be_success
+      expect(assigns["topics"]).not_to include(@locked_topic)
+    end
   end
 
   describe "GET 'show'" do
@@ -515,11 +549,27 @@ describe DiscussionTopicsController do
       course_topic
     end
 
-    before do
+    include_context "multiple grading periods within controller" do
+      let(:course) { @course }
+      let(:teacher) { @teacher }
+      let(:request_params) { [:edit, course_id: course, id: @topic] }
+    end
+
+    it "should not explode with mgp and group context" do
+      @course.root_account.enable_feature!(:multiple_grading_periods)
       user_session(@teacher)
+      group = group_model(:context => @course)
+      group_topic = group.discussion_topics.create!(:title => "title")
+      get(:edit, group_id: group, id: group_topic)
+      expect(response).to be_success
+      expect(assigns[:js_env]).to have_key(:active_grading_periods)
     end
 
     context 'conditional-release' do
+      before do
+        user_session(@teacher)
+      end
+
       it 'should include environment variables if enabled' do
         ConditionalRelease::Service.stubs(:enabled_in_context?).returns(true)
         ConditionalRelease::Service.stubs(:env_for).returns({ dummy: 'value' })
@@ -671,6 +721,33 @@ describe DiscussionTopicsController do
       expect(topic.assignment).to be_published
       expect(@student.email_channel.messages).to be_empty
       expect(@student.recent_stream_items.map {|item| item.data}).not_to include topic
+    end
+
+    it 'does dispatch new topic notification when not hidden' do
+      notification = Notification.create(name: 'New Discussion Topic', category: 'TestImmediately')
+      @student.communication_channels.create!(path: 'student@example.com') {|cc| cc.workflow_state = 'active'}
+      obj_params = topic_params(@course, published: true)
+      user_session(@teacher)
+      post 'create', { :format => :json }.merge(obj_params)
+      json = JSON.parse response.body
+      topic = DiscussionTopic.find(json['id'])
+      expect(topic).to be_published
+      expect(@student.email_channel.messages.map(&:context)).to include(topic)
+    end
+
+    it 'does dispatch new topic notification when published' do
+      notification = Notification.create(name: 'New Discussion Topic', category: 'TestImmediately')
+      @student.communication_channels.create!(path: 'student@example.com') {|cc| cc.workflow_state = 'active'}
+      obj_params = topic_params(@course, published: false)
+      user_session(@teacher)
+      post 'create', { :format => :json }.merge(obj_params)
+
+      json = JSON.parse response.body
+      topic = DiscussionTopic.find(json['id'])
+      expect(@student.email_channel.messages).to be_empty
+
+      put 'update', course_id: @course.id, topic_id: topic.id, title: 'Updated Topic', format: 'json', published: true
+      expect(@student.email_channel.messages.map(&:context)).to include(topic)
     end
 
     it 'dispatches an assignment stream item with the correct title' do

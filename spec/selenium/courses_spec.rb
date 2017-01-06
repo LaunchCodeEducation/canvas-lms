@@ -280,16 +280,14 @@ describe "courses" do
       expect(options.length).to eq 2
       wait_for_ajaximations
       expect_new_page_load{ click_option('#course_url', course2.name) }
-      expect(f(ENV['CANVAS_FORCE_USE_NEW_STYLES'] ? '#breadcrumbs .home + li a' : '#section-tabs-header')).to include_text(course2.name)
+      expect(f('#breadcrumbs .home + li a')).to include_text(course2.name)
     end
 
     it "should load the users page using ajax" do
       course_with_teacher_logged_in
 
-      # Setup the course with > 50 users (to test scrolling)
-      60.times do |n|
-        @course.enroll_student(user)
-      end
+      # Set up the course with > 50 users (to test scrolling)
+      create_users_in_course @course, 60
 
       @course.enroll_user(user, 'TaEnrollment')
 
@@ -477,6 +475,23 @@ describe "courses" do
         refresh_page
         expect(f('#course_home_content')).to be_displayed
       end
+    end
+  end
+
+  it "shouldn't cache unauth permissions for semi-public courses from sessionless permission checks" do
+    course(:active_all => true)
+    @course.update_attribute(:is_public_to_auth_users, true)
+
+    user(:active_all => true)
+    user_session(@user)
+
+    enable_cache do
+      # previously was cached by visiting "/courses/#{@course.id}/assignments/syllabus"
+      expect(@course.grants_right?(@user, :read)).to be_falsey # requires session[:user_id] - caches a false value
+
+      get "/courses/#{@course.id}"
+
+      expect(f('#course_home_content')).to be_displayed
     end
   end
 end

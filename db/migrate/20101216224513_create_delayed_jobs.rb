@@ -16,7 +16,7 @@
 # with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
-class CreateDelayedJobs < ActiveRecord::Migration
+class CreateDelayedJobs < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.connection
@@ -45,7 +45,7 @@ class CreateDelayedJobs < ActiveRecord::Migration
       # Who is working on this object (if locked)
       table.string   :locked_by
 
-      table.timestamps
+      table.timestamps null: true
     end
 
     add_index :delayed_jobs, [:priority, :run_at], :name => 'delayed_jobs_priority'

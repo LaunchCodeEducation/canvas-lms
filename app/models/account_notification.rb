@@ -1,7 +1,5 @@
 class AccountNotification < ActiveRecord::Base
-  attr_accessible :subject, :icon, :message,
-    :account, :account_notification_roles, :user, :start_at, :end_at,
-    :required_account_service, :months_in_display_cycle
+  strong_params
 
   validates_presence_of :start_at, :end_at, :subject, :message, :account_id
   validate :validate_dates
@@ -26,7 +24,7 @@ class AccountNotification < ActiveRecord::Base
     if account.site_admin?
       current = self.for_account(account)
     else
-      sub_account_ids = UserAccountAssociation.where(user: user).pluck(:account_id)
+      sub_account_ids = UserAccountAssociation.where(user: user).joins(:account).where('COALESCE(accounts.root_account_id,accounts.id)=?', account).pluck(:account_id)
       current = self.for_account(account, sub_account_ids)
     end
 

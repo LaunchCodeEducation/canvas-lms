@@ -199,8 +199,7 @@ describe PageView do
   it "should not store if the page view has no user" do
     Setting.set('enable_page_views', 'db')
     @page_view.user = nil
-    expect(@page_view.store).to be_falsey
-    expect(PageView.count).to eq 0
+    expect(@page_view).not_to be_valid
   end
 
   if Canvas.redis_enabled?
@@ -245,7 +244,7 @@ describe PageView do
         expect(pv2.store).to be_truthy
         expect(pv3.store).to be_truthy
 
-        expect(Canvas.redis.smembers(bucket).sort).to eq [@user1.global_id.to_s, @user2.global_id.to_s]
+        expect(Canvas.redis.smembers(bucket).sort).to eq [@user1.global_id.to_s, @user2.global_id.to_s].sort
         expect(Canvas.redis.smembers(PageView.user_count_bucket_for_time(store_time_2))).to eq [@user2.global_id.to_s]
       end
     end
@@ -377,7 +376,7 @@ describe PageView do
         page_views = (0..3).map { |index| page_view_model }
         page_view_ids = page_views.map { |page_view| page_view.request_id }
 
-        expect(PageView.find_all_by_id(page_view_ids)).to eq page_views
+        expect(PageView.find_all_by_id(page_view_ids)).to match_array page_views
       end
 
       it "should return nothing with unknown request id" do
@@ -392,7 +391,7 @@ describe PageView do
         page_views = (0..3).map { |index| page_view_model }
         page_view_ids = page_views.map { |page_view| page_view.request_id }
 
-        expect(PageView.find_all_by_id(page_view_ids)).to eq page_views
+        expect(PageView.find_all_by_id(page_view_ids)).to match_array page_views
       end
 
       it "should return nothing with unknown request id" do

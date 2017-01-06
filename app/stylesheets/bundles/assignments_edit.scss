@@ -101,9 +101,20 @@ div.form-column-right, div.overrides-column-right {
     input[type=text] {
       margin-left: 60px;
     }
+    button.Button {
+      margin: 7px 0px 0px 40px;
+    }
     .nest {
       padding-left: 20px;
     }
+  }
+}
+
+#assignment_configuration_tools .form-column-right {
+  padding-left: 4px;
+  iframe.tool_launch {
+    margin: 15px 0px 0px 0px;
+    width: 100%;
   }
 }
 

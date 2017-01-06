@@ -1,4 +1,4 @@
-class CreateQuizStatisticsTable < ActiveRecord::Migration
+class CreateQuizStatisticsTable < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
@@ -6,7 +6,7 @@ class CreateQuizStatisticsTable < ActiveRecord::Migration
       t.integer :quiz_id, :limit => 8
       t.boolean :includes_all_versions
       t.boolean :anonymous
-      t.timestamps
+      t.timestamps null: true
     end
     add_index :quiz_statistics, :quiz_id
   end

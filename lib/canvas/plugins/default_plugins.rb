@@ -362,6 +362,26 @@ Canvas::Plugin.register('pandapub', nil, {
   :settings_partial => 'plugins/panda_pub_settings',
   :validator => 'PandaPubValidator'
 })
+Canvas::Plugin.register('vericite', nil, {
+  :name => lambda{ t :name, 'VeriCite' },
+  :description => lambda{ t :description, 'Plagiarism detection service.' },
+  :author => 'VeriCite',
+  :author_website => 'http://www.vericite.com',
+  :version => '1.0.0',
+  :settings => {
+    :account_id => nil,
+    :shared_secret => nil,
+    :host => 'api.vericite.com',
+    :comments => nil,
+    :pledge => nil,
+    :release_to_students => 'immediate',
+    :exclude_quotes => true,
+    :exclude_self_plag => true,
+    :store_in_index => true,
+    :show_preliminary_score => false,
+  },
+  :settings_partial => 'plugins/vericite_settings'
+})
 Canvas::Plugins::TicketingSystem.register!
 Canvas::Plugin.register('live_events', nil, {
   :name => lambda{ t :name, 'Live Events' },
@@ -380,3 +400,21 @@ Canvas::Plugin.register('live_events', nil, {
   :settings_partial => 'plugins/live_events_settings',
   :validator => 'LiveEventsValidator'
 })
+Canvas::Plugin.register('live_events', nil, {
+  :name => lambda{ t :name, 'Live Events' },
+  :description => lambda{ t :description, 'Service for real-time events.' },
+  :author => 'Instructure',
+  :author_website => 'http://www.instructure.com',
+  :version => '1.0.0',
+  :settings => {
+    :kinesis_stream_name => nil,
+    :aws_access_key_id => nil,
+    :aws_secret_access_key => nil,
+    :aws_region => 'us-east-1',
+    :aws_endpoint => nil,
+  },
+  :encrypted_settings => [ :aws_secret_access_key ],
+  :settings_partial => 'plugins/live_events_settings',
+  :validator => 'LiveEventsValidator'
+})
+require_dependency 'canvas/plugins/address_book'

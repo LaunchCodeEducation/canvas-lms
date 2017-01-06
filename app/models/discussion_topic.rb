@@ -438,7 +438,7 @@ class DiscussionTopic < ActiveRecord::Base
   def child_topic_for(user)
     group_ids = user.group_memberships.active.pluck(:group_id) &
       context.groups.active.pluck(:id)
-    child_topics.where(context_id: group_ids, context_type: 'Group').first
+    child_topics.active.where(context_id: group_ids, context_type: 'Group').first
   end
 
   def change_child_topic_subscribed_state(new_state, current_user)
@@ -493,30 +493,6 @@ class DiscussionTopic < ActiveRecord::Base
   alias_attribute :available_from, :delayed_post_at
   alias_attribute :unlock_at, :delayed_post_at
   alias_attribute :available_until, :lock_at
-
-  def self.visible_ids_by_user(opts)
-    # pluck id, assignment_id, and user_id from discussions joined with the SQL view
-    plucked_visibilities = pluck_discussion_visibilities(opts).group_by{|r| r["user_id"]}
-    # discussions without an assignment are visible to all, so add them into every students hash at the end
-    ids_of_discussions_visible_to_all = self.without_assignment_in_course(opts[:course_id]).pluck(:id)
-    # format to be hash of user_id's with array of discussion_ids: {1 => [2,3,4], 2 => [2,4]}
-    opts[:user_id].reduce({}) do |vis_hash, student_id|
-      vis_hash[student_id] = begin
-        ids_from_pluck = (plucked_visibilities[student_id.to_s] || []).map{|r| r["id"]}
-        ids_from_pluck.concat(ids_of_discussions_visible_to_all).map(&:to_i)
-      end
-      vis_hash
-    end
-  end
-
-  def self.pluck_discussion_visibilities(opts)
-    # once on Rails 4 change this to a multi-column pluck
-    # and clean up reformatting in visible_ids_by_user
-    connection.select_all(
-      self.joins_assignment_student_visibilities(opts[:user_id],opts[:course_id]).
-        select(["discussion_topics.id", "discussion_topics.assignment_id", "assignment_student_visibilities.user_id"])
-    )
-  end
 
   def should_lock_yet
     # not assignment or vdd aware! only use this to check the topic's own field!
@@ -661,8 +637,6 @@ class DiscussionTopic < ActiveRecord::Base
     elsif self.cloned_item_id
       false
     elsif self.root_topic_id && self.has_group_category?
-      false
-    elsif self.assignment && self.assignment.submission_types == 'discussion_topic' && (!self.assignment.due_at || self.assignment.due_at > 1.week.from_now) # TODO: vdd
       false
     else
       true
@@ -928,7 +902,7 @@ class DiscussionTopic < ActiveRecord::Base
 
   def participants(include_observers=false)
     participants = [ self.user ]
-    participants += context.participants(include_observers)
+    participants += context.participants(include_observers: include_observers)
     participants.compact.uniq
   end
 
@@ -940,8 +914,24 @@ class DiscussionTopic < ActiveRecord::Base
     end
   end
 
+  def active_participants_include_tas_and_teachers(include_observers=false)
+    participants = active_participants(include_observers)
+    if self.context.is_a?(Group) && !self.context.course.nil?
+      participants += self.context.course.teachers
+      participants += self.context.course.tas
+      participants = participants.compact.uniq
+    end
+    participants
+  end
+
   def users_with_permissions(users)
-    users.select{|u| self.is_announcement ? self.context.grants_right?(u, :read_announcements) : self.context.grants_right?(u, :read_forum)}
+    permission = self.is_announcement ? :read_announcements : :read_forum
+    if self.course.is_a?(Course)
+      self.course.filter_users_by_permission(users, permission)
+    else
+      # sucks to be an account-level group
+      users.select{|u| self.is_announcement ? self.context.grants_right?(u, :read_announcements) : self.context.grants_right?(u, :read_forum)}
+    end
   end
 
   def course
@@ -950,7 +940,7 @@ class DiscussionTopic < ActiveRecord::Base
 
   def active_participants_with_visibility
     return active_participants if !self.for_assignment?
-    users_with_visibility = AssignmentStudentVisibility.where(assignment_id: self.assignment_id, course_id: course.id).pluck(:user_id)
+    users_with_visibility = self.assignment.students_with_visibility.pluck(:id)
 
     admin_ids = course.participating_admins.pluck(:id)
     users_with_visibility.concat(admin_ids)
@@ -975,7 +965,7 @@ class DiscussionTopic < ActiveRecord::Base
     subscribed_users = participating_users(sub_ids).to_a
 
     if self.for_assignment?
-      students_with_visibility = AssignmentStudentVisibility.where(course_id: course.id, assignment_id: assignment_id).pluck(:user_id)
+      students_with_visibility = self.assignment.students_with_visibility.pluck(:id)
 
       admin_ids = course.participating_admins.pluck(:id)
       observer_ids = course.participating_observers.pluck(:id)
@@ -1062,7 +1052,7 @@ class DiscussionTopic < ActiveRecord::Base
         locked = {:asset_string => self.asset_string, :lock_at => self.lock_at, :can_view => true}
       elsif !opts[:skip_assignment] && (self.assignment && l = self.assignment.locked_for?(user, opts))
         locked = l
-      elsif self.could_be_locked && item = locked_by_module_item?(user, opts[:deep_check_if_needed])
+      elsif self.could_be_locked && item = locked_by_module_item?(user, opts)
         locked = {:asset_string => self.asset_string, :context_module => item.context_module.attributes}
       elsif self.locked? # nothing more specific, it's just locked
         locked = {:asset_string => self.asset_string, :can_view => true}
@@ -1070,6 +1060,27 @@ class DiscussionTopic < ActiveRecord::Base
         locked = l
       end
       locked
+    end
+  end
+
+  def self.reject_context_module_locked_topics(topics, user)
+    progressions = ContextModuleProgression.
+      joins(context_module: :content_tags).
+      where({
+        user: user,
+        "content_tags.content_type" => "DiscussionTopic",
+        "content_tags.content_id" => topics,
+      }).
+      select("context_module_progressions.*").
+      distinct_on("context_module_progressions.id").
+      preload(:user)
+    progressions = progressions.index_by(&:context_module_id)
+
+    return topics.reject do |topic|
+      topic.locked_by_module_item?(user, {
+        deep_check_if_needed: true,
+        user_context_module_progressions: progressions,
+      })
     end
   end
 

@@ -55,6 +55,14 @@ define [
       return [] unless assignments?
       assignments.pluck('id')
 
+    canDelete: ->
+      !@hasAssignmentDueInClosedGradingPeriod() &&
+      !@hasFrozenAssignments()
+
     hasFrozenAssignments: ->
       @get('assignments').any (m) ->
         m.get('frozen')
+
+    hasAssignmentDueInClosedGradingPeriod: ->
+      !!ENV.MULTIPLE_GRADING_PERIODS_ENABLED &&
+        @get('has_assignment_due_in_closed_grading_period')

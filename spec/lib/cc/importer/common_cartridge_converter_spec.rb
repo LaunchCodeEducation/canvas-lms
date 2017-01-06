@@ -5,12 +5,12 @@ require 'nokogiri'
 require 'tmpdir'
 
 describe "Standard Common Cartridge importing" do
-  before(:all) do
+  before(:once) do
     archive_file_path = File.join(File.dirname(__FILE__) + "/../../../fixtures/migration/cc_full_test.zip")
     unzipped_file_path = create_temp_dir!
-    @converter = CC::Importer::Standard::Converter.new(:export_archive_path=>archive_file_path, :course_name=>'oi', :base_download_dir=>unzipped_file_path)
-    @converter.export
-    @course_data = @converter.course.with_indifferent_access
+    converter = CC::Importer::Standard::Converter.new(:export_archive_path=>archive_file_path, :course_name=>'oi', :base_download_dir=>unzipped_file_path)
+    converter.export
+    @course_data = converter.course.with_indifferent_access
     @course_data['all_files_export'] ||= {}
     @course_data['all_files_export']['file_path'] = @course_data['all_files_zip']
 
@@ -20,10 +20,6 @@ describe "Standard Common Cartridge importing" do
     enable_cache do
       Importers::CourseContentImporter.import_content(@course, @course_data, nil, @migration)
     end
-  end
-
-  after(:all) do
-    truncate_all_tables
   end
 
   it "should import webcontent" do
@@ -368,7 +364,7 @@ describe "Standard Common Cartridge importing" do
 
       mods = @course.context_modules.to_a
       expect(mods.map(&:position)).to eql [1, 2, 3, 4]
-      expect(mods.map(&:name)).to eql %w(monkeys ponies monsters last)
+      expect(mods.map(&:name)).to eql %w(ponies monsters monkeys last)
     end
 
     it "should fix position conflicts for assignment groups" do
@@ -581,12 +577,12 @@ describe "non-ASCII attachment names" do
 end
 
 describe "LTI tool combination" do
-  before(:all) do
+  before(:once) do
     archive_file_path = File.join(File.dirname(__FILE__) + "/../../../fixtures/migration/cc_lti_combine_test.zip")
     unzipped_file_path = create_temp_dir!
-    @converter = CC::Importer::Standard::Converter.new(:export_archive_path=>archive_file_path, :course_name=>'oi', :base_download_dir=>unzipped_file_path)
-    @converter.export
-    @course_data = @converter.course.with_indifferent_access
+    converter = CC::Importer::Standard::Converter.new(:export_archive_path=>archive_file_path, :course_name=>'oi', :base_download_dir=>unzipped_file_path)
+    converter.export
+    @course_data = converter.course.with_indifferent_access
     @course_data['all_files_export'] ||= {}
     @course_data['all_files_export']['file_path'] = @course_data['all_files_zip']
 
@@ -597,10 +593,6 @@ describe "LTI tool combination" do
     enable_cache do
       Importers::CourseContentImporter.import_content(@course, @course_data, nil, @migration)
     end
-  end
-
-  after(:all) do
-    truncate_all_tables
   end
 
   it "should combine lti tools in cc packages when possible" do
@@ -624,43 +616,66 @@ describe "LTI tool combination" do
   end
 end
 
-describe "cc assignment extensions" do
-  before(:all) do
-    archive_file_path = File.join(File.dirname(__FILE__) + "/../../../fixtures/migration/cc_assignment_extension.zip")
+describe "other cc files" do
+  def import_cc_file(filename)
+    archive_file_path = File.join(File.dirname(__FILE__) + "/../../../fixtures/migration/#{filename}")
     unzipped_file_path = create_temp_dir!
-    @converter = CC::Importer::Standard::Converter.new(:export_archive_path=>archive_file_path, :course_name=>'oi', :base_download_dir=>unzipped_file_path)
-    @converter.export
-    @course_data = @converter.course.with_indifferent_access
 
     @course = course
     @migration = ContentMigration.create(:context => @course)
     @migration.migration_type = "common_cartridge_importer"
     @migration.migration_settings[:migration_ids_to_import] = {:copy => {}}
+
+    converter = CC::Importer::Standard::Converter.new(:export_archive_path=>archive_file_path, :course_name=>'oi',
+      :base_download_dir=>unzipped_file_path, :content_migration => @migration)
+    converter.export
+    @course_data = converter.course.with_indifferent_access
     enable_cache do
       Importers::CourseContentImporter.import_content(@course, @course_data, nil, @migration)
     end
   end
 
-  after(:all) do
-    truncate_all_tables
+  describe "cc assignment extensions" do
+    before(:once) do
+      import_cc_file("cc_assignment_extension.zip")
+    end
+
+    it "should parse canvas data from cc extension" do
+      expect(@migration.migration_issues.count).to eq 0
+
+      att = @course.attachments.where(migration_id: 'ieee173de6109d169c627d07bedae0595').first
+
+      expect(@course.assignments.count).to eq 2
+      assignment1 = @course.assignments.where(migration_id: "icd613a5039d9a1539e100058efe44242").first
+      expect(assignment1.grading_type).to eq 'pass_fail'
+      expect(assignment1.points_possible).to eq 20
+      expect(assignment1.description).to include("<img src=\"/courses/#{@course.id}/files/#{att.id}/preview\" alt=\"dana_small.png\">")
+      expect(assignment1.submission_types).to eq "online_text_entry,online_url,media_recording,online_upload" # overridden
+
+      assignment2 = @course.assignments.where(migration_id: "icd613a5039d9a1539e100058efe44242copy").first
+      expect(assignment2.grading_type).to eq 'points'
+      expect(assignment2.points_possible).to eq 21
+      expect(assignment2.description).to include('hi, the canvas meta stuff does not have submission types')
+      expect(assignment2.submission_types).to eq "online_upload,online_text_entry,online_url"
+    end
   end
 
-  it "should parse canvas data from cc extension" do
-    expect(@migration.migration_issues.count).to eq 0
+  describe "cc pattern match questions" do
+    it "should produce a warning" do
+      next unless Qti.qti_enabled?
+      import_cc_file("cc_pattern_match.zip")
+      expect(@migration.migration_issues.first.description).to include("This package includes the question type, Pattern Match")
+    end
+  end
 
-    att = @course.attachments.where(migration_id: 'ieee173de6109d169c627d07bedae0595').first
-
-    expect(@course.assignments.count).to eq 2
-    assignment1 = @course.assignments.where(migration_id: "icd613a5039d9a1539e100058efe44242").first
-    expect(assignment1.grading_type).to eq 'pass_fail'
-    expect(assignment1.points_possible).to eq 20
-    expect(assignment1.description).to include("<img src=\"/courses/#{@course.id}/files/#{att.id}/preview\" alt=\"dana_small.png\">")
-    expect(assignment1.submission_types).to eq "online_text_entry,online_url,media_recording,online_upload" # overridden
-
-    assignment2 = @course.assignments.where(migration_id: "icd613a5039d9a1539e100058efe44242copy").first
-    expect(assignment2.grading_type).to eq 'points'
-    expect(assignment2.points_possible).to eq 21
-    expect(assignment2.description).to include('hi, the canvas meta stuff does not have submission types')
-    expect(assignment2.submission_types).to eq "online_upload,online_text_entry,online_url"
+  describe "cc unsupported resource types" do
+    it "should produce warnings" do
+      next unless Qti.qti_enabled?
+      import_cc_file("cc_unsupported_resources.zip")
+      issues = @migration.migration_issues.pluck(:description)
+      expect(issues.any?{|i| i.include?("This package includes APIP file(s)")}).to be_truthy
+      expect(issues.any?{|i| i.include?("This package includes IWB file(s)")}).to be_truthy
+      expect(issues.any?{|i| i.include?("This package includes EPub3 file(s)")}).to be_truthy
+    end
   end
 end

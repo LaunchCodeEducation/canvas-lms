@@ -542,6 +542,15 @@ describe ConversationsController, type: :request do
           assert_status(400)
         end
 
+        it "should allow an admin to send a message in course context" do
+          account_admin_user active_all: true
+          json = api_call(:post, "/api/v1/conversations",
+                  { :controller => 'conversations', :action => 'create', :format => 'json' },
+                  { :recipients => [@bob.id], :body => "test", :context_code => @course.asset_string })
+          conv = Conversation.find(json.first['id'])
+          expect(conv.context).to eq @course
+        end
+
         it "should allow site admin to set any account context" do
           site_admin_user(name: "site admin", active_all: true)
           json = api_call(:post, "/api/v1/conversations",
@@ -793,26 +802,28 @@ describe ConversationsController, type: :request do
             "messages" => [
               {
                 "id" => conversation.messages.first.id, "created_at" => conversation.messages.first.created_at.to_json[1, 20], "body" => "test", "author_id" => @me.id, "generated" => false, "media_comment" => nil, "attachments" => [], "participating_user_ids" => [@me.id, @billy.id].sort,
-                "forwarded_messages" => [
-                  {
-                          "id" => forwarded_message.id, "created_at" => forwarded_message.created_at.to_json[1, 20], "body" => "test", "author_id" => @bob.id, "generated" => false, "media_comment" => nil, "forwarded_messages" => [],
-                          "attachments" => [{'filename' => attachment.filename,
-                                             'url' => "http://www.example.com/files/#{attachment.id}/download?download_frd=1&verifier=#{attachment.uuid}",
-                                             'content-type' => 'image/png',
-                                             'display_name' => 'test my file? hai!&.png',
-                                             'id' => attachment.id,
-                                             'folder_id' => attachment.folder_id,
-                                             'size' => attachment.size,
-                                             'unlock_at' => nil,
-                                             'locked' => false,
-                                             'hidden' => false,
-                                             'lock_at' => nil,
-                                             'locked_for_user' => false,
-                                             'hidden_for_user' => false,
-                                             'created_at' => attachment.created_at.as_json,
-                                             'updated_at' => attachment.updated_at.as_json,
-                                             'modified_at' => attachment.updated_at.as_json,
-                                             'thumbnail_url' => attachment.thumbnail_url }], "participating_user_ids" => [@me.id, @bob.id].sort
+                "forwarded_messages" => [{
+                  "id" => forwarded_message.id, "created_at" => forwarded_message.created_at.to_json[1, 20], "body" => "test", "author_id" => @bob.id, "generated" => false, "media_comment" => nil, "forwarded_messages" => [],
+                  "attachments" => [{
+                    'filename' => attachment.filename,
+                    'url' => "http://www.example.com/files/#{attachment.id}/download?download_frd=1&verifier=#{attachment.uuid}",
+                    'content-type' => 'image/png',
+                    'display_name' => 'test my file? hai!&.png',
+                    'id' => attachment.id,
+                    'folder_id' => attachment.folder_id,
+                    'size' => attachment.size,
+                    'unlock_at' => nil,
+                    'locked' => false,
+                    'hidden' => false,
+                    'lock_at' => nil,
+                    'locked_for_user' => false,
+                    'hidden_for_user' => false,
+                    'created_at' => attachment.created_at.as_json,
+                    'updated_at' => attachment.updated_at.as_json,
+                    'modified_at' => attachment.modified_at.as_json,
+                    'thumbnail_url' => attachment.thumbnail_url,
+                    'mime_class' => attachment.mime_class,
+                    'media_entry_id' => attachment.media_entry_id }], "participating_user_ids" => [@me.id, @bob.id].sort
                   }
                 ]
               }
@@ -820,6 +831,25 @@ describe ConversationsController, type: :request do
           }
         ]
         expect(json).to eq expected
+      end
+
+      context "cross-shard message forwarding" do
+        specs_require_sharding
+
+        it "should not asplode" do
+          @shard1.activate do
+            course_with_teacher(:active_course => true, :active_enrollment => true, :user => @me)
+            @bob = student_in_course(:course => @course, :name => "bob")
+
+            @message = conversation(@me, :sender => @bob).messages.first
+          end
+
+          json = api_call(:post, "/api/v1/conversations/#{@conversation.conversation_id}/add_message",
+            { :controller => 'conversations', :action => 'add_message', :id => @conversation.conversation_id.to_s, :format => 'json' },
+            { :body => "wut wut", :included_messages => [@message.id]})
+
+          expect(json['last_message']).to eq "wut wut"
+        end
       end
 
       it "should set subject" do
@@ -917,7 +947,8 @@ describe ConversationsController, type: :request do
 
   context "conversation" do
     it "should return the conversation" do
-      conversation = conversation(@bob)
+      conversation = conversation(@bob, :context_type => "Course", :context_id => @course.id)
+
       attachment = @me.conversation_attachments_folder.attachments.create!(:context => @me, :filename => 'test.txt', :display_name => "test.txt", :uploaded_data => StringIO.new('test'))
       media_object = MediaObject.new
       media_object.media_id = '0_12345678'
@@ -994,7 +1025,9 @@ describe ConversationsController, type: :request do
                 'created_at' => attachment.created_at.as_json,
                 'updated_at' => attachment.updated_at.as_json,
                 'thumbnail_url' => attachment.thumbnail_url,
-                'modified_at' => attachment.updated_at.as_json
+                'modified_at' => attachment.modified_at.as_json,
+                'mime_class' => attachment.mime_class,
+                'media_entry_id' => attachment.media_entry_id
               }
             ],
             "participating_user_ids" => [@me.id, @bob.id].sort
@@ -1005,6 +1038,18 @@ describe ConversationsController, type: :request do
         "context_name" => conversation.context_name,
         "context_code" => conversation.conversation.context_code,
       })
+    end
+
+    it "should indicate if conversation permissions for the context are missing" do
+      @user = @billy
+      conversation = conversation(@bob, :sender => @billy, :context_type => "Course", :context_id => @course.id)
+
+      @course.account.role_overrides.create!(:permission => :send_messages, :role => student_role, :enabled => false)
+
+      json = api_call(:get, "/api/v1/conversations/#{conversation.conversation_id}",
+        { :controller => 'conversations', :action => 'show', :id => conversation.conversation_id.to_s, :format => 'json' })
+
+      expect(json["cannot_reply"]).to eq true
     end
 
     it "should still include attachment verifiers when using session auth" do
@@ -1980,6 +2025,91 @@ describe ConversationsController, type: :request do
       json = api_call(:get, '/api/v1/conversations/unread_count.json',
                       {:controller => 'conversations', :action => 'unread_count', :format => 'json'})
       expect(json).to eql({'unread_count' => '1'})
+    end
+  end
+
+  context 'deleted_conversations' do
+    before :once do
+      @me = nil
+      @c1 = conversation(@bob)
+      @c1.remove_messages(:all)
+
+      @c2 = conversation(@billy)
+      @c2.remove_messages(:all)
+
+      account_admin_user(:account => Account.site_admin)
+    end
+
+    it 'returns a list of deleted conversation messages' do
+      json = api_call(:get, "/api/v1/conversations/deleted",
+              { :controller => 'conversations', :action => 'deleted_index', :format => 'json',
+                :user_id => @bob.id })
+
+      expect(json.count).to eql 1
+      expect(json[0]).to include(
+        "attachments",
+        "body",
+        "author_id",
+        "conversation_id",
+        "created_at",
+        "deleted_at",
+        "forwarded_messages",
+        "generated",
+        "id",
+        "media_comment",
+        "participating_user_ids",
+        "user_id"
+      )
+    end
+
+    it 'returns a paginated response with proper link headers' do
+      json = api_call(:get, "/api/v1/conversations/deleted",
+              { :controller => 'conversations', :action => 'deleted_index', :format => 'json',
+                :user_id => @bob.id })
+
+      links = response.headers['Link'].split(",")
+      expect(links.all?{ |l| l =~ /api\/v1\/conversations\/deleted/ }).to be_truthy
+      expect(links.find{ |l| l.match(/rel="current"/)}).to match /page=1&per_page=10>/
+      expect(links.find{ |l| l.match(/rel="first"/)}).to match /page=1&per_page=10>/
+      expect(links.find{ |l| l.match(/rel="last"/)}).to match /page=1&per_page=10>/
+    end
+
+    it 'can respond with multiple users data' do
+      json = api_call(:get, "/api/v1/conversations/deleted",
+              { :controller => 'conversations', :action => 'deleted_index', :format => 'json',
+                :user_id => [@bob.id, @billy.id]})
+
+      expect(json.count).to eql 2
+    end
+
+    it 'will only get the provided conversation id' do
+      json = api_call(:get, "/api/v1/conversations/deleted",
+              { :controller => 'conversations', :action => 'deleted_index', :format => 'json',
+                :user_id => [@bob.id, @billy.id], :conversation_id => @c1.conversation_id })
+
+      expect(json.count).to eql 1
+    end
+
+    it 'can filter based on the deletion date' do
+      json = api_call(:get, "/api/v1/conversations/deleted",
+              { :controller => 'conversations', :action => 'deleted_index', :format => 'json',
+                :user_id => @bob.id, :deleted_before => 1.hour.from_now })
+      expect(json.count).to eql 1
+
+      json = api_call(:get, "/api/v1/conversations/deleted",
+              { :controller => 'conversations', :action => 'deleted_index', :format => 'json',
+                :user_id => @bob.id, :deleted_before => 1.hour.ago })
+      expect(json.count).to eql 0
+
+      json = api_call(:get, "/api/v1/conversations/deleted",
+              { :controller => 'conversations', :action => 'deleted_index', :format => 'json',
+                :user_id => @bob.id, :deleted_after => 1.hour.ago })
+      expect(json.count).to eql 1
+
+      json = api_call(:get, "/api/v1/conversations/deleted",
+              { :controller => 'conversations', :action => 'deleted_index', :format => 'json',
+                :user_id => @bob.id, :deleted_after => 1.hour.from_now })
+      expect(json.count).to eql 0
     end
   end
 

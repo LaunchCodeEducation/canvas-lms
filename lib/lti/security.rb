@@ -47,6 +47,7 @@ module Lti
     # params once no matter how many times it appears. For query params since we copy them to the body, it should
     # appear a minimum of twice in the base string.
     def self.generate_params_deprecated(params, url, key, secret)
+      url.strip!
       uri = URI.parse(url)
 
       if uri.port == uri.default_port
@@ -83,6 +84,24 @@ module Lti
       hash.stringify_keys
     end
     private_class_method :generate_params_deprecated
+
+    ##
+    ## Timeline Examples for valid and invalid timestamps
+    ##
+    ## |---exp---timestamp---now---|  VALID
+    ##
+    ## |---timestamp---exp---now---| INVALID
+    ##
+    ## |---exp---now---timestamp---| INVALID
+    ##
+    def self.check_and_store_nonce(cache_key, timestamp, expiration)
+      allowed_future_skew = 1.minute
+      valid = timestamp.to_i > expiration.ago.to_i
+      valid &&= timestamp.to_i <= (Time.now + allowed_future_skew).to_i
+      valid &&= !Rails.cache.exist?(cache_key)
+      Rails.cache.write(cache_key, 'OK', expires_in: expiration + allowed_future_skew) if valid
+      valid
+    end
 
 
   end

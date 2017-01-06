@@ -1,11 +1,8 @@
-.conditional-release-editor {
+#canvas-conditional-release-editor {
   height: 675px;
   padding-top: 12px;
   display: flex;
+  overflow-x: scroll;
 }
 
-.conditional-release-editor-frame {
-  border: none;
-  flex: 1 1 auto;
-  min-height: 100%;
-}
+@import "components/conditional_release_stats";

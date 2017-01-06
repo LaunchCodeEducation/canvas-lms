@@ -7,7 +7,7 @@
 var Handlebars = require('handlebars');
 var EmberHandlebars = require('ember-template-compiler').EmberHandlebars;
 var ScopedHbsExtractor = require(__dirname + '/../gems/canvas_i18nliner/js/scoped_hbs_extractor');
-var PreProcessor = require(__dirname + '/../gems/canvas_i18nliner/node_modules/i18nliner-handlebars/dist/lib/pre_processor')['default'];
+var PreProcessor = require(__dirname + '/../gems/canvas_i18nliner/node_modules/i18nliner-handlebars/dist/lib/pre_processor');
 var fs = require('fs');
 var child_process = require('child_process');
 
@@ -52,7 +52,7 @@ var emitTemplate = function(path, name, result, dependencies){
 module.exports = function (source) {
   this.cacheable();
   var name = resourceName(this.resourcePath)
-  var dependencies = ['shims/ember', 'coffeescripts/ember/shared/helpers/common'];
+  var dependencies = ['ember', 'coffeescripts/ember/shared/helpers/common'];
 
   var result = compileHandlebars({path: this.resourcePath, source: source, ember: true});
 

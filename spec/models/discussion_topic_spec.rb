@@ -228,6 +228,34 @@ describe DiscussionTopic do
       expect(@topic.visible_for?(admin)).to be_truthy
     end
 
+    context "participants with teachers and tas" do
+      before(:once) do
+        group_course = course(:active_course => true)
+        @group_student, @group_ta, @group_teacher = create_users(3, return_type: :record)
+        @not_group_student, @group_designer = create_users(2, return_type: :record)
+        group_course.enroll_teacher(@group_teacher).accept!
+        group_course.enroll_ta(@group_ta).accept!
+        group_course.enroll_designer(@group_designer).accept!
+        group_category = group_course.group_categories.create(:name => "new cat")
+        group = group_course.groups.create(:name => "group", :group_category => group_category)
+        group.add_user(@group_student)
+        @announcement = group.announcements.build(:title => "group topic", :message => "group message")
+        @announcement.save!
+      end
+
+      it "should be visible to instructors and tas" do
+        [@group_student, @group_ta, @group_teacher].each do |user|
+          expect(@announcement.active_participants_include_tas_and_teachers.include?(user)).to be_truthy
+        end
+      end
+
+      it "should not include people out of the group or non-instructors" do
+        [@not_group_student, @group_designer].each do |user|
+          expect(@announcement.active_participants_include_tas_and_teachers.include?(user)).to be_falsey
+        end
+      end
+    end
+
     context "differentiated assignements" do
       before do
         @course = course(:active_course => true)
@@ -309,47 +337,6 @@ describe DiscussionTopic do
           expect(@topic.active_participants_with_visibility.include?(@student)).to be_truthy
         end
       end
-    end
-  end
-
-  def discussion_with_assignment(opts={})
-    assignment = @course.assignments.create!(:title => "some discussion assignment", only_visible_to_overrides: !!opts[:only_visible_to_overrides])
-    assignment.submission_types = 'discussion_topic'
-    assignment.save!
-    topic = assignment.discussion_topic
-    topic.save!
-    [topic, assignment]
-  end
-
-  context "visible_ids_by_user" do
-    before :once do
-      @course = course(:active_course => true)
-      discussion_topic_model(:user => @teacher)
-      @topic_without_assignment = @topic
-      @course_section = @course.course_sections.create
-      @student1, @student2, @student3 = create_users(3, return_type: :record)
-
-      @topic_with_assignment_and_only_vis, @assignment = discussion_with_assignment(only_visible_to_overrides: true)
-      @topic_with_assignment_and_visible_to_all, @assignment2 = discussion_with_assignment(only_visible_to_overrides: false)
-      @topic_with_override_for_section_with_no_students, @assignment3 = discussion_with_assignment(only_visible_to_overrides: true)
-      @topic_with_no_override, @assignment4 = discussion_with_assignment(only_visible_to_overrides: true)
-
-      @course.enroll_student(@student2, :enrollment_state => 'active')
-      @section = @course.course_sections.create!(name: "test section")
-      @section2 = @course.course_sections.create!(name: "second test section")
-      student_in_section(@section, user: @student1)
-      create_section_override_for_assignment(@assignment, {course_section: @section})
-      create_section_override_for_assignment(@assignment3, {course_section: @section2})
-      @course.reload
-      @vis_hash = DiscussionTopic.visible_ids_by_user(course_id: @course.id, user_id: [@student1, @student2, @student3].map(&:id))
-    end
-
-    it "should return both topics for a student with an override" do
-      expect(@vis_hash[@student1.id].sort).to eq [@topic_without_assignment.id, @topic_with_assignment_and_only_vis.id, @topic_with_assignment_and_visible_to_all.id].sort
-    end
-
-    it "should not return differentiated topics to a student with no overrides" do
-      expect(@vis_hash[@student2.id].sort).to eq [@topic_without_assignment.id, @topic_with_assignment_and_visible_to_all.id].sort
     end
   end
 
@@ -822,6 +809,15 @@ describe DiscussionTopic do
       expect(@teacher.stream_item_instances.count).to eq 1
     end
 
+    it "should send stream items to students for graded discussions" do
+      @topic = @course.discussion_topics.build(:title => "topic")
+      @assignment = @course.assignments.build(:submission_types => 'discussion_topic', :title => @topic.title)
+      @assignment.saved_by = :discussion_topic
+      @topic.assignment = @assignment
+      @topic.save
+
+      expect(@student.stream_item_instances.count).to eq 1
+    end
   end
 
   context "posting first to view" do
@@ -1249,6 +1245,34 @@ describe DiscussionTopic do
       entry.save!
 
       @topic.ensure_submission(@student)
+      sub = @assignment.submissions.where(:user_id => @student).first
+      expect(sub.attachments.to_a).to eq [@attachment]
+    end
+
+    it "should associate attachments with graded discussion submissions even with silly deleted topics" do
+      gc1 = group_category(:name => "gc1")
+      group_with_user(group_category: gc1, user: @student, :context => @course)
+      gc2 = group_category(:name => "gc2")
+      group_with_user(group_category: gc2, user: @student, :context => @course)
+      group2 = @group
+
+      @assignment = assignment_model(:course => @course)
+      @topic.assignment = @assignment
+      @topic.group_category = gc1
+      @topic.save!
+      @topic.group_category = gc2 # switching group categories deletes the old child topics
+      @topic.save!
+      @topic.reload
+
+      # can't use child_topic_for to show the exact bug
+      # because that's where the reported bug is
+      sub_topic = @topic.child_topics.where(:context_type => "Group", :context_id => group2).first
+
+      attachment_model(:context => @user, :uploaded_data => stub_png_data, :filename => "homework.png")
+      entry = sub_topic.reply_from(:user => @student, :text => "entry")
+      entry.attachment = @attachment
+      entry.save!
+
       sub = @assignment.submissions.where(:user_id => @student).first
       expect(sub.attachments.to_a).to eq [@attachment]
     end
@@ -1686,6 +1710,37 @@ describe DiscussionTopic do
       it "fulfills module completion requirements on the root topic" do
         @topic.reply_from(user: @student, text: "huttah!")
         expect(@student.context_module_progressions.where(context_module_id: @module).first.requirements_met).to include({id: @topic_tag.id, type: 'must_contribute'})
+      end
+    end
+  end
+
+  describe "locked by context module" do
+    before(:once) do
+      discussion_topic_model(context: @course)
+      @module = @course.context_modules.create!(name: 'some module')
+      @module.add_item(type: 'discussion_topic', id: @topic.id)
+      @module.unlock_at = 2.months.from_now
+      @module.save!
+      @topic.reload
+    end
+
+    it "stays visible_for? student even when locked by module" do
+      expect(@topic.visible_for?(@student)).to be_truthy
+    end
+
+    it "is locked_for? students when locked by module" do
+      expect(@topic.locked_for?(@student, deep_check_if_needed: true)).to be_truthy
+    end
+
+    describe "reject_context_module_locked_topics" do
+      it "filters module locked topics for students" do
+        topics = DiscussionTopic.reject_context_module_locked_topics([@topic], @student)
+        expect(topics).to be_empty
+      end
+
+      it "does not filter module locked topics for teachers" do
+        topics = DiscussionTopic.reject_context_module_locked_topics([@topic], @teacher)
+        expect(topics).not_to be_empty
       end
     end
   end

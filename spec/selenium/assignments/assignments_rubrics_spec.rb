@@ -43,7 +43,10 @@ describe "assignment rubrics" do
 
     it "should add a new rubric", priority: "2", test_id: 56587 do
       get "/courses/#{@course.id}/outcomes"
-      expect_new_page_load{f(' .manage_rubrics').click}
+      expect_new_page_load do
+        f('#popoverMenu button').click
+        f('[data-reactid*="manage-rubrics"]').click
+      end
       expect do
        f('.add_rubric_link').click
        f('.add_criterion_link').click
@@ -157,6 +160,35 @@ describe "assignment rubrics" do
       f('#rubric_dialog_'+@rubric.id.to_s+' .select_rubric_link').click
       wait_for_ajaximations
       expect(f('#rubric_'+@rubric.id.to_s+' .rubric_title .title')).to include_text(@rubric.title)
+    end
+
+    it "should not adjust points when importing an outcome to an assignment", priority: "1", test_id: 2896223 do
+      create_assignment_with_points(2)
+
+      outcome_with_rubric
+      @rubric.associate_with(@course, @course, purpose: 'grading')
+
+      get "/courses/#{@course.id}/assignments/#{@assignment.id}"
+
+      # click on the + Rubric button
+      f('.add_rubric_link').click
+      wait_for_ajaximations
+      # click on the Find Outcome link, which brings up a dialog
+      f('#rubric_new .editing .find_outcome_link').click
+      wait_for_ajax_requests
+      # confirm the expected outcome is listed in the dialog
+      expect(f('#import_dialog .ellipsis span')).to include_text(@outcome.title)
+      # select the first outcome
+      f('.outcome-link').click
+      wait_for_ajaximations
+      # click on the Import button
+      f('.ui-dialog .btn-primary').click
+      # confirm the import
+      driver.switch_to.alert.accept
+      wait_for_ajaximations
+      # pts should not be editable
+      expect(f('#rubric_new .learning_outcome_criterion .points_form .editing').displayed?).to be_falsey
+      expect(f('#rubric_new .learning_outcome_criterion .points_form .displaying').displayed?).to be_truthy
     end
 
     it "should not adjust assignment points possible for grading rubric", priority: "1", test_id: 220324 do

@@ -181,7 +181,7 @@ describe "quizzes" do
     describe "moderation" do
 
       before do
-        @student = user_with_pseudonym(:active_user => true, :username => 'student@example.com', :password => 'qwerty')
+        @student = user_with_pseudonym(:active_user => true, :username => 'student@example.com', :password => 'qwertyuiop')
         @course.enroll_user(@student, "StudentEnrollment", :enrollment_state => 'active')
         @context = @course
         @quiz = quiz_model
@@ -374,6 +374,9 @@ describe "quizzes" do
       f('.upload-label').click
       wait_for_ajaximations
       keep_trying_until { expect(file_upload_submission_data).to eq [""] }
+      # the following attachment will not be backed up w/o this sleep
+      # wait_for_ajaximations doesn't work here
+      sleep 0.5
       upload_attachment_answer
       expect_new_page_load do
         driver.get driver.current_url

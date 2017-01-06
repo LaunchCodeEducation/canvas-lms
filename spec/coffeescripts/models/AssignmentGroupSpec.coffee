@@ -1,7 +1,8 @@
 define [
   'compiled/models/Assignment'
   'compiled/models/AssignmentGroup'
-], (Assignment, AssignmentGroup) ->
+  'helpers/fakeENV'
+], (Assignment, AssignmentGroup, fakeENV) ->
 
   module "AssignmentGroup"
 
@@ -41,6 +42,35 @@ define [
     ag = new AssignmentGroup
     strictEqual ag.countRules(), 0
 
+  module "AssignmentGroup#canDelete",
+    setup: -> fakeENV.setup()
+    teardown: -> fakeENV.teardown()
+
+  test "returns false if AssignmentGroup has frozen assignments", ->
+    assignment = new Assignment name: 'foo'
+    assignment.set 'frozen', true
+    group = new AssignmentGroup name: 'taco', assignments: [ assignment ]
+    deepEqual group.canDelete(), false
+
+  test "returns false if 'has_assignment_due_in_closed_grading_period' is true and multiple grading periods is enabled", ->
+    ENV.MULTIPLE_GRADING_PERIODS_ENABLED = true
+    group = new AssignmentGroup name: 'taco', assignments: []
+    group.set 'has_assignment_due_in_closed_grading_period', true
+    equal group.canDelete(), false
+
+  test "returns true if 'has_assignment_due_in_closed_grading_period' is true and multiple grading periods is disabled", ->
+    ENV.MULTIPLE_GRADING_PERIODS_ENABLED = false
+    group = new AssignmentGroup name: 'taco', assignments: []
+    group.set 'has_assignment_due_in_closed_grading_period', true
+    equal group.canDelete(), true
+
+  test "returns true if 'frozen' and 'has_due_date_in_closed_grading_period' are false", ->
+    assignment = new Assignment name: 'foo'
+    assignment.set 'frozen', false
+    group = new AssignmentGroup name: 'taco', assignments: [ assignment ]
+    group.set 'has_assignment_due_in_closed_grading_period', false
+    deepEqual group.canDelete(), true
+
   module "AssignmentGroup#hasFrozenAssignments"
 
   test "returns true if AssignmentGroup has frozen assignments", ->
@@ -48,3 +78,15 @@ define [
     assignment.set 'frozen', [ true ]
     group = new AssignmentGroup name: 'taco', assignments: [ assignment ]
     deepEqual group.hasFrozenAssignments(), true
+
+  module "AssignmentGroup#hasAssignmentDueInClosedGradingPeriod"
+
+  test "returns the value of 'has_assignment_due_in_closed_grading_period'", ->
+    fakeENV.setup()
+    ENV.MULTIPLE_GRADING_PERIODS_ENABLED = true
+    group = new AssignmentGroup name: 'taco', assignments: []
+    group.set 'has_assignment_due_in_closed_grading_period', true
+    deepEqual group.hasAssignmentDueInClosedGradingPeriod(), true
+    group.set 'has_assignment_due_in_closed_grading_period', false
+    deepEqual group.hasAssignmentDueInClosedGradingPeriod(), false
+    fakeENV.teardown()

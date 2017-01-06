@@ -18,9 +18,12 @@ define [
   AssignmentGroupSelector, DueDateOverrideView, EditView,
   GradingTypeSelector, GroupCategorySelector, PeerReviewsSelector, fakeENV, userSettings) ->
 
+  s_params = 'asdf32.asdf31.asdf2'
+
   editView = (assignmentOpts = {}) ->
     defaultAssignmentOpts =
       name: 'Test Assignment'
+      secure_params: s_params
       assignment_overrides: []
 
     assignmentOpts = _.extend {}, assignmentOpts, defaultAssignmentOpts
@@ -51,13 +54,14 @@ define [
           model: dueDateList
           views: {}
 
-    @stub(app, 'scrollSidebar')
+    app.enableCheckbox = () -> {}
     app.render()
 
   module 'EditView',
     setup: ->
       fakeENV.setup()
       ENV.VALID_DATE_RANGE = {}
+      ENV.COURSE_ID = 1
     teardown: ->
       fakeENV.teardown()
       $(".ui-dialog").remove()
@@ -69,6 +73,12 @@ define [
   test 'renders', ->
     view = @editView()
     equal view.$('#assignment_name').val(), 'Test Assignment'
+
+  test 'rejects missing group set for group assignment', ->
+    view = @editView()
+    data = { group_category_id: 'blank' }
+    errors = view.validateBeforeSave(data, [])
+    equal errors['newGroupCategory'][0]['message'], 'Please create a group set'
 
   test 'rejects a letter for points_possible', ->
     view = @editView()
@@ -126,6 +136,13 @@ define [
 
     errors = view.validateBeforeSave({}, [])
     ok !errors["name"]
+
+  test "renders a hidden secure_params field", ->
+    view = @editView()
+    secure_params = view.$('#secure_params')
+
+    equal secure_params.attr('type'), 'hidden'
+    equal secure_params.val(), s_params
 
   test 'does show error message on assignment point change with submissions', ->
     view = @editView has_submitted_submissions: true
@@ -202,9 +219,29 @@ define [
     ok view.$("[type=checkbox][name=moderated_grading]").prop("disabled")
     equal view.$('[type=hidden][name=moderated_grading]').attr('value'), '1'
 
+  test 'routes to discussion details normally', ->
+    view = @editView html_url: 'http://foo'
+    equal view.locationAfterSave({}), 'http://foo'
+
+  test 'routes to return_to', ->
+    view = @editView html_url: 'http://foo'
+    equal view.locationAfterSave({ return_to: 'http://bar' }), 'http://bar'
+
+  test 'cancels to env normally', ->
+    ENV.CANCEL_TO = 'http://foo'
+    view = @editView()
+    equal view.locationAfterCancel({}), 'http://foo'
+
+  test 'cancels to return_to', ->
+    ENV.CANCEL_TO = 'http://foo'
+    view = @editView()
+    equal view.locationAfterCancel({ return_to: 'http://bar' }), 'http://bar'
+
+
   module 'EditView: group category locked',
     setup: ->
       fakeENV.setup()
+      ENV.COURSE_ID = 1
       @oldAddGroupCategory = window.addGroupCategory
       window.addGroupCategory = @stub()
     teardown: ->
@@ -229,6 +266,7 @@ define [
   module 'EditView: setDefaultsIfNew',
     setup: ->
       fakeENV.setup()
+      ENV.COURSE_ID = 1
       @stub(userSettings, 'contextGet').returns {submission_types: "foo", peer_reviews: "1", assignment_group_id: 99}
     teardown: ->
       fakeENV.teardown()
@@ -264,6 +302,7 @@ define [
   module 'EditView: setDefaultsIfNew: no localStorage',
     setup: ->
       fakeENV.setup()
+      ENV.COURSE_ID = 1
       @stub(userSettings, 'contextGet').returns null
     teardown: ->
       fakeENV.teardown()
@@ -279,6 +318,7 @@ define [
   module 'EditView: cacheAssignmentSettings',
     setup: ->
       fakeENV.setup()
+      ENV.COURSE_ID = 1
     teardown: ->
       fakeENV.teardown()
     editView: ->
@@ -303,6 +343,7 @@ define [
   module 'EditView: Conditional Release',
     setup: ->
       fakeENV.setup()
+      ENV.COURSE_ID = 1
       ENV.CONDITIONAL_RELEASE_SERVICE_ENABLED = true
       ENV.CONDITIONAL_RELEASE_ENV = { assignment: { id: 1 }, jwt: 'foo' }
       $(document).on 'submit', -> false
@@ -316,6 +357,12 @@ define [
     view = @editView()
     equal 1, view.$conditionalReleaseTarget.children().size()
 
+  test 'calls update on first switch', ->
+    view = @editView()
+    stub = @stub(view.conditionalReleaseEditor, 'updateAssignment')
+    view.updateConditionalRelease()
+    ok stub.calledOnce
+
   test 'calls update when modified once', ->
     view = @editView()
     stub = @stub(view.conditionalReleaseEditor, 'updateAssignment')
@@ -326,6 +373,8 @@ define [
   test 'does not call update when not modified', ->
     view = @editView()
     stub = @stub(view.conditionalReleaseEditor, 'updateAssignment')
+    view.updateConditionalRelease()
+    stub.reset()
     view.updateConditionalRelease()
     notOk stub.called
 
@@ -350,3 +399,87 @@ define [
       mockSuper.verify()
       ok stub.calledOnce
       resolved()
+
+  test 'focuses in conditional release editor if conditional save validation fails', ->
+    view = @editView()
+    focusOnError = @stub(view.conditionalReleaseEditor, 'focusOnError')
+    view.showErrors({ conditional_release: 'foo' })
+    ok focusOnError.called
+
+  module 'Editview: Intra-Group Peer Review toggle',
+    setup: ->
+      fakeENV.setup()
+      ENV.COURSE_ID = 1
+    teardown: ->
+      fakeENV.teardown()
+    editView: ->
+      editView.apply(this, arguments)
+
+  test 'only appears for group assignments', ->
+    @stub(userSettings, 'contextGet').returns {
+      peer_reviews: "1",
+      group_category_id: 1,
+      automatic_peer_reviews: "1"
+    }
+    view = @editView()
+    view.$el.appendTo $('#fixtures')
+    ok view.$('#intra_group_peer_reviews').is(":visible")
+
+  test 'does not appear when reviews are being assigned manually', ->
+    @stub(userSettings, 'contextGet').returns {peer_reviews: "1", group_category_id: 1}
+    view = @editView()
+    view.$el.appendTo $('#fixtures')
+    ok !view.$('#intra_group_peer_reviews').is(":visible")
+
+  test 'toggle does not appear when there is no group', ->
+    @stub(userSettings, 'contextGet').returns {peer_reviews: "1"}
+    view = @editView()
+    view.$el.appendTo $('#fixtures')
+    ok !view.$('#intra_group_peer_reviews').is(":visible")
+
+  module 'EditView: Assignment Configuration Tools',
+    setup: ->
+      fakeENV.setup()
+      ENV.COURSE_ID = 1
+      ENV.PLAGIARISM_DETECTION_PLATFORM = true
+
+    teardown: ->
+      fakeENV.teardown()
+
+    editView: ->
+      editView.apply(this, arguments)
+
+  test 'it attaches assignment configuration component', ->
+    view = @editView()
+    equal view.$assignmentConfigurationTools.children().size(), 1
+
+  test 'it is hidden if submission type is not online with a file upload', ->
+    view = @editView()
+    view.$el.appendTo $('#fixtures')
+    equal view.$('#assignment_configuration_tools').css('display'), 'none'
+
+    view.$('#assignment_submission_type').val('on_paper')
+    view.handleSubmissionTypeChange()
+    equal view.$('#assignment_configuration_tools').css('display'), 'none'
+
+    view.$('#assignment_submission_type').val('external_tool')
+    view.handleSubmissionTypeChange()
+    equal view.$('#assignment_configuration_tools').css('display'), 'none'
+
+    view.$('#assignment_submission_type').val('online')
+    view.$('#assignment_online_upload').attr('checked', false)
+    view.handleSubmissionTypeChange()
+    equal view.$('#assignment_configuration_tools').css('display'), 'none'
+
+    view.$('#assignment_submission_type').val('online')
+    view.$('#assignment_online_upload').attr('checked', true)
+    view.handleSubmissionTypeChange()
+    equal view.$('#assignment_configuration_tools').css('display'), 'block'
+
+  test 'it is hidden if the plagiarism_detection_platform flag is disabled', ->
+    ENV.PLAGIARISM_DETECTION_PLATFORM = false
+    view = @editView()
+    view.$('#assignment_submission_type').val('online')
+    view.$('#assignment_online_upload').attr('checked', true)
+    view.handleSubmissionTypeChange()
+    equal view.$('#assignment_configuration_tools').css('display'), 'none'
