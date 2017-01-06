@@ -64,7 +64,7 @@ CanvasRails::Application.routes.draw do
   end
 
   concern :groups do
-    resources :groups
+    resources :groups, except: :edit
     resources :group_categories, only: [:create, :update, :destroy]
     get 'group_unassigned_members' => 'groups#unassigned_members'
   end
@@ -240,6 +240,8 @@ CanvasRails::Application.routes.draw do
       resources :submissions do
         post 'turnitin/resubmit' => 'submissions#resubmit_to_turnitin', as: :resubmit_to_turnitin
         get 'turnitin/:asset_string' => 'submissions#turnitin_report', as: :turnitin_report
+        post 'vericite/resubmit' => 'submissions#resubmit_to_vericite', as: :resubmit_to_vericite
+        get 'vericite/:asset_string' => 'submissions#vericite_report', as: :vericite_report
       end
       get :rubric
       resource :rubric_association, path: :rubric do
@@ -382,6 +384,8 @@ CanvasRails::Application.routes.draw do
     resources :content_exports, only: [:create, :index, :destroy, :show]
     get 'modules/items/assignment_info' => 'context_modules#content_tag_assignment_data', as: :context_modules_assignment_info
     get 'modules/items/:id' => 'context_modules#item_redirect', as: :context_modules_item_redirect
+    get 'modules/items/:id/edit_mastery_paths' => 'context_modules#item_redirect_mastery_paths'
+    get 'modules/items/:id/choose' => 'context_modules#choose_mastery_path'
     get 'modules/items/sequence/:id' => 'context_modules#item_details', as: :context_modules_item_details
     delete 'modules/items/:id' => 'context_modules#remove_item', as: :context_modules_remove_item
     put 'modules/items/:id' => 'context_modules#update_item', as: :context_modules_update_item
@@ -392,7 +396,10 @@ CanvasRails::Application.routes.draw do
     get 'user_notes' => 'user_notes#user_notes'
     get 'details/sis_publish' => 'courses#sis_publish_status', as: :sis_publish_status
     post 'details/sis_publish' => 'courses#publish_to_sis', as: :publish_to_sis
+
     resources :user_lists, only: :create
+    post 'invite_users' => 'users#invite_users', :as => :invite_users
+
     post 'reset' => 'courses#reset_content'
     resources :alerts
     post :student_view
@@ -400,7 +407,6 @@ CanvasRails::Application.routes.draw do
     delete 'test_student' => 'courses#reset_test_student'
     get 'content_migrations' => 'content_migrations#index'
     get 'link_validator' => 'courses#link_validator', :as => :link_validator
-    get 'score_range_defaults', controller: 'conditional_release/score_range_defaults', action: 'index', as: :score_range_defaults
   end
 
   get 'quiz_statistics/:quiz_statistics_id/files/:file_id/download' => 'files#show', as: :quiz_statistics_download, download: '1'
@@ -525,6 +531,7 @@ CanvasRails::Application.routes.draw do
     get 'statistics/over_time/:attribute' => 'accounts#statistics_graph', as: :statistics_graph
     get 'statistics/over_time/:attribute.:format' => 'accounts#statistics_graph', as: :formatted_statistics_graph
     get :turnitin_confirmation
+    get :vericite_confirmation
     resources :permissions, controller: :role_overrides, only: [:index, :create] do
       collection do
         post :add_role
@@ -715,9 +722,8 @@ CanvasRails::Application.routes.draw do
   get 'search/bookmarks' => 'users#bookmark_search', as: :bookmark_search
   get 'search/rubrics' => 'search#rubrics'
   get 'search/all_courses' => 'search#all_courses'
-  resources :users do
+  resources :users, except: :destroy do
     match 'masquerade', via: [:get, :post]
-    delete :delete
     concerns :files, :file_images
 
     resources :page_views, only: :index
@@ -815,7 +821,7 @@ CanvasRails::Application.routes.draw do
     end
   end
 
-  resources :appointment_groups, only: [:index, :show]
+  resources :appointment_groups, only: [:index, :show, :edit]
 
   resources :errors, only: [:show, :index, :create], path: :error_reports
 
@@ -845,8 +851,6 @@ CanvasRails::Application.routes.draw do
   resources :files, :except => [:new] do
     get 'download' => 'files#show', download: '1'
   end
-
-  resources :developer_keys, only: :index
 
   resources :rubrics do
     resources :rubric_assessments, path: :assessments
@@ -980,6 +984,19 @@ CanvasRails::Application.routes.draw do
       get 'audit/course/courses/:course_id', action: :for_course, as: 'audit_course_for_course'
     end
 
+    scope(controller: :assignment_overrides) do
+      get 'courses/:course_id/assignments/:assignment_id/overrides', action: :index
+      post 'courses/:course_id/assignments/:assignment_id/overrides', action: :create
+      get 'courses/:course_id/assignments/:assignment_id/overrides/:id', action: :show, as: 'assignment_override'
+      put 'courses/:course_id/assignments/:assignment_id/overrides/:id', action: :update
+      delete 'courses/:course_id/assignments/:assignment_id/overrides/:id', action: :destroy
+      get 'sections/:course_section_id/assignments/:assignment_id/override', action: :section_alias
+      get 'groups/:group_id/assignments/:assignment_id/override', action: :group_alias
+      get 'courses/:course_id/assignments/overrides', action: :batch_retrieve
+      put 'courses/:course_id/assignments/overrides', action: :batch_update
+      post 'courses/:course_id/assignments/overrides', action: :batch_create
+    end
+
     scope(controller: :assignments_api) do
       get 'courses/:course_id/assignments', action: :index, as: 'course_assignments'
       get 'users/:user_id/courses/:course_id/assignments', action: :user_index, as: 'user_course_assignments'
@@ -998,16 +1015,6 @@ CanvasRails::Application.routes.draw do
       post 'sections/:section_id/assignments/:assignment_id/submissions/:submission_id/peer_reviews', action: :create
       delete 'courses/:course_id/assignments/:assignment_id/submissions/:submission_id/peer_reviews', action: :destroy
       delete 'sections/:section_id/assignments/:assignment_id/submissions/:submission_id/peer_reviews', action: :destroy
-    end
-
-    scope(controller: :assignment_overrides) do
-      get 'courses/:course_id/assignments/:assignment_id/overrides', action: :index
-      post 'courses/:course_id/assignments/:assignment_id/overrides', action: :create
-      get 'courses/:course_id/assignments/:assignment_id/overrides/:id', action: :show, as: 'assignment_override'
-      put 'courses/:course_id/assignments/:assignment_id/overrides/:id', action: :update
-      delete 'courses/:course_id/assignments/:assignment_id/overrides/:id', action: :destroy
-      get 'sections/:course_section_id/assignments/:assignment_id/override', action: :section_alias
-      get 'groups/:group_id/assignments/:assignment_id/override', action: :group_alias
     end
 
     scope(controller: :moderation_set) do
@@ -1118,6 +1125,7 @@ CanvasRails::Application.routes.draw do
         get "#{context}s/:#{context}_id/external_tools/:external_tool_id", action: :show, as: "#{context}_external_tool_show"
         get "#{context}s/:#{context}_id/external_tools", action: :index, as: "#{context}_external_tools"
         post "#{context}s/:#{context}_id/external_tools", action: :create, as: "#{context}_external_tools_create"
+        post "#{context}s/:#{context}_id/create_tool_with_verification", action: :create_tool_with_verification, as: "#{context}_create_tool_with_verification"
         put "#{context}s/:#{context}_id/external_tools/:external_tool_id", action: :update, as: "#{context}_external_tools_update"
         delete "#{context}s/:#{context}_id/external_tools/:external_tool_id", action: :destroy, as: "#{context}_external_tools_delete"
       end
@@ -1273,17 +1281,6 @@ CanvasRails::Application.routes.draw do
       post 'accounts/:account_id/authentication_providers', action: :create, as: 'account_create_ap'
       put 'accounts/:account_id/authentication_providers/:id', action: :update, as: 'account_update_ap'
       delete 'accounts/:account_id/authentication_providers/:id', action: :destroy, as: 'account_delete_ap'
-
-      # deprecated
-      get 'accounts/:account_id/account_authorization_configs/discovery_url', action: :show_discovery_url
-      put 'accounts/:account_id/account_authorization_configs/discovery_url', action: :update_discovery_url, as: 'account_update_discovery_url'
-      delete 'accounts/:account_id/account_authorization_configs/discovery_url', action: :destroy_discovery_url, as: 'account_destroy_discovery_url'
-
-      get 'accounts/:account_id/account_authorization_configs', action: :index
-      get 'accounts/:account_id/account_authorization_configs/:id', action: :show
-      post 'accounts/:account_id/account_authorization_configs', action: :create, as: 'account_create_aac'
-      put 'accounts/:account_id/account_authorization_configs/:id', action: :update, as: 'account_update_aac'
-      delete 'accounts/:account_id/account_authorization_configs/:id', action: :destroy, as: 'account_delete_aac'
     end
 
     get 'users/:user_id/page_views', controller: :page_views, action: :index, as: 'user_page_views'
@@ -1297,6 +1294,7 @@ CanvasRails::Application.routes.draw do
     scope(controller: :conversations) do
       get 'conversations', action: :index, as: 'conversations'
       post 'conversations', action: :create
+      get 'conversations/deleted', action: :deleted_index, as: 'deleted_conversations'
       post 'conversations/mark_all_as_read', action: :mark_all_as_read
       get 'conversations/batches', action: :batches, as: 'conversations_batches'
       get 'conversations/unread_count', action: :unread_count
@@ -1364,6 +1362,7 @@ CanvasRails::Application.routes.draw do
     scope(controller: :appointment_groups) do
       get 'appointment_groups', action: :index, as: 'appointment_groups'
       post 'appointment_groups', action: :create
+      get 'appointment_groups/next_appointment', action: :next_appointment
       get 'appointment_groups/:id', action: :show, as: 'appointment_group'
       put 'appointment_groups/:id', action: :update
       delete 'appointment_groups/:id', action: :destroy
@@ -1402,13 +1401,11 @@ CanvasRails::Application.routes.draw do
     end
 
     scope(controller: :developer_keys) do
-      get 'developer_keys', action: :index
       get 'developer_keys/:id', action: :show
       delete 'developer_keys/:id', action: :destroy
       put 'developer_keys/:id', action: :update
-      post 'developer_keys', action: :create
 
-      get 'accounts/:account_id/developer_keys', action: :index
+      get 'accounts/:account_id/developer_keys', action: :index, as: 'account_developer_keys'
       post 'accounts/:account_id/developer_keys', action: :create
     end
 
@@ -1509,6 +1506,7 @@ CanvasRails::Application.routes.draw do
       put "courses/:course_id/modules/:module_id/items/:id", action: :update, as: 'course_context_module_item_update'
       delete "courses/:course_id/modules/:module_id/items/:id", action: :destroy
       post "courses/:course_id/modules/:module_id/items/:id/mark_read", action: :mark_item_read
+      post "courses/:course_id/modules/:module_id/items/:id/select_mastery_path", action: :select_mastery_path
     end
 
     scope(controller: 'quizzes/quiz_assignment_overrides') do
@@ -1643,6 +1641,20 @@ CanvasRails::Application.routes.draw do
     scope(controller: 'live_assessments/results') do
       get "courses/:course_id/live_assessments/:assessment_id/results", action: :index, as: "course_live_assessment_results"
       post "courses/:course_id/live_assessments/:assessment_id/results", action: :create, as: "course_live_assessment_result_create"
+    end
+
+    scope(controller: 'support_helpers/turnitin') do
+      get "support_helpers/turnitin/md5", action: :md5
+      get "support_helpers/turnitin/error2305", action: :error2305
+      get "support_helpers/turnitin/shard", action: :shard
+      get "support_helpers/turnitin/assignment", action: :assignment
+      get "support_helpers/turnitin/pending", action: :pending
+      get "support_helpers/turnitin/expired", action: :expired
+    end
+
+    scope(controller: 'support_helpers/crocodoc') do
+      get "support_helpers/crocodoc/shard", action: :shard
+      get "support_helpers/crocodoc/submission", action: :submission
     end
 
     scope(controller: :outcome_groups_api) do
@@ -1851,6 +1863,13 @@ CanvasRails::Application.routes.draw do
 
     scope(controller: :announcements_api) do
       get 'announcements', action: :index, as: :announcements
+    end
+
+    scope(controller: :rubrics_api) do
+      get 'accounts/:account_id/rubrics', action: :index, as: :account_rubrics
+      get 'accounts/:account_id/rubrics/:id', action: :show
+      get 'courses/:course_id/rubrics', action: :index, as: :course_rubrics
+      get 'courses/:course_id/rubrics/:id', action: :show
     end
   end
 

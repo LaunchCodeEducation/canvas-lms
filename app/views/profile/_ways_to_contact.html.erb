@@ -4,7 +4,7 @@
 
 <%# this needs to be reactified. badly. %>
 <h2><%= t('headers.ways_to_contact', "Ways to Contact") %></h2>
-<div class="rs-margin-lr">
+<div>
   <table class="<%= 'single' if @email_channels.length <= 1 %> summary channel_list email_channels" style="width: 100%; margin-left: 0; margin-right: 0;">
     <thead>
       <tr>
@@ -205,7 +205,7 @@
           <% CommunicationChannel.sms_carriers.each do |(carrier, domain)| %>
             <option value="#@<%= domain %>"><%= carrier %></option>
           <% end %>
-          <option value="other"><%= t('carriers.other', 'Other Carrier') %></option>
+          <option value="other"><%= t('Other Carrier') %></option>
         </select>
       </div>
     </div>

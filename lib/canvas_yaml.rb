@@ -28,6 +28,7 @@ require 'syck' # so we can undo all the things before something else requires it
 if defined?(YAML::ENGINE)
   YAML::ENGINE.yamler = 'psych'
 else
+  Object.send(:remove_const, :YAML)
   YAML = Psych # :/
 end
 
@@ -54,6 +55,7 @@ SafeYAML::OPTIONS.merge!(
         !float#exp
         !float#inf
         !str
+        tag:yaml.org,2002:str
         !timestamp
         !timestamp#iso8601
         !timestamp#spaced
@@ -63,6 +65,7 @@ SafeYAML::OPTIONS.merge!(
         !ruby/hash:HashWithIndifferentAccess
         !ruby/hash:ActiveSupport::HashWithIndifferentAccess
         !ruby/hash:WeakParameters
+        !ruby/hash:ActionController::Parameters
         !ruby/object:Class
         !ruby/object:OpenStruct
         !ruby/object:Scribd::Document

@@ -1,4 +1,4 @@
-class AddTableSubmissionVersions < ActiveRecord::Migration
+class AddTableSubmissionVersions < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
@@ -19,7 +19,7 @@ class AddTableSubmissionVersions < ActiveRecord::Migration
 
     add_index :submission_versions, columns,
       :name => 'index_submission_versions',
-      :where => { :context_type => 'Course' },
+      :where => "context_type='Course'",
       :unique => true
   end
 

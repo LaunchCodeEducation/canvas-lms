@@ -471,6 +471,8 @@ describe ApplicationController do
           :url => "http://#{HostUrl.default_host}/selection_test",
           :selection_width => 400,
           :selection_height => 400}
+        tool.settings[:selection_width] = 500
+        tool.settings[:selection_height] = 300
         tool.save!
         tool
       end
@@ -496,6 +498,33 @@ describe ApplicationController do
         expect(assigns[:lti_launch].params["resource_link_id"]).to eq 'e62d81a8a1587cdf9d3bbc3de0ef303d6bc70d78'
       end
 
+      it 'uses selection_width and selection_height if provided' do
+        controller.stubs(:named_context_url).returns(tool.url)
+        controller.stubs(:render)
+        controller.stubs(js_env:[])
+        controller.instance_variable_set(:"@context", course)
+        content_tag.stubs(:id).returns(42)
+        controller.send(:content_tag_redirect, course, content_tag, nil)
+
+        expect(assigns[:lti_launch].tool_dimensions[:selection_width]).to eq '500px'
+        expect(assigns[:lti_launch].tool_dimensions[:selection_height]).to eq '300px'
+      end
+
+      it 'appends px to tool dimensions only when needed' do
+        tool.settings = {}
+        tool.save!
+        content_tag = ContentTag.create(content: tool, url: tool.url)
+
+        controller.stubs(:named_context_url).returns(tool.url)
+        controller.stubs(:render)
+        controller.stubs(js_env:[])
+        controller.instance_variable_set(:"@context", course)
+        content_tag.stubs(:id).returns(42)
+        controller.send(:content_tag_redirect, course, content_tag, nil)
+
+        expect(assigns[:lti_launch].tool_dimensions[:selection_width]).to eq '100%'
+        expect(assigns[:lti_launch].tool_dimensions[:selection_height]).to eq '100%'
+      end
     end
 
   end
@@ -663,16 +692,25 @@ describe ApplicationController do
   end
 
   describe "#get_all_pertinent_contexts" do
+    it "doesn't show unpublished courses to students" do
+      student = user(:active_all => true)
+      c1 = course
+      e = c1.enroll_student(student)
+      e.update_attribute(:workflow_state, 'active')
+      c2 = course(:active_all => true)
+      c2.enroll_student(student).accept!
+
+      controller.instance_variable_set(:@context, student)
+      controller.send(:get_all_pertinent_contexts)
+      expect(controller.instance_variable_get(:@contexts).select{|c| c.is_a?(Course)}).to eq [c2]
+    end
+
+
     it "doesn't touch the database if there are no valid courses" do
       user
       controller.instance_variable_set(:@context, @user)
 
-      course_scope = stub('current_enrollments')
-      course_scope.stubs(:current).returns(course_scope)
-      course_scope.stubs(:shard).returns(course_scope)
-      course_scope.stubs(:preload).returns(course_scope)
-      course_scope.expects(:none).returns(Enrollment.none)
-      @user.stubs(:enrollments).returns(course_scope)
+      Course.expects(:where).never
       controller.send(:get_all_pertinent_contexts, only_contexts: 'Group_1')
     end
 
@@ -680,10 +718,27 @@ describe ApplicationController do
       user
       controller.instance_variable_set(:@context, @user)
 
-      group_scope = stub('current_groups')
-      group_scope.expects(:none).returns(Group.none)
-      @user.stubs(:current_groups).returns(group_scope)
+      @user.expects(:current_groups).never
       controller.send(:get_all_pertinent_contexts, include_groups: true, only_contexts: 'Course_1')
+    end
+
+    context "sharding" do
+      specs_require_sharding
+
+      it "should not asplode with cross-shard groups" do
+        user(:active_all => true)
+        controller.instance_variable_set(:@context, @user)
+
+        @shard1.activate do
+          account = Account.create!
+          teacher_in_course(:user => @user, :active_all => true, :account => account)
+          @other_group = group_model(:context => @course)
+          group_model(:context => @course)
+          @group.add_user(@user)
+        end
+        controller.send(:get_all_pertinent_contexts, include_groups: true, only_contexts: "group_#{@other_group.id},group_#{@group.id}")
+        expect(controller.instance_variable_get(:@contexts).select{|c| c.is_a?(Group)}).to eq [@group]
+      end
     end
   end
 

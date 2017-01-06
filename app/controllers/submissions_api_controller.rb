@@ -137,6 +137,19 @@
 #           "description": "Whether the assignment is excused.  Excused assignments have no impact on a user's grade.",
 #           "example": true,
 #           "type": "boolean"
+#         },
+#         "workflow_state": {
+#           "description": "The current state of the submission",
+#           "example": "submitted",
+#           "type": "string",
+#           "allowableValues": {
+#             "values": [
+#               "graded",
+#               "submitted",
+#               "unsubmitted",
+#               "pending_review"
+#             ]
+#           }
 #         }
 #       }
 #     }
@@ -171,6 +184,7 @@ class SubmissionsApiController < ApplicationController
   # @response_field url If the submission was made as a URL.
   # @response_field late Whether the submission was made after the applicable due date.
   # @response_field assignment_visible Whether this assignment is visible to the user who submitted the assignment.
+  # @response_field workflow_state The current status of the submission. Possible values: “submitted”, “unsubmitted”, “graded”, “pending_review”
   #
   # @returns [Submission]
   def index
@@ -232,6 +246,14 @@ class SubmissionsApiController < ApplicationController
   # @argument grading_period_id [Integer]
   #   The id of the grading period in which submissions are being requested
   #   (Requires the Multiple Grading Periods account feature turned on)
+  #
+  # @argument order [String, "id"|"graded_at"]
+  #   The order submissions will be returned in.  Defaults to "id".  Doesn't
+  #   affect results for "grouped" mode.
+  #
+  # @argument order_direction [String, "ascending"|"descending"]
+  #   Determines whether ordered results are retured in ascending or descending
+  #   order.  Defaults to "ascending".  Doesn't affect results for "grouped" mode.
   #
   # @argument include[] [String, "submission_history"|"submission_comments"|"rubric_assessment"|"assignment"|"total_scores"|"visibility"|"course"|"user"]
   #   Associations to include with the group. `total_scores` requires the
@@ -391,7 +413,10 @@ class SubmissionsApiController < ApplicationController
         result << hash
       end
     else
-      submissions = @context.submissions.except(:order).where(:user_id => student_ids).order(:id)
+      order_by = params[:order] == "graded_at" ? "graded_at" : :id
+      order_direction = params[:order_direction] == "descending" ? "desc nulls last" : "asc"
+      order = "#{order_by} #{order_direction}"
+      submissions = @context.submissions.except(:order).where(:user_id => student_ids).order(order)
       submissions = submissions.where(:assignment_id => assignments) unless assignments.empty?
       submissions = submissions.preload(:user)
 
@@ -736,6 +761,10 @@ class SubmissionsApiController < ApplicationController
   #
   # @argument grade_data[<student_id>][posted_grade] [String]
   #   See documentation for the posted_grade argument in the
+  #   {api:SubmissionsApiController#update Submissions Update} documentation
+  #
+  # @argument grade_data[<student_id>][excuse] [Boolean]
+  #   See documentation for the excuse argument in the
   #   {api:SubmissionsApiController#update Submissions Update} documentation
   #
   # @argument grade_data[<student_id>][rubric_assessment] [RubricAssessment]

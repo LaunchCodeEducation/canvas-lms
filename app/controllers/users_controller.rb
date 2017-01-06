@@ -124,7 +124,7 @@ require 'atom'
 #           "type": "string"
 #         },
 #         "locale": {
-#           "description": "Optional: This field can be requested with certain API calls, and will return the users locale.",
+#           "description": "Optional: This field can be requested with certain API calls, and will return the users locale in RFC 5646 format.",
 #           "example": "tlh",
 #           "type": "string"
 #         },
@@ -159,7 +159,7 @@ class UsersController < ApplicationController
   before_filter :require_user, :only => [:grades, :merge, :kaltura_session,
     :ignore_item, :ignore_stream_item, :close_notification, :mark_avatar_image,
     :user_dashboard, :toggle_recent_activity_dashboard, :masquerade, :external_tool,
-    :dashboard_sidebar, :settings, :all_menu_courses]
+    :dashboard_sidebar, :settings, :all_menu_courses, :activity_stream, :activity_stream_summary]
   before_filter :require_registered_user, :only => [:delete_user_service,
     :create_user_service]
   before_filter :reject_student_view_student, :only => [:delete_user_service,
@@ -202,8 +202,8 @@ class UsersController < ApplicationController
     grading_period = GradingPeriod.for(course).find_by(id: grading_period_id)
     grading_periods = {
       course.id => {
-        :periods => [grading_period],
-        :selected_period_id => grading_period_id
+        periods: [grading_period],
+        selected_period_id: grading_period_id
       }
     }
     calculator = grade_calculator([enrollment.user_id], course, grading_periods)
@@ -440,7 +440,7 @@ class UsersController < ApplicationController
           else
             @enrollment_terms = []
             if @root_account == @context
-              @enrollment_terms = @context.enrollment_terms.active.order(EnrollmentTerm.nulls(:first, :start_at))
+              @enrollment_terms = @context.enrollment_terms.active
             end
             format.html
           end
@@ -462,6 +462,7 @@ class UsersController < ApplicationController
     if request.post?
       if @user == @real_current_user
         session.delete(:become_user_id)
+        session.delete(:enrollment_uuid)
       else
         session[:become_user_id] = params[:user_id]
       end
@@ -497,14 +498,14 @@ class UsersController < ApplicationController
     })
 
     @announcements = AccountNotification.for_user_and_account(@current_user, @domain_root_account)
-    @pending_invitations = @current_user.cached_current_enrollments(:include_enrollment_uuid => session[:enrollment_uuid], :preload_dates => true).select { |e| e.invited? }
+    @pending_invitations = @current_user.cached_invitations(:include_enrollment_uuid => session[:enrollment_uuid], :preload_course => true)
     @stream_items = @current_user.try(:cached_recent_stream_items) || []
   end
 
   def cached_upcoming_events(user)
     Rails.cache.fetch(['cached_user_upcoming_events', user].cache_key,
       :expires_in => 3.minutes) do
-      user.upcoming_events :contexts => ([user] + user.cached_contexts)
+      user.upcoming_events :context_codes => ([user.asset_string] + user.cached_context_codes)
     end
   end
 
@@ -720,6 +721,10 @@ class UsersController < ApplicationController
   # @API List the TODO items
   # Returns the current user's list of todo items, as seen on the user dashboard.
   #
+  # @argument include[] [String, "ungraded_quizzes"]
+  #   "ungraded_quizzes":: Optionally include ungraded quizzes (such as practice quizzes and surveys) in the list.
+  #                        These will be returned under a +quiz+ key instead of an +assignment+ key in response elements.
+  #
   # There is a limit to the number of items returned.
   #
   # The `ignore` and `ignore_permanently` URLs can be used to update the user's
@@ -750,13 +755,26 @@ class UsersController < ApplicationController
   #       'html_url': '.. url ..',
   #       'context_type': 'course',
   #       'course_id': 1,
-  #     }
+  #     },
+  #     {
+  #       'type' => 'submitting',   // a quiz that needs submitting soon
+  #       'quiz' => { .. quiz object .. },
+  #       'ignore' => '.. url ..',
+  #       'ignore_permanently' => '.. url ..',
+  #       'html_url': '.. url ..',
+  #       'context_type': 'course',
+  #       'course_id': 1,
+  #     },
   #   ]
   def todo_items
     return render_unauthorized_action unless @current_user
 
     grading = @current_user.assignments_needing_grading().map { |a| todo_item_json(a, @current_user, session, 'grading') }
-    submitting = @current_user.assignments_needing_submitting().map { |a| todo_item_json(a, @current_user, session, 'submitting') }
+    submitting = @current_user.assignments_needing_submitting(include_ungraded: true).map { |a| todo_item_json(a, @current_user, session, 'submitting') }
+    if Array(params[:include]).include? 'ungraded_quizzes'
+      submitting += @current_user.ungraded_quizzes_needing_submitting.map { |q| todo_item_json(q, @current_user, session, 'submitting') }
+      submitting.sort_by! { |j| (j[:assignment] || j[:quiz])[:due_at] }
+    end
     render :json => (grading + submitting)
   end
 
@@ -868,7 +886,7 @@ class UsersController < ApplicationController
     unless %w[grading submitting reviewing moderation].include?(params[:purpose])
       return render(:json => { :ignored => false }, :status => 400)
     end
-    @current_user.ignore_item!(ActiveRecord::Base.find_by_asset_string(params[:asset_string], ['Assignment', 'AssessmentRequest']),
+    @current_user.ignore_item!(ActiveRecord::Base.find_by_asset_string(params[:asset_string], ['Assignment', 'AssessmentRequest', 'Quizzes::Quiz']),
                                params[:purpose], params[:permanent] == '1')
     render :json => { :ignored => true }
   end
@@ -1124,7 +1142,8 @@ class UsersController < ApplicationController
   #   {http://api.rubyonrails.org/classes/ActiveSupport/TimeZone.html Ruby on Rails time zones}.
   #
   # @argument user[locale] [String]
-  #   The user's preferred language as a two-letter ISO 639-1 code.
+  #   The user's preferred language, from the list of languages Canvas supports.
+  #   This is in RFC-5646 format.
   #
   # @argument user[birthdate] [Date]
   #   The user's birth date.
@@ -1240,7 +1259,8 @@ class UsersController < ApplicationController
   #   {http://api.rubyonrails.org/classes/ActiveSupport/TimeZone.html Ruby on Rails time zones}.
   #
   # @argument user[locale] [String]
-  #   The user's preferred language as a two-letter ISO 639-1 code.
+  #   The user's preferred language, from the list of languages Canvas supports.
+  #   This is in RFC-5646 format.
   #
   # @argument user[birthdate] [Date]
   #   The user's birth date.
@@ -1269,6 +1289,9 @@ class UsersController < ApplicationController
   #   If true, require user to manually mark discussion posts as read (don't
   #   auto-mark as read).
   #
+  # @argument collapse_global_nav [Boolean]
+  #   If true, the user's page loads with the global navigation collapsed
+  #
   # @example_request
   #
   #   curl 'https://<canvas>/api/v1/users/<user_id>/settings \
@@ -1281,18 +1304,28 @@ class UsersController < ApplicationController
     case
     when request.get?
       return unless authorized_action(user, @current_user, :read)
-      render(json: { manual_mark_as_read: @current_user.manual_mark_as_read? })
+      render(json: {
+        manual_mark_as_read: @current_user.manual_mark_as_read?,
+        collapse_global_nav: @current_user.collapse_global_nav?
+      })
     when request.put?
       return unless authorized_action(user, @current_user, [:manage, :manage_user_details])
       unless params[:manual_mark_as_read].nil?
         mark_as_read = value_to_boolean(params[:manual_mark_as_read])
         user.preferences[:manual_mark_as_read] = mark_as_read
       end
+      unless params[:collapse_global_nav].nil?
+        collapse_global_nav = value_to_boolean(params[:collapse_global_nav])
+        user.preferences[:collapse_global_nav] = collapse_global_nav
+      end
 
       respond_to do |format|
         format.json {
           if user.save
-            render(json: { manual_mark_as_read: user.manual_mark_as_read? })
+            render(json: {
+              manual_mark_as_read: user.manual_mark_as_read?,
+              collapse_global_nav: user.collapse_global_nav?
+            })
           else
             render(json: user.errors, status: :bad_request)
           end
@@ -1431,7 +1464,8 @@ class UsersController < ApplicationController
   #   The default email address of the user.
   #
   # @argument user[locale] [String]
-  #   The user's preferred language as a two-letter ISO 639-1 code.
+  #   The user's preferred language, from the list of languages Canvas supports.
+  #   This is in RFC-5646 format.
   #
   # @argument user[avatar][token] [String]
   #   A unique representation of the avatar record to assign as the user's
@@ -1654,35 +1688,6 @@ class UsersController < ApplicationController
     end
   end
 
-  def delete
-    @user = User.find(params[:user_id])
-    render_unauthorized_action unless @user.allows_user_to_remove_from_account?(@domain_root_account, @current_user)
-  end
-
-  def destroy
-    @user = api_find(User, params[:id])
-    if @user.allows_user_to_remove_from_account?(@domain_root_account, @current_user)
-      @user.remove_from_root_account(@domain_root_account)
-      if @user == @current_user
-        logout_current_user
-      end
-
-      respond_to do |format|
-        format.html do
-          flash[:notice] = t('user_is_deleted', "%{user_name} has been deleted", :user_name => @user.name)
-          redirect_to(@user == @current_user ? root_url : users_url)
-        end
-
-        format.json do
-          get_context # need the context for user_json
-          render :json => user_json(@user, @current_user, session)
-        end
-      end
-    else
-      render_unauthorized_action
-    end
-  end
-
   def report_avatar_image
     @user = User.find(params[:user_id])
     key = "reported_#{@user.id}"
@@ -1870,7 +1875,7 @@ class UsersController < ApplicationController
   # @returns [User]
   def split
     user = api_find(User, params[:id])
-    unless UserMergeData.active.where(user_id: user).where('created_at > ?', 90.days.ago).exists?
+    unless UserMergeData.active.where(user_id: user).shard(user).where('created_at > ?', 90.days.ago).exists?
       return render json: {message: t('Nothing to split off of this user')}, status: :bad_request
     end
 
@@ -1878,6 +1883,56 @@ class UsersController < ApplicationController
       users = SplitUsers.split_db_users(user)
       render :json => users.map { |u| user_json(u, @current_user, session) }
     end
+  end
+
+  # maybe I should document this
+  # maybe not
+  # basically does the same thing as UserList#users
+  def invite_users
+    # pass into "users" an array of hashes with "email"
+    # e.g. [{"email": "email@example.com"}]
+    # also can include an optional "name"
+
+    # returns the original list in :invited_users (with ids) if successfully added, or in :errored_users if not
+    get_context
+    return unless authorized_action(@context, @current_user, [:manage_students, :manage_admin_users])
+
+    root_account = context.root_account
+    unless root_account.open_registration? || root_account.grants_right?(@current_user, session, :manage_user_logins)
+      return render_unauthorized_action
+    end
+
+    invited_users = []
+    errored_users = []
+    Array(params[:users]).each do |user_hash|
+      unless user_hash[:email].present?
+        errored_users << user_hash.merge(:error => "email required")
+        next
+      end
+
+      email = user_hash[:email]
+      user = User.new(:name => user_hash[:name] || email)
+      cc = user.communication_channels.build(:path => email, :path_type => 'email')
+      cc.user = user
+      user.workflow_state = 'creation_pending'
+
+      # check just in case
+      existing_rows = Pseudonym.active.where(:account_id => @context.root_account).joins(:user => :communication_channels).joins(:account).
+        where("communication_channels.workflow_state<>'retired' AND path_type='email' AND LOWER(path) = ?", email.downcase).
+        pluck('communication_channels.path', :user_id, :account_id, 'users.name', 'accounts.name')
+
+      if existing_rows.any?
+        existing_users = existing_rows.map do |address, user_id, account_id, user_name, account_name|
+         {:address => address, :user_id => user_id, :user_name => user_name, :account_id => account_id, :account_name => account_name}
+        end
+        errored_users << user_hash.merge(:errors => [{:message => "Matching user(s) already exist"}], :existing_users => existing_users)
+      elsif user.save
+        invited_users << user_hash.merge(:id => user.id)
+      else
+        errored_users << user_hash.merge(user.errors.as_json)
+      end
+    end
+    render :json => {:invited_users => invited_users, :errored_users => errored_users}
   end
 
   protected

@@ -29,7 +29,7 @@ module Importers
         rubric = context.available_rubric(hash[:external_identifier]) unless migration.cross_institution?
 
         if !rubric
-          migration.add_warning(t(:no_context_found, %{The external Rubric couldn't be found for "%{title}", creating a copy.}, :title => hash[:title]))
+          Rails.logger.warn("The external Rubric couldn't be found for \"#{hash[:title]}\", creating a copy.")
         end
       end
 
@@ -42,6 +42,7 @@ module Importers
         item.migration_id = hash[:migration_id]
         item.workflow_state = 'active' if item.deleted?
         item.title = hash[:title]
+        item.populate_rubric_title # just in case
         item.description = hash[:description]
         item.points_possible = hash[:points_possible].to_f
         item.read_only = hash[:read_only] unless hash[:read_only].nil?

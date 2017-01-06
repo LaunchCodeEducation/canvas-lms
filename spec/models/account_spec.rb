@@ -113,18 +113,12 @@ describe Account do
       process_csv_data_cleanly([
         "course_id,user_id,role,section_id,status,associated_user_id",
         ",U001,student,S001,active,",
-        ",U002,student,S002,active,",
-        ",U003,student,S003,active,",
-        ",U004,student,S004,active,",
         ",U005,student,S005,active,",
         ",U006,student,S006,deleted,",
         ",U007,student,S007,active,",
         ",U008,student,S008,active,",
         ",U009,student,S005,deleted,",
         ",U001,student,S001S,active,",
-        ",U002,student,S002S,active,",
-        ",U003,student,S003S,active,",
-        ",U004,student,S004S,active,",
         ",U005,student,S005S,active,",
         ",U006,student,S006S,deleted,",
         ",U007,student,S007S,active,",
@@ -155,6 +149,12 @@ describe Account do
         expect(@account.fast_all_courses({:term => EnrollmentTerm.where(sis_source_id: "T001").first, :hide_enrollmentless_courses => true}).map(&:sis_source_id).sort).to eq ["C001", "C001S"]
         expect(@account.fast_all_courses({:term => EnrollmentTerm.where(sis_source_id: "T002").first, :hide_enrollmentless_courses => true}).map(&:sis_source_id).sort).to eq []
         expect(@account.fast_all_courses({:term => EnrollmentTerm.where(sis_source_id: "T003").first, :hide_enrollmentless_courses => true}).map(&:sis_source_id).sort).to eq ["C005", "C007", "C005S", "C007S"].sort
+      end
+
+      it "should order list by specified parameter" do
+        order = "courses.created_at ASC"
+        @account.expects(:fast_course_base).with(order: order)
+        @account.fast_all_courses(order: order)
       end
     end
 
@@ -324,18 +324,6 @@ describe Account do
   context "settings=" do
     it "should filter disabled settings" do
       a = Account.new
-      a.root_account_id = 1
-      a.settings = {'global_javascript' => 'something'}.with_indifferent_access
-      expect(a.settings[:global_javascript]).to eql(nil)
-
-      a.root_account_id = nil
-      a.settings = {'global_javascript' => 'something'}.with_indifferent_access
-      expect(a.settings[:global_javascript]).to eql(nil)
-
-      a.settings[:global_includes] = true
-      a.settings = {'global_javascript' => 'something'}.with_indifferent_access
-      expect(a.settings[:global_javascript]).to eql('something')
-
       a.settings = {'error_reporting' => 'string'}.with_indifferent_access
       expect(a.settings[:error_reporting]).to eql(nil)
 
@@ -348,6 +336,37 @@ describe Account do
       expect(a.settings[:error_reporting][:action]).to eql('email')
       expect(a.settings[:error_reporting][:email]).to eql('bob@yahoo.com')
       expect(a.settings[:error_reporting][:extra]).to eql(nil)
+    end
+  end
+
+  context "allow_global_includes?" do
+    let(:root){ Account.default }
+    it "false unless they've checked the box to allow it" do
+      expect(root.allow_global_includes?).to be_falsey
+    end
+
+    it "true if they've checked the box to allow it" do
+      root.settings = {'global_includes' => true}
+      expect(root.allow_global_includes?).to be_truthy
+    end
+
+    describe "subaccount" do
+      let(:sub_account){ root.sub_accounts.create! }
+
+      it "false if root account hasn't checked global_includes AND subaccount branding" do
+        expect(sub_account.allow_global_includes?).to be_falsey
+
+        sub_account.root_account.settings = {'global_includes' => true, 'sub_account_includes' => false}
+        expect(sub_account.allow_global_includes?).to be_falsey
+
+        sub_account.root_account.settings = {'global_includes' => false, 'sub_account_includes' => true}
+        expect(sub_account.allow_global_includes?).to be_falsey
+      end
+
+      it "true if root account HAS checked global_includes and turned on subaccount branding" do
+        sub_account.root_account.settings = {'global_includes' => true, 'sub_account_includes' => true}
+        expect(sub_account.allow_global_includes?).to be_truthy
+      end
     end
   end
 
@@ -461,15 +480,18 @@ describe Account do
 
     limited_access = [ :read, :manage, :update, :delete, :read_outcomes ]
     conditional_access = RoleOverride.permissions.select { |_, v| v[:account_allows] }.map(&:first)
-    full_access = RoleOverride.permissions.keys + limited_access - conditional_access + [:create_courses]
-    siteadmin_access = [:app_profiling]
+    full_access = RoleOverride.permissions.keys +
+                  limited_access - conditional_access +
+                  [:create_courses] +
+                  [:create_tool_manually]
+
     full_root_access = full_access - RoleOverride.permissions.select { |k, v| v[:account_only] == :site_admin }.map(&:first)
     full_sub_access = full_root_access - RoleOverride.permissions.select { |k, v| v[:account_only] == :root }.map(&:first)
     # site admin has access to everything everywhere
     hash.each do |k, v|
       account = v[:account]
       expect(account.check_policy(hash[:site_admin][:admin]) - conditional_access).to match_array full_access + (k == :site_admin ? [:read_global_outcomes] : [])
-      expect(account.check_policy(hash[:site_admin][:user]) - conditional_access).to match_array siteadmin_access + limited_access + (k == :site_admin ? [:read_global_outcomes] : [])
+      expect(account.check_policy(hash[:site_admin][:user]) - conditional_access).to match_array limited_access + (k == :site_admin ? [:read_global_outcomes] : [])
     end
 
     # root admin has access to everything except site admin
@@ -511,7 +533,7 @@ describe Account do
     hash.each do |k, v|
       account = v[:account]
       admin_array = full_access + (k == :site_admin ? [:read_global_outcomes] : [])
-      user_array = siteadmin_access + some_access + [:reset_any_mfa] +
+      user_array = some_access + [:reset_any_mfa] +
         (k == :site_admin ? [:read_global_outcomes] : [])
       expect(account.check_policy(hash[:site_admin][:admin]) - conditional_access).to match_array admin_array
       expect(account.check_policy(hash[:site_admin][:user])).to match_array user_array
@@ -883,20 +905,6 @@ describe Account do
       user
       account.account_users.create!(user: @user)
       expect(account.user_list_search_mode_for(@user)).to eq :preferred
-    end
-  end
-
-  context "settings" do
-    describe ":condition" do
-      it "should not allow setting things where condition is false" do
-        account = Account.default
-        account.stubs(:global_includes?).returns(false)
-        account.settings = { :global_javascript => 'bob' }
-        expect(account.settings[:global_javascript]).to be_nil
-        account.stubs(:global_includes?).returns(true)
-        account.settings = { :global_javascript => 'bob' }
-        expect(account.settings[:global_javascript]).to eq 'bob'
-      end
     end
   end
 
@@ -1507,7 +1515,7 @@ describe Account do
         begin
           Account.find_cached(nonsense_id)
         rescue ::Canvas::AccountCacheError => e
-          expect(e.message).to eq(CANVAS_RAILS4_0 ? "Couldn't find Account with id=#{nonsense_id}" : "Couldn't find Account with 'id'=#{nonsense_id}")
+          expect(e.message).to eq("Couldn't find Account with 'id'=#{nonsense_id}")
         end
       end
     end
@@ -1539,5 +1547,15 @@ describe Account do
         expect(@account.users_name_like("silly").first).to eq @user
       end
     end
+  end
+
+  it "should clear special account cache on updates to special accounts" do
+    expect(Account.default.settings[:blah]).to be_nil
+
+    non_cached = Account.find(Account.default.id)
+    non_cached.settings[:blah] = true
+    non_cached.save!
+
+    expect(Account.default.settings[:blah]).to eq true
   end
 end

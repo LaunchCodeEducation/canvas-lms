@@ -7,7 +7,6 @@ class BrandConfigsController < ApplicationController
   before_filter :require_user
   before_filter :require_account_management
   before_filter :require_account_branding, except: [:destroy]
-  before_filter :require_new_ui
   before_filter { |c| c.active_tab = "brand_configs" }
 
   def index
@@ -108,7 +107,6 @@ class BrandConfigsController < ApplicationController
     end
   end
 
-
   # Activiate a given brandConfig for the current users's session.
   # this is what is called after the user pushes "Preview"
   # and after the progress of generating and pushing the css files to the CDN.
@@ -148,10 +146,8 @@ class BrandConfigsController < ApplicationController
   # When you close the theme editor, it will send a DELETE to this action to
   # clear out the session brand_config that you were prevewing.
   def destroy
-    if session.delete(:brand_config_md5).presence
-      session.delete(:brand_config_md5)
-      BrandConfig.destroy_if_unused(session.delete(:brand_config_md5))
-    end
+    old_md5 = session.delete(:brand_config_md5).presence
+    BrandConfig.destroy_if_unused(old_md5)
     redirect_to account_brand_configs_path(@account), notice: t('Theme editor changes have been cancelled.')
   end
 
@@ -170,13 +166,6 @@ class BrandConfigsController < ApplicationController
   def require_account_branding
     unless @account.branding_allowed?
       flash[:error] = t "You cannot edit themes on this subaccount."
-      redirect_to account_path(@account)
-    end
-  end
-
-  def require_new_ui
-    unless use_new_styles?
-      flash[:error] = t "You need to enable the 'New UI' feature before editing themes."
       redirect_to account_path(@account)
     end
   end

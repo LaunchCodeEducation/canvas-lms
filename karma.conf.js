@@ -1,4 +1,5 @@
 var fs = require("fs");
+const glob = require('glob');
 
 var webpackFileExists = false;
 var webpackFilePath = __dirname + "/config/WEBPACK";
@@ -26,7 +27,6 @@ if (usingWebpack) {
 }else{
   karmaFiles = [
     'spec/javascripts/requirejs_config.js',
-    'spec/javascripts/tests.js',
     'public/javascripts/vendor/require.js',
     'node_modules/karma-requirejs/lib/adapter.js',
     'spec/javascripts/support/sinon/sinon-1.17.2.js',
@@ -34,7 +34,6 @@ if (usingWebpack) {
     'spec/javascripts/support/axe.js',
     {pattern: 'public/javascripts/*.js', included: false, served: true},
     {pattern: 'spec/javascripts/fixtures/*.html', included: false, served: true},
-    {pattern: 'spec/javascripts/tests.js', included: false, served: true},
     {pattern: 'spec/javascripts/compiled/*.js', included: false, served: true},
     {pattern: 'spec/javascripts/compiled/**/*.js', included: false, served: true},
     {pattern: 'spec/**/javascripts/compiled/**/*.js', included: false, served: true},
@@ -45,12 +44,17 @@ if (usingWebpack) {
   ]
 }
 
+
 var karmaConfig = {
   basePath: '',
 
   frameworks: ['qunit'],
 
   files: karmaFiles,
+
+  // preprocessors: {
+  //   '**/*.js': ['sourcemap']
+  // },
 
   proxies: {
     "/dist/brandable_css/": "/base/public/dist/brandable_css/"
@@ -85,7 +89,7 @@ var karmaConfig = {
   // If browser does not capture in given timeout [ms], kill it
   captureTimeout: 60000,
 
-  browserNoActivityTimeout: 20000,
+  browserNoActivityTimeout: 2000000,
 
   // Continuous Integration mode
   // if true, it capture browsers, run tests and exit
@@ -94,6 +98,6 @@ var karmaConfig = {
 
 module.exports = function(config) {
   // config.LOG_DISABLE || config.LOG_ERROR || config.LOG_WARN || config.LOG_INFO || config.LOG_DEBUG
-  karmaConfig.logLevel = config.LOG_ERROR,
+  karmaConfig.logLevel = config.LOG_INFO,
   config.set(karmaConfig);
 };

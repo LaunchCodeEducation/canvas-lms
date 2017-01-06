@@ -1,20 +1,12 @@
 define [
   'ember'
+  'underscore'
   'compiled/gradebook2/GradebookHeaderMenu'
-  'compiled/gradebook2/AssignmentGroupWeightsDialog'
   'compiled/SubmissionDetailsDialog'
-], (Ember, GradebookHeaderMenu, AssignmentGroupWeightsDialog, SubmissionDetailsDialog) ->
+], (Ember, _, GradebookHeaderMenu, SubmissionDetailsDialog) ->
 
   AssignmentsView = Ember.View.extend
     templateName: 'assignments'
-
-    setupDialog: (->
-      @agDialog = new AssignmentGroupWeightsDialog({context: ENV.GRADEBOOK_OPTIONS, assignmentGroups:[], mergeFunction: @mergeObjects})
-    ).on('didInsertElement')
-
-    removeDialog: (->
-      @agDialog.$dialog.dialog('destroy')
-    ).on('willDestroyElement')
 
     mergeObjects: (old_ag, new_ag) ->
       Ember.setProperties(old_ag, new_ag)
@@ -31,6 +23,7 @@ define [
           context_url: ENV.GRADEBOOK_OPTIONS.context_url
           speed_grader_enabled: ENV.GRADEBOOK_OPTIONS.speed_grader_enabled
           change_grade_url: ENV.GRADEBOOK_OPTIONS.change_grade_url
+          isAdmin: _.contains(ENV.current_user_roles, 'admin')
 
         dialogs =
           'assignment_details': GradebookHeaderMenu::showAssignmentDetails
@@ -40,12 +33,6 @@ define [
           'submission': SubmissionDetailsDialog.open
 
         switch dialogType
-          when 'ag_weights'
-            options =
-              context: ENV.GRADEBOOK_OPTIONS
-              assignmentGroups: con.get('assignment_groups').toArray()
-            @agDialog.update(options)
-            @agDialog.$dialog.dialog('open')
           when 'submission'
             dialogs[dialogType]?.call(this, con.get('selectedAssignment'), con.get('selectedStudent'), options)
           else

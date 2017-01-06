@@ -16,7 +16,7 @@
 # with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
-require 'aws-sdk'
+require 'aws-sdk-v1'
 
 class DeveloperKey < ActiveRecord::Base
   include CustomValidations
@@ -48,6 +48,10 @@ class DeveloperKey < ActiveRecord::Base
       event :activate, transitions_to: :active
     end
     state :deleted
+  end
+
+  def redirect_uri=(value)
+    super(value.presence)
   end
 
   def redirect_uris=(value)

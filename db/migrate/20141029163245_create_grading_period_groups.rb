@@ -1,11 +1,11 @@
-class CreateGradingPeriodGroups < ActiveRecord::Migration
+class CreateGradingPeriodGroups < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
     create_table :grading_period_groups do |t|
       t.integer :course_id, :limit => 8
       t.integer :account_id, :limit => 8
-      t.timestamps
+      t.timestamps null: true
     end
 
     add_foreign_key :grading_period_groups, :courses

@@ -1,4 +1,4 @@
-class AddUniqueIndexOnEnrollments < ActiveRecord::Migration
+class AddUniqueIndexOnEnrollments < ActiveRecord::Migration[4.2]
   tag :postdeploy
   disable_ddl_transaction!
 
@@ -25,7 +25,7 @@ class AddUniqueIndexOnEnrollments < ActiveRecord::Migration
                 algorithm: :concurrently
       add_index :enrollments,
                 [:user_id, :type, :course_section_id],
-                where: {associated_user_id: nil, role_name: nil},
+                where: "associated_user_id IS NULL AND role_name IS NULL",
                 unique: true,
                 algorithm: :concurrently
     else

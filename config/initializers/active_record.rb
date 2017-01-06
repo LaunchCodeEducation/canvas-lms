@@ -6,7 +6,12 @@ class ActiveRecord::Base
   public :write_attribute
 
   class << self
-    delegate :distinct_on, :find_ids_in_batches, :find_ids_in_ranges, to: :all
+    delegate :distinct_on, :find_ids_in_batches, to: :all
+
+    def find_ids_in_ranges(opts={}, &block)
+      opts.reverse_merge(:loose => true)
+      all.find_ids_in_ranges(opts, &block)
+    end
 
     attr_accessor :in_migration
   end
@@ -209,13 +214,8 @@ class ActiveRecord::Base
 
   def touch_user
     if self.respond_to?(:user_id) && self.user_id
-      shard = self.user.shard
-      User.where(:id => self.user_id).update_all(:updated_at => Time.now.utc)
       User.connection.after_transaction_commit do
-        shard.activate do
-          User.where(:id => self.user_id).update_all(:updated_at => Time.now.utc)
-        end if shard != Shard.current
-        User.invalidate_cache(self.user_id)
+        User.where(:id => self.user_id).update_all(:updated_at => Time.now.utc)
       end
     end
     true
@@ -452,11 +452,7 @@ class ActiveRecord::Base
     polymorphic_prefix = options.delete(:polymorphic_prefix)
     exhaustive = options.delete(:exhaustive)
 
-    if CANVAS_RAILS4_0
-      reflection = super
-    else
-      reflection = super[name.to_s]
-    end
+    reflection = super[name.to_s]
 
     if reflection.options[:polymorphic].is_a?(Array) ||
         reflection.options[:polymorphic].is_a?(Hash)
@@ -583,21 +579,12 @@ class ActiveRecord::Base
   def save_without_callbacks
     suspend_callbacks(kind: [:validation, :save, (new_record? ? :create : :update)]) { save }
   end
-end
 
-if CANVAS_RAILS4_0
-  ActiveRecord::Associations::Builder::Association::DEPRECATED_OPTIONS.concat([:preload, :eager_load])
-
-  module ForceDeprecationAsError
-    def initialize(*args)
-      old_behavior = ActiveSupport::Deprecation.behavior
-      ActiveSupport::Deprecation.behavior = :raise
-      super
-    ensure
-      ActiveSupport::Deprecation.behavior = old_behavior
+  def self.touch_all_records
+    self.find_ids_in_ranges do |min_id, max_id|
+      self.where(primary_key => min_id..max_id).touch_all
     end
   end
-  ActiveRecord::Associations::Builder::Association.prepend(ForceDeprecationAsError)
 end
 
 ActiveRecord::Relation.class_eval do
@@ -680,9 +667,7 @@ ActiveRecord::Relation.class_eval do
   def in_transaction_in_test?
     return false unless Rails.env.test?
     transaction_method = ActiveRecord::ConnectionAdapters::DatabaseStatements.instance_method(:transaction).source_location.first
-    # don't anchor the end of the regex; test_after_commit does an alias_method_chain, thus
-    # changing the name (and source location) of this method
-    transaction_regex = /^#{Regexp.escape(transaction_method)}:\d+:in `transaction/.freeze
+    transaction_regex = /\A#{Regexp.escape(transaction_method)}:\d+:in `transaction'\z/.freeze
     # transactions due to spec fixtures are _not_in the callstack, so we only need to find 1
     !!caller.find { |s| s =~ transaction_regex && !s.include?('spec_helper.rb') }
   end
@@ -795,7 +780,7 @@ ActiveRecord::Relation.class_eval do
     raise ArgumentError unless args.length == 1
 
     column = args.first.first
-    values = args.first.last
+    values = Array(args.first.last)
     original_length = values.length
     values = values.compact
 
@@ -819,7 +804,7 @@ ActiveRecord::Relation.class_eval do
     self.activate do |relation|
       relation.transaction do
         ids_to_touch = relation.not_recently_touched.lock(:no_key_update).order(:id).pluck(:id)
-        unscoped.where(id: ids_to_touch).update_all(updated_at: Time.now.utc)
+        unscoped.where(id: ids_to_touch).update_all(updated_at: Time.now.utc) if ids_to_touch.any?
       end
     end
   end
@@ -878,19 +863,28 @@ ActiveRecord::Relation.class_eval do
   # returns 2 ids at a time (the min and the max of a range), working through
   # the primary key from smallest to largest.
   def find_ids_in_ranges(options = {})
+    is_integer = columns_hash[primary_key.to_s].type == :integer
+    loose_mode = options[:loose] && is_integer
+    # loose_mode: if we don't care about getting exactly batch_size ids in between
+    # don't get the max - just get the min and add batch_size so we get that many _at most_
+    values = loose_mode ? "min(id)" : "min(id), max(id)"
+
     batch_size = options[:batch_size].try(:to_i) || 1000
-    subquery_scope = except(:select).select("#{quoted_table_name}.#{primary_key} as id").reorder(primary_key).limit(batch_size)
+    subquery_scope = except(:select).select("#{quoted_table_name}.#{primary_key} as id").reorder(primary_key).limit(loose_mode ? 1 : batch_size)
     subquery_scope = subquery_scope.where("#{quoted_table_name}.#{primary_key} <= ?", options[:end_at]) if options[:end_at]
 
     first_subquery_scope = options[:start_at] ? subquery_scope.where("#{quoted_table_name}.#{primary_key} >= ?", options[:start_at]) : subquery_scope
-    ids = connection.select_rows("select min(id), max(id) from (#{first_subquery_scope.to_sql}) as subquery").first
+
+    ids = connection.select_rows("select #{values} from (#{first_subquery_scope.to_sql}) as subquery").first
 
     while ids.first.present?
-      ids.map!(&:to_i) if columns_hash[primary_key.to_s].type == :integer
+      ids.map!(&:to_i) if is_integer
+      ids << ids.first + batch_size if loose_mode
+
       yield(*ids)
       last_value = ids.last
       next_subquery_scope = subquery_scope.where(["#{quoted_table_name}.#{primary_key}>?", last_value])
-      ids = connection.select_rows("select min(id), max(id) from (#{next_subquery_scope.to_sql}) as subquery").first
+      ids = connection.select_rows("select #{values} from (#{next_subquery_scope.to_sql}) as subquery").first
     end
   end
 end
@@ -925,16 +919,11 @@ module UpdateAndDeleteWithJoins
 
           sql = stmt.to_sql
 
-          join_sql = nil
-          if CANVAS_RAILS4_0
-            join_sql = arel.join_sql.to_s
-          else
-            collector = Arel::Collectors::Bind.new
-            arel.join_sources.each do |node|
-              connection.visitor.accept(node, collector)
-            end
-            join_sql = collector.compile(arel.bind_values.map{|bvs| connection.quote(*bvs.reverse)})
+          collector = Arel::Collectors::Bind.new
+          arel.join_sources.each do |node|
+            connection.visitor.accept(node, collector)
           end
+          join_sql = collector.compile(arel.bind_values.map{|bvs| connection.quote(*bvs.reverse)})
           tables, join_conditions = deconstruct_joins(join_sql)
 
           unless tables.empty?
@@ -946,20 +935,11 @@ module UpdateAndDeleteWithJoins
           scope = self
           join_conditions.each { |join| scope = scope.where(join) }
           binds = scope.bind_values.dup
-          if CANVAS_RAILS4_0
-            where_statements = scope.arel.constraints.map do |node|
-              connection.visitor.accept(node) do
-                connection.quote(*binds.shift.reverse)
-              end
-            end
-            sql.concat('WHERE ' + where_statements.join(' AND '))
-          else
-            sql_string = Arel::Collectors::Bind.new
-            scope.arel.constraints.map do |node|
-              connection.visitor.accept(node, sql_string)
-            end
-            sql.concat('WHERE ' + sql_string.compile(binds.map{|bvs| connection.quote(*bvs.reverse)}))
+          sql_string = Arel::Collectors::Bind.new
+          scope.arel.constraints.map do |node|
+            connection.visitor.accept(node, sql_string)
           end
+          sql.concat('WHERE ' + sql_string.compile(binds.map{|bvs| connection.quote(*bvs.reverse)}))
 
           connection.update(sql, "#{name} Update")
         else
@@ -979,7 +959,7 @@ module UpdateAndDeleteWithJoins
           when 'PostgreSQL'
             sql = "DELETE FROM #{quoted_table_name} "
 
-            join_sql = CANVAS_RAILS4_0 ? arel.join_sql.to_s : arel.join_sources.map(&:to_sql).join(" ")
+            join_sql = arel.join_sources.map(&:to_sql).join(" ")
             tables, join_conditions = deconstruct_joins(join_sql)
 
             sql.concat('USING ')
@@ -990,20 +970,11 @@ module UpdateAndDeleteWithJoins
             join_conditions.each { |join| scope = scope.where(join) }
 
             binds = scope.bind_values.dup
-            if CANVAS_RAILS4_0
-              where_statements = scope.arel.constraints.map do |node|
-                connection.visitor.accept(node) do
-                  connection.quote(*binds.shift.reverse)
-                end
-              end
-              sql.concat('WHERE ' + where_statements.join(' AND '))
-            else
-              sql_string = Arel::Collectors::Bind.new
-              scope.arel.constraints.map do |node|
-                connection.visitor.accept(node, sql_string)
-              end
-              sql.concat('WHERE ' + sql_string.compile(binds.map{|bvs| connection.quote(*bvs.reverse)}))
+            sql_string = Arel::Collectors::Bind.new
+            scope.arel.constraints.map do |node|
+              connection.visitor.accept(node, sql_string)
             end
+            sql.concat('WHERE ' + sql_string.compile(binds.map{|bvs| connection.quote(*bvs.reverse)}))
           else
             raise "Joins in delete not supported!"
         end
@@ -1123,6 +1094,13 @@ class ActiveRecord::Migration
     def has_postgres_proc?(procname)
       connection.select_value("SELECT COUNT(*) FROM pg_proc WHERE proname='#{procname}'").to_i != 0
     end
+
+    if CANVAS_RAILS4_2
+      def [](version)
+        raise ArgumentError unless version == 4.2
+        self
+      end
+    end
   end
 
   def connection
@@ -1228,7 +1206,7 @@ ActiveRecord::ConnectionAdapters::SchemaStatements.class_eval do
     column = options[:column]
     case self.adapter_name
     when 'PostgreSQL'
-      foreign_key_name = CANVAS_RAILS4_0 ? foreign_key_name(from_table, column, options) : foreign_key_name(from_table, options)
+      foreign_key_name = foreign_key_name(from_table, options)
       query = supports_delayed_constraint_validation? ? 'convalidated' : 'conname'
       schema = @config[:use_qualified_names] ? quote(shard.name) : 'current_schema()'
       value = select_value("SELECT #{query} FROM pg_constraint INNER JOIN pg_namespace ON pg_namespace.oid=connamespace WHERE conname='#{foreign_key_name}' AND nspname=#{schema}")
@@ -1270,17 +1248,9 @@ ActiveRecord::Associations::CollectionAssociation.class_eval do
 end
 
 module UnscopeCallbacks
-  if CANVAS_RAILS4_0
-    def run_callbacks(kind)
-      scope = self.class.base_class.unscoped
-      scope.default_scoped = true
-      scope.scoping { super }
-    end
-  else
-    def __run_callbacks__(*args)
-      scope = self.class.base_class.unscoped
-      scope.scoping { super }
-    end
+  def __run_callbacks__(*args)
+    scope = self.class.base_class.unscoped
+    scope.scoping { super }
   end
 end
 ActiveRecord::Base.send(:include, UnscopeCallbacks)
@@ -1296,71 +1266,41 @@ ActiveRecord::DynamicMatchers::Method.class_eval do
   end
 end
 
-if CANVAS_RAILS4_0
-  module PreloaderShim
-    def initialize(*args)
-      super unless args.empty?
-    end
-
-    def preload(*args)
-      if args.size == 1
-        super
-      else
-        records, associations, preload_scope = args
-        @records       = Array.wrap(records).compact.uniq
-        @associations  = Array.wrap(associations)
-        @preload_scope = preload_scope || ActiveRecord::Relation.new(nil, nil)
-        run
-      end
-    end
+# see https://github.com/rails/rails/issues/18659
+class AttributesDefiner
+  # defines attribute methods when loaded through Marshal
+  def initialize(klass)
+    @klass = klass
   end
 
-  ActiveRecord::Associations::Preloader.send(:prepend, PreloaderShim)
+  def marshal_dump
+    @klass
+  end
+
+  def marshal_load(klass)
+    klass.define_attribute_methods
+    @klass = klass
+  end
 end
 
-unless CANVAS_RAILS4_0
-  # see https://github.com/rails/rails/issues/18659
-  class AttributesDefiner
-    # defines attribute methods when loaded through Marshal
-    def initialize(klass)
-      @klass = klass
-    end
-
-    def marshal_dump
-      @klass
-    end
-
-    def marshal_load(klass)
-      klass.define_attribute_methods
-      @klass = klass
-    end
+module DefineAttributeMethods
+  def init_internals
+    @define_attributes_helper = AttributesDefiner.new(self.class)
+    super
   end
-
-  module DefineAttributeMethods
-    def init_internals
-      @define_attributes_helper = AttributesDefiner.new(self.class)
-      super
-    end
-  end
-  ActiveRecord::Base.include(DefineAttributeMethods)
 end
+ActiveRecord::Base.include(DefineAttributeMethods)
 
 module SkipTouchCallbacks
   module Base
     def skip_touch_callbacks(name)
-      if CANVAS_RAILS4_0
-        self.suspend_callbacks("(belongs_to_touch_after_save_or_destroy_for_#{name})") do
-          yield
-        end
+      @skip_touch_callbacks ||= Set.new
+      if @skip_touch_callbacks.include?(name)
+        yield
       else
-        @skip_touch_callbacks ||= Set.new
-        if @skip_touch_callbacks.include?(name)
-          yield
-        else
-          @skip_touch_callbacks << name
-          yield
-          @skip_touch_callbacks.delete(name)
-        end
+        @skip_touch_callbacks << name
+        yield
+        @skip_touch_callbacks.delete(name)
       end
     end
 
@@ -1378,58 +1318,15 @@ module SkipTouchCallbacks
   end
 end
 ActiveRecord::Base.singleton_class.include(SkipTouchCallbacks::Base)
+ActiveRecord::Associations::Builder::BelongsTo.singleton_class.prepend(SkipTouchCallbacks::BelongsTo)
 
-# This code is copied directly out of ActiveRecord with the exception of 2 lines.
-# The reason we need it it comes down to page views and other "Shardless" classes.
-# PageView is a class that we don’t store data for in postgres, but instead in Cassandra.
-# So it doesn't have a true "shard", but for the purposes of the AR interface in switchman,
-# it's "shard" is the birth shard, and the "conn" line here was pulling a connection
-# to it just to do bind variable merging (which doesn't actually need a real
-# postgres connection).  In Rails 4.2 this won't be a problem anymore,
-# so yank this monkey patch when we're on Rails 4.2
-module MultiMergeWithoutConnection
-  def merge_multi_values
-    lhs_wheres = relation.where_values
-    rhs_wheres = values[:where] || []
-
-    lhs_binds  = relation.bind_values
-    rhs_binds  = values[:bind] || []
-
-    removed, kept = partition_overwrites(lhs_wheres, rhs_wheres)
-
-    where_values = kept + rhs_wheres
-    bind_values  = filter_binds(lhs_binds, removed) + rhs_binds
-
-    # conn = relation.klass.connection
-    # commented because we don't actually need a connection to substitute
-    bv_index = 0
-    where_values.map! do |node|
-      if Arel::Nodes::Equality === node && Arel::Nodes::BindParam === node.right
-        # substitute = conn.substitute_at(bind_values[bv_index].first, bv_index)
-        # commented so we can just pull in the BindParam class and use it directly
-        # rather than establishing a connection to the db first.
-        substitute = Arel::Nodes::BindParam.new "$#{bv_index + 1}"
-        bv_index += 1
-        Arel::Nodes::Equality.new(node.left, substitute)
-      else
-        node
-      end
+module ReadonlyCloning
+  def calculate_changes_from_defaults
+    if @readonly_clone
+      @changed_attributes = @changed_attributes.dup if @changed_attributes # otherwise changes to the clone will dirty the original
+    else
+      super # no reason to do this if we're creating a readonly clone - can take a long time with serialized columns
     end
-
-    relation.where_values = where_values
-    relation.bind_values  = bind_values
-
-    if values[:reordering]
-      # override any order specified in the original relation
-      relation.reorder! values[:order]
-    elsif values[:order]
-      # merge in order_values from r
-      relation.order! values[:order]
-    end
-
-    relation.extend(*values[:extending]) unless values[:extending].blank?
   end
 end
-ActiveRecord::Relation::Merger.prepend(MultiMergeWithoutConnection) if CANVAS_RAILS4_0
-
-ActiveRecord::Associations::Builder::BelongsTo.singleton_class.prepend(SkipTouchCallbacks::BelongsTo) unless CANVAS_RAILS4_0
+ActiveRecord::Base.prepend(ReadonlyCloning)

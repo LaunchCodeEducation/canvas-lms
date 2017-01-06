@@ -1,4 +1,4 @@
-class CreateFavorites < ActiveRecord::Migration
+class CreateFavorites < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
@@ -7,7 +7,7 @@ class CreateFavorites < ActiveRecord::Migration
       t.integer :context_id, :limit => 8
       t.string :context_type
 
-      t.timestamps
+      t.timestamps null: true
     end
   end
 

@@ -14,7 +14,6 @@ describe 'dashcards' do
     before do
       @course = course(active_all: true)
       course_with_student_logged_in(active_all: true)
-      Account.default.enable_feature! :use_new_styles
     end
 
     it 'should show the toggle button for dashcard in new UI', priority: "1", test_id: 222506 do
@@ -157,6 +156,14 @@ describe 'dashcards' do
         enrollment.accept!
       end
 
+      it 'should initially match color to the dashcard', priority: "1", test_id: 268713 do
+        get '/calendar'
+        calendar_color = f(".context-list-toggle-box.group_course_#{@course1.id}").style('background-color')
+        get '/'
+        hero = f("div[aria-label='#{@course1.name}'] .ic-DashboardCard__header_hero").style('background-color')
+        expect(hero).to eq(calendar_color)
+      end
+
       it 'should customize color by selecting from color palet in the calendar page', priority: "1", test_id: 239994 do
         select_color_pallet_from_calendar_page
 
@@ -280,7 +287,6 @@ describe 'dashcards' do
     before :each do
       @course = course(active_all: true)
       course_with_teacher_logged_in(active_all: true)
-      Account.default.enable_feature! :use_new_styles
       @student = user_with_pseudonym(username: 'student@example.com', active_all: 1)
       enrollment = student_in_course(course: @course, user: @student)
       enrollment.accept!

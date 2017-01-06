@@ -1,4 +1,4 @@
-class CreateMigrationIssues < ActiveRecord::Migration
+class CreateMigrationIssues < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
@@ -11,7 +11,7 @@ class CreateMigrationIssues < ActiveRecord::Migration
       t.integer :error_report_id, :limit => 8
       t.string :error_message
 
-      t.timestamps
+      t.timestamps null: true
     end
     add_index :migration_issues, :content_migration_id
   end

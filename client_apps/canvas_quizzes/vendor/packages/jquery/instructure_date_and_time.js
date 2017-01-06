@@ -8,7 +8,6 @@ requirejs.config({
       'timezone_core': 'canvas/timezone_core',
       'moment': 'canvas/moment',
       'moment_formats': 'canvas/moment_formats',
-      'locale_converter': 'canvas/locale_converter',
       'bower': 'canvas/bower',
       'compiled': 'canvas/compiled',
       'jquery': 'canvas/vendor/jquery-1.7.2',
@@ -16,7 +15,8 @@ requirejs.config({
       'vendor': 'canvas/vendor',
       'timezone': 'canvas/timezone',
       'jquery.instructure_date_and_time': 'canvas/jquery.instructure_date_and_time',
-      'i18nObj': 'i18n'
+      'i18nObj': 'i18n',
+      'moment': 'canvas/symlink_to_node_modules/moment/moment'
     },
 
     'canvas/jquery.instructure_date_and_time': {

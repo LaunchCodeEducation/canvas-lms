@@ -1,4 +1,4 @@
-class CreateCanvadocsTable < ActiveRecord::Migration
+class CreateCanvadocsTable < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
@@ -6,7 +6,7 @@ class CreateCanvadocsTable < ActiveRecord::Migration
       t.string :document_id
       t.string :process_state
       t.integer :attachment_id, limit: 8, null: false
-      t.timestamps
+      t.timestamps null: true
     end
     add_index :canvadocs, :document_id, :unique => true
     add_index :canvadocs, :attachment_id

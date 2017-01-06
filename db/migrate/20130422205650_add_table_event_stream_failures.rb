@@ -1,4 +1,4 @@
-class AddTableEventStreamFailures < ActiveRecord::Migration
+class AddTableEventStreamFailures < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
@@ -9,7 +9,7 @@ class AddTableEventStreamFailures < ActiveRecord::Migration
       t.text :payload, :null => false
       t.string :exception
       t.text :backtrace
-      t.timestamps
+      t.timestamps null: true
     end
   end
 

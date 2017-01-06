@@ -91,7 +91,7 @@ class Feature
   #
   #     # optional hook to be called before after a feature flag change
   #     # queue a delayed_job to perform any nontrivial processing
-  #     after_state_change_proc:  ->(context, old_state, new_state) { ... }
+  #     after_state_change_proc:  ->(user, context, old_state, new_state) { ... }
   #   }
 
   def self.register(feature_hash)
@@ -117,16 +117,6 @@ that they will need to update their Google Docs integration.
 END
       applies_to: 'RootAccount',
       state: 'hidden',
-      root_opt_in: true
-    },
-    'use_new_styles' =>
-    {
-      display_name: -> { I18n.t('New UI') },
-      description: -> { I18n.t(<<END) },
-This enables an updated navigation, new dashboard and a simpler, more modern look and feel.
-END
-      applies_to: 'RootAccount',
-      state: ENV['CANVAS_FORCE_USE_NEW_STYLES'] ? 'on' : 'allowed',
       root_opt_in: true
     },
     'epub_export' =>
@@ -241,8 +231,7 @@ END
 Allow users to view and use external tools configured for LOR.
 END
       applies_to: 'User',
-      state: 'hidden',
-      beta: true
+      state: 'hidden'
     },
     'lor_for_account' =>
     {
@@ -251,8 +240,7 @@ END
 Allow users to view and use external tools configured for LOR.
 END
       applies_to: 'RootAccount',
-      state: 'hidden',
-      beta: true
+      state: 'hidden'
     },
     'multiple_grading_periods' =>
     {
@@ -319,19 +307,38 @@ END
         beta: true,
         root_opt_in: true
       },
-    'bulk_sis_grade_export' =>
+    'new_sis_integrations' =>
       {
-          display_name: -> { I18n.t('Allow Bulk Grade Export to SIS') },
-          description:  -> { I18n.t('Allows teachers to mark grade data to be exported in bulk to SIS integrations.') },
+          display_name: -> { I18n.t('Enable new SIS integration settings') },
+          description:  -> { I18n.t('Make new settings for SIS integrations visible and active') },
           applies_to: 'RootAccount',
           state: 'hidden',
           root_opt_in: true,
           beta: true
       },
+    'bulk_sis_grade_export' =>
+      {
+        display_name: -> { I18n.t('Allow Bulk Grade Export to SIS') },
+        description:  -> { I18n.t('Allows teachers to mark grade data to be exported in bulk to SIS integrations.') },
+        applies_to: 'RootAccount',
+        state: 'hidden',
+        root_opt_in: true,
+        beta: true
+      },
     'notification_service' =>
     {
       display_name: -> { I18n.t('Use remote service for notifications') },
       description: -> { I18n.t('Allow the ability to send notifications through our dispatch queue') },
+      applies_to: 'RootAccount',
+      state: 'hidden',
+      beta: true,
+      development: false,
+      root_opt_in: false
+    },
+    'better_scheduler' =>
+    {
+      display_name: -> { I18n.t('Use the new scheduler') },
+      description: -> { I18n.t('Uses the new scheduler and its functionality') },
       applies_to: 'RootAccount',
       state: 'hidden',
       beta: true,
@@ -356,13 +363,15 @@ END
       root_opt_in: true,
       beta: true
     },
-    'gradebook_performance' => {
-      display_name: -> { I18n.t('Gradebook Performance') },
-      description: -> { I18n.t('Performance enhancements for the Gradebook') },
-      applies_to: 'Course',
+    'dashcard_reordering' =>
+    {
+      display_name: -> { I18n.t('Allow Reorder Dashboard Cards') },
+      description: -> { I18n.t('Allow dashboard cards to be reordered for each user.') },
+      applies_to: 'RootAccount',
       state: 'hidden',
+      beta: true,
       development: true,
-      root_opt_in: true
+      root_opt_in: false
     },
     'anonymous_grading' => {
       display_name: -> { I18n.t('Anonymous Grading') },
@@ -429,10 +438,16 @@ END
       display_name: -> { I18n.t('Mastery Paths') },
       description: -> { I18n.t('Configure individual learning paths for students based on assessment results.') },
       applies_to: 'Course',
-      state: 'hidden',
+      state: 'allowed',
       beta: true,
       development: false,
-      root_opt_in: false,
+      root_opt_in: true,
+      after_state_change_proc:  ->(user, context, _old_state, new_state) {
+        if %w(on allowed).include?(new_state) && context.is_a?(Account)
+          @service_account = ConditionalRelease::Setup.new(context.id, user.id)
+          @service_account.activate!
+        end
+      }
     },
     'wrap_calendar_event_titles' =>
     {
@@ -459,6 +474,36 @@ END
       state: 'hidden',
       beta: true,
       root_opt_in: true
+    },
+    'plagiarism_detection_platform' =>
+    {
+      display_name: -> { I18n.t('Plagiarism Detection Platform') },
+      description: -> { I18n.t('Enable the plagiarism detection platform') },
+      applies_to: 'RootAccount',
+      state: 'hidden',
+      beta: true,
+      root_opt_in: true,
+      development: true,
+    },
+    'master_courses' =>
+    {
+      display_name: -> { I18n.t('Master Courses') },
+      description: -> { I18n.t('Enable the creation of Master Courses') },
+      applies_to: 'RootAccount',
+      state: 'hidden',
+      beta: true,
+      development: true,
+    },
+    'offline_web_export' =>
+    {
+      display_name: -> { I18n.t('Offline Web Export') },
+      description: -> { I18n.t(<<END) },
+      This enables a course setting to allow students to export the course as an offline web zip folder
+END
+      applies_to: 'Account',
+      state: 'hidden',
+      beta: true,
+      development: true
     }
   )
 

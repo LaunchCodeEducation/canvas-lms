@@ -43,7 +43,8 @@ class OutcomesController < ApplicationController
            :COMMON_CORE_GROUP_URL => common_core_group_url,
            :PERMISSIONS => {
              :manage_outcomes => @context.grants_right?(@current_user, session, :manage_outcomes),
-             :manage_rubrics => @context.grants_right?(@current_user, session, :manage_rubrics)
+             :manage_rubrics => @context.grants_right?(@current_user, session, :manage_rubrics),
+             :manage_courses => @context.grants_right?(@current_user, session, :manage_courses)
            })
   end
 
@@ -64,7 +65,7 @@ class OutcomesController < ApplicationController
       if @context == @outcome.context
         codes = "all"
       else
-        codes = @context.all_courses.select(:id).map(&:asset_string)
+        codes = @context.all_courses.pluck(:id).map{|id| "course_#{id}"}
       end
     end
     @alignments = @outcome.alignments.active.for_context(@context)
@@ -97,7 +98,7 @@ class OutcomesController < ApplicationController
       if @context == @outcome.context
         codes = "all"
       else
-        codes = @context.all_courses.select(:id).map(&:asset_string)
+        codes = @context.all_courses.pluck(:id).map{|id| "course_#{id}"}
       end
     end
     @results = @outcome.learning_outcome_results.for_context_codes(codes).custom_ordering(params[:sort])

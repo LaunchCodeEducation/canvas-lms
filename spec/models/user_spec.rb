@@ -203,7 +203,10 @@ describe User do
       discussion_topic_model(:context => @course)
 
       @dashboard_key = StreamItemCache.recent_stream_items_key(@teacher)
-      @context_keys = @contexts.map { |context|
+    end
+
+    let(:context_keys) do
+      @contexts.map { |context|
         StreamItemCache.recent_stream_items_key(@teacher, context.class.base_class.name, context.id)
       }
     end
@@ -212,7 +215,7 @@ describe User do
       enable_cache do
         @teacher.cached_recent_stream_items(:contexts => @contexts)
         expect(Rails.cache.read(@dashboard_key)).to be_blank
-        @context_keys.each do |context_key|
+        context_keys.each do |context_key|
           expect(Rails.cache.read(context_key)).not_to be_blank
         end
       end
@@ -222,7 +225,7 @@ describe User do
       enable_cache do
         @teacher.cached_recent_stream_items # cache the dashboard items
         expect(Rails.cache.read(@dashboard_key)).not_to be_blank
-        @context_keys.each do |context_key|
+        context_keys.each do |context_key|
           expect(Rails.cache.read(context_key)).to be_blank
         end
       end
@@ -479,6 +482,15 @@ describe User do
     expect(@user.recent_feedback(:contexts => [@course])).not_to be_empty
   end
 
+  it "should include recent feedback for student view users" do
+    @course = course_model
+    @course.offer!
+    @assignment = @course.assignments.create :title => "Test Assignment", :points_possible => 10
+    test_student = @course.student_view_student
+    @assignment.grade_student test_student, :grade => 9
+    expect(test_student.recent_feedback).not_to be_empty
+  end
+
   it "should not include recent feedback for unpublished assignments" do
     create_course_with_student_and_assignment
     @assignment.grade_student @user, :grade => 9
@@ -597,6 +609,22 @@ describe User do
           StudentEnrollment.create!(:course => courseX, :user => alice, :workflow_state => 'completed')
         end
         expect(alice.courses_with_primary_enrollment.size).to eq 0
+      end
+
+      it 'filters out completed-by-date enrollments for the correct user' do
+        @shard1.activate do
+          @user = User.create!(:name => 'user')
+          account = Account.create!
+          courseX = account.courses.build
+          courseX.workflow_state = 'available'
+          courseX.start_at = 7.days.ago
+          courseX.conclude_at = 2.days.ago
+          courseX.restrict_enrollments_to_course_dates = true
+          courseX.save!
+          StudentEnrollment.create!(:course => courseX, :user => @user, :workflow_state => 'active')
+        end
+        expect(@user.courses_with_primary_enrollment.count).to eq 0
+        expect(@user.courses_with_primary_enrollment(:current_and_invited_courses, nil, :include_completed_courses => true).count).to eq 1
       end
 
       it 'works with favorite_courses' do
@@ -800,7 +828,7 @@ describe User do
     # should be putting more than a handful of users into the search results...
     # right?
     def search_messageable_users(viewing_user, *args)
-      viewing_user.search_messageable_users(*args).paginate(:page => 1, :per_page => 20)
+      viewing_user.address_book.search_users(*args).paginate(:page => 1, :per_page => 20)
     end
 
     it "should include yourself even when not enrolled in courses" do
@@ -955,16 +983,17 @@ describe User do
       # other_section_user is a teacher in one course, student in another
       @other_course.enroll_user(@other_section_user, 'TeacherEnrollment', :enrollment_state => 'active')
 
-      messageable_users = search_messageable_users(@admin)
-      this_section_user = messageable_users.detect{|u| u.id == @this_section_user.id}
-      expect(this_section_user.common_courses.keys).to include @first_course.id
-      expect(this_section_user.common_courses[@first_course.id].sort).to eql ['StudentEnrollment', 'TaEnrollment']
+      address_book = @admin.address_book
+      search_messageable_users(@admin)
+      common_courses = address_book.common_courses(@this_section_user)
+      expect(common_courses.keys).to include @first_course.id
+      expect(common_courses[@first_course.id].sort).to eql ['StudentEnrollment', 'TaEnrollment']
 
-      two_context_guy = messageable_users.detect{|u| u.id == @other_section_user.id}
-      expect(two_context_guy.common_courses.keys).to include @first_course.id
-      expect(two_context_guy.common_courses[@first_course.id].sort).to eql ['StudentEnrollment']
-      expect(two_context_guy.common_courses.keys).to include @other_course.id
-      expect(two_context_guy.common_courses[@other_course.id].sort).to eql ['TeacherEnrollment']
+      common_courses = address_book.common_courses(@other_section_user)
+      expect(common_courses.keys).to include @first_course.id
+      expect(common_courses[@first_course.id].sort).to eql ['StudentEnrollment']
+      expect(common_courses.keys).to include @other_course.id
+      expect(common_courses[@other_course.id].sort).to eql ['TeacherEnrollment']
     end
 
     it "should include users with no shared contexts iff admin" do
@@ -1047,38 +1076,38 @@ describe User do
       end
     end
 
-    context "admin_context" do
+    context "is_admin" do
       it "should find users in the course" do
-        expect(search_messageable_users(@admin, :context => @course.asset_string, :admin_context => @course).map(&:id).sort).to eq(
+        expect(search_messageable_users(@admin, context: @course.asset_string, is_admin: true).map(&:id).sort).to eq(
           [@this_section_teacher.id, @this_section_user.id, @other_section_user.id, @other_section_teacher.id]
         )
       end
 
       it "should find users in the section" do
-        expect(search_messageable_users(@admin, :context => "section_#{@course.default_section.id}", :admin_context => @course.default_section).map(&:id).sort).to eq(
+        expect(search_messageable_users(@admin, context: "section_#{@course.default_section.id}", is_admin: true).map(&:id).sort).to eq(
           [@this_section_teacher.id, @this_section_user.id]
         )
       end
 
       it "should find users in the group" do
-        expect(search_messageable_users(@admin, :context => @group.asset_string, :admin_context => @group).map(&:id).sort).to eq(
+        expect(search_messageable_users(@admin, context: @group.asset_string, is_admin: true).map(&:id).sort).to eq(
           [@this_section_user.id]
         )
       end
     end
 
-    context "strict_checks" do
+    context "weak_checks" do
       it "should optionally show invited enrollments" do
         course(:active_all => true)
         student_in_course(:user_state => 'creation_pending')
-        expect(search_messageable_users(@teacher, :strict_checks => false).map(&:id)).to include @student.id
+        expect(search_messageable_users(@teacher, weak_checks: true).map(&:id)).to include @student.id
       end
 
       it "should optionally show pending enrollments in unpublished courses" do
         course()
         teacher_in_course(:active_user => true)
         student_in_course()
-        expect(search_messageable_users(@teacher, :strict_checks => false, :context => @course.asset_string, :admin_context => @course).map(&:id)).to include @student.id
+        expect(search_messageable_users(@teacher, weak_checks: true, context: @course.asset_string, is_admin: true).map(&:id)).to include @student.id
       end
     end
   end
@@ -1342,7 +1371,7 @@ describe User do
       (1..3).each do |x|
         course = course_with_student(:course_name => "Course #{x}", :user => @user, :active_all => true).course
         @courses << course
-        @user.favorites.create!(context: course)
+        @user.favorites.first_or_create!(:context_type => "Course", :context_id => course)
       end
 
       @user.save!
@@ -1367,7 +1396,7 @@ describe User do
         (4..6).each do |x|
           course = course_with_student(:course_name => "Course #{x}", :user => @user, :active_all => true, :account => account2).course
           @courses << course
-          @user.favorites.create!(context: course)
+          @user.favorites.first_or_create!(:context_type => "Course", :context_id => course)
         end
       end
 
@@ -1375,6 +1404,23 @@ describe User do
         @user.favorites.by("Course").where("id % 2 = 0").destroy_all
         expect(@user.menu_courses.size).to eql(@courses.length / 2)
       end
+    end
+  end
+
+  describe "adding to favorites on enrollment" do
+    it "doesn't add a favorite if no course favorites already exist" do
+      course_with_student(:active_all => true)
+      expect(@student.favorites.count).to eq 0
+    end
+
+    it "adds a favorite if any course favorites already exist" do
+      u = User.create!
+
+      c1 = course_with_student(:active_all => true, :user => u).course
+      u.favorites.create!(:context_type => "Course", :context_id => c1)
+
+      c2 = course_with_student(:active_all => true, :user => u).course
+      expect(u.favorites.where(:context_type => "Course", :context_id => c2).exists?).to eq true
     end
   end
 
@@ -1464,22 +1510,22 @@ describe User do
 
     it "should create a copy of an existing pseudonym" do
       # from unrelated account
-      user_with_pseudonym(:active_all => 1, :account => @account2, :username => 'unrelated@example.com', :password => 'abcdef')
+      user_with_pseudonym(:active_all => 1, :account => @account2, :username => 'unrelated@example.com', :password => 'abcdefgh')
       new_pseudonym = @user.find_or_initialize_pseudonym_for_account(@account1)
       expect(new_pseudonym).not_to be_nil
       expect(new_pseudonym).to be_new_record
       expect(new_pseudonym.unique_id).to eq 'unrelated@example.com'
 
       # from default account
-      @user.pseudonyms.create!(:unique_id => 'default@example.com', :password => 'abcdef', :password_confirmation => 'abcdef')
-      @user.pseudonyms.create!(:account => @account3, :unique_id => 'preferred@example.com', :password => 'abcdef', :password_confirmation => 'abcdef')
+      @user.pseudonyms.create!(:unique_id => 'default@example.com', :password => 'abcdefgh', :password_confirmation => 'abcdefgh')
+      @user.pseudonyms.create!(:account => @account3, :unique_id => 'preferred@example.com', :password => 'abcdefgh', :password_confirmation => 'abcdefgh')
       new_pseudonym = @user.find_or_initialize_pseudonym_for_account(@account1)
       expect(new_pseudonym).not_to be_nil
       expect(new_pseudonym).to be_new_record
       expect(new_pseudonym.unique_id).to eq 'default@example.com'
 
       # from site admin account
-      @user.pseudonyms.create!(:account => Account.site_admin, :unique_id => 'siteadmin@example.com', :password => 'abcdef', :password_confirmation => 'abcdef')
+      @user.pseudonyms.create!(:account => Account.site_admin, :unique_id => 'siteadmin@example.com', :password => 'abcdefgh', :password_confirmation => 'abcdefgh')
       new_pseudonym = @user.find_or_initialize_pseudonym_for_account(@account1)
       expect(new_pseudonym).not_to be_nil
       expect(new_pseudonym).to be_new_record
@@ -1493,7 +1539,7 @@ describe User do
 
       # from unrelated account, if other options are not viable
       user2 = User.create!
-      @account1.pseudonyms.create!(:user => user2, :unique_id => 'preferred@example.com', :password => 'abcdef', :password_confirmation => 'abcdef')
+      @account1.pseudonyms.create!(:user => user2, :unique_id => 'preferred@example.com', :password => 'abcdefgh', :password_confirmation => 'abcdefgh')
       @user.pseudonyms.detect { |p| p.account == Account.site_admin }.update_attribute(:password_auto_generated, true)
       Account.default.authentication_providers.create!(:auth_type => 'cas')
       Account.default.authentication_providers.first.move_to_bottom
@@ -1502,7 +1548,7 @@ describe User do
       expect(new_pseudonym).to be_new_record
       expect(new_pseudonym.unique_id).to eq 'unrelated@example.com'
       new_pseudonym.save!
-      expect(new_pseudonym.valid_password?('abcdef')).to be_truthy
+      expect(new_pseudonym.valid_password?('abcdefgh')).to be_truthy
     end
 
     it "should not create a new one when there are no viable candidates" do
@@ -1518,13 +1564,13 @@ describe User do
       @account3.authentication_providers.create!(:auth_type => 'cas')
       @account3.authentication_providers.first.move_to_bottom
       expect(@account3).to be_delegated_authentication
-      @user.pseudonyms.create!(:account => @account3, :unique_id => 'jacob@instructure.com', :password => 'abcdef', :password_confirmation => 'abcdef')
+      @user.pseudonyms.create!(:account => @account3, :unique_id => 'jacob@instructure.com', :password => 'abcdefgh', :password_confirmation => 'abcdefgh')
       expect(@user.find_or_initialize_pseudonym_for_account(@account1)).to be_nil
 
       # conflict
       @user2 = User.create! { |u| u.workflow_state = 'registered' }
-      @user2.pseudonyms.create!(:account => @account1, :unique_id => 'jt@instructure.com', :password => 'abcdef', :password_confirmation => 'abcdef')
-      @user.pseudonyms.create!(:unique_id => 'jt@instructure.com', :password => 'ghijkl', :password_confirmation => 'ghijkl')
+      @user2.pseudonyms.create!(:account => @account1, :unique_id => 'jt@instructure.com', :password => 'abcdefgh', :password_confirmation => 'abcdefgh')
+      @user.pseudonyms.create!(:unique_id => 'jt@instructure.com', :password => 'ghijklmn', :password_confirmation => 'ghijklmn')
       expect(@user.find_or_initialize_pseudonym_for_account(@account1)).to be_nil
     end
 
@@ -1534,7 +1580,7 @@ describe User do
       before :once do
         @shard1.activate do
           account = Account.create!
-          user_with_pseudonym(:active_all => 1, :account => account, :password => 'qwerty')
+          user_with_pseudonym(:active_all => 1, :account => account, :password => 'qwertyuiop')
         end
       end
 
@@ -1548,7 +1594,7 @@ describe User do
         p = @user.find_or_initialize_pseudonym_for_account(Account.site_admin)
         expect(p).to be_new_record
         p.save!
-        expect(p.valid_password?('qwerty')).to be_truthy
+        expect(p.valid_password?('qwertyuiop')).to be_truthy
       end
     end
   end
@@ -1690,6 +1736,7 @@ describe User do
         event = @course.calendar_events.create!(title: 'published', start_at: 4.days.from_now)
         expect(@user.upcoming_events).to include(event)
         Timecop.freeze(3.days.from_now) do
+          EnrollmentState.recalculate_expired_states # runs periodically in background
           expect(User.find(@user).upcoming_events).not_to include(event) # re-find user to clear cached_contexts
         end
       end
@@ -1718,7 +1765,7 @@ describe User do
           # trigger the after db filtering
           Setting.stubs(:get).with('filter_events_by_section_code_threshold', anything).returns(0)
           @course.enroll_student(@student, :section => @sections[1], :enrollment_state => 'active', :allow_multiple_enrollments => true)
-          expect(@student.upcoming_events(:limit => 1)).to eq [@events[1]]
+          expect(@student.upcoming_events(:limit => 2)).to eq [@events[1]]
         end
 
         it "should use the old behavior as a fallback" do
@@ -1726,7 +1773,7 @@ describe User do
           # the optimized call will retrieve the first two events, and then filter them out
           # since it didn't retrieve enough events it will use the old code as a fallback
           @course.enroll_student(@student, :section => @sections[2], :enrollment_state => 'active', :allow_multiple_enrollments => true)
-          expect(@student.upcoming_events(:limit => 1)).to eq [@events[2]]
+          expect(@student.upcoming_events(:limit => 2)).to eq [@events[2]]
         end
       end
     end
@@ -1920,6 +1967,7 @@ describe User do
       @quiz.due_at = 3.days.from_now
       @quiz.save!
       Timecop.travel(2.days) do
+        EnrollmentState.recalculate_expired_states # runs periodically in background
         expect(@student.assignments_needing_submitting(:contexts => [@course]).count).to eq 0
       end
     end
@@ -1977,6 +2025,75 @@ describe User do
         student = @shard1.activate { user }
         assignment = create_course_with_assignment_needing_submitting(student: student, override: true)
         expect(student.assignments_needing_submitting).to eq [assignment]
+      end
+    end
+
+    context "ungraded assignments" do
+      before :once do
+        course_with_student :active_all => true
+        @assignment = @course.assignments.create! title: 'blah!', due_at: 1.day.from_now, submission_types: 'not_graded'
+      end
+
+      it "excludes ungraded assignments by default" do
+        expect(@student.assignments_needing_submitting).not_to include @assignment
+      end
+
+      it "includes ungraded assignments if requested" do
+        expect(@student.assignments_needing_submitting(include_ungraded: true)).to include @assignment
+      end
+    end
+  end
+
+  describe "ungraded_quizzes_needing_submitting" do
+    before(:once) do
+      course_with_student :active_all => true
+      @quiz = @course.quizzes.create!(:title => "some quiz", :quiz_type => "survey", :due_at => 1.day.ago)
+      @quiz.publish!
+    end
+
+    it "includes ungraded quizzes" do
+      expect(@student.ungraded_quizzes_needing_submitting).to include @quiz
+    end
+
+    it "excludes graded quizzes" do
+      other_quiz = @course.quizzes.create!(:title => "some quiz", :quiz_type => "assignment", :due_at => 1.day.ago)
+      other_quiz.publish!
+      expect(@student.ungraded_quizzes_needing_submitting).not_to include other_quiz
+    end
+
+    it "excludes unpublished quizzes" do
+      other_quiz = @course.quizzes.create!(:title => "some quiz", :quiz_type => "survey", :due_at => 1.day.ago)
+      expect(@student.ungraded_quizzes_needing_submitting).not_to include other_quiz
+    end
+
+    it "excludes locked quizzes" do
+      @quiz.unlock_at = 1.day.from_now
+      @quiz.save!
+      expect(@student.ungraded_quizzes_needing_submitting).not_to include @quiz
+    end
+
+    it "filters by due date" do
+      expect(@student.ungraded_quizzes_needing_submitting(:due_after => 1.day.from_now)).not_to include @quiz
+    end
+
+    it "excludes submitted quizzes" do
+      qs = @quiz.quiz_submissions.build :user => @student
+      qs.workflow_state = 'complete'
+      qs.save!
+      expect(@student.ungraded_quizzes_needing_submitting).not_to include @quiz
+    end
+
+    it "filters by enrollment state" do
+      @student.enrollments.where(course: @course).first.complete!
+      expect(@student.ungraded_quizzes_needing_submitting).not_to include @quiz
+    end
+
+    context "sharding" do
+      specs_require_sharding
+      it "includes quizzes from other shards" do
+        other_user = @shard1.activate { user }
+        student_in_course :course => @course, :user => other_user, :active_all => true
+        expect(other_user.ungraded_quizzes_needing_submitting).to include @quiz
       end
     end
   end
@@ -2296,6 +2413,7 @@ describe User do
     it "should not count assignments in soft concluded courses" do
       @course.enrollment_term.update_attribute(:end_at, 1.day.from_now)
       Timecop.travel(1.week) do
+        EnrollmentState.recalculate_expired_states # runs periodically in background
         expect(@teacher.reload.assignments_needing_grading.size).to eql(0)
       end
     end
@@ -2971,9 +3089,15 @@ describe User do
       expect(@user.roles(@account)).to eq %w[user observer]
     end
 
-    it "includes 'admin' if the user has an admin user record" do
-      @account.account_users.create!(:user => @user, :role => admin_role)
+    it "includes 'admin' if the user has a sub-account admin user record" do
+      sub_account = @account.sub_accounts.create!
+      sub_account.account_users.create!(:user => @user, :role => admin_role)
       expect(@user.roles(@account)).to eq %w[user admin]
+    end
+
+    it "includes 'root_admin' if the user has a root account admin user record" do
+      @account.account_users.create!(:user => @user, :role => admin_role)
+      expect(@user.roles(@account)).to eq %w[user admin root_admin]
     end
   end
 
@@ -3025,12 +3149,5 @@ describe User do
       f.save!
       expect(@user.submissions_folder(@course)).to eq f
     end
-  end
-
-  it { is_expected.to have_many(:submission_comment_participants) }
-  it do
-    is_expected.to have_many(:submission_comments).
-      conditions(-> { published }).
-        through(:submission_comment_participants)
   end
 end

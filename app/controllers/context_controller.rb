@@ -222,11 +222,17 @@ class ContextController < ApplicationController
           :pendingInvitationsCount => @context.invited_count_visible_to(@current_user)
         }
       })
+      if manage_students || manage_admins
+        js_env({:ROOT_ACCOUNT_NAME => @domain_root_account.name})
+        if @context.root_account.open_registration? || @context.root_account.grants_right?(@current_user, session, :manage_user_logins)
+          js_env({:INVITE_USERS_URL => course_invite_users_url(@context)})
+        end
+      end
     elsif @context.is_a?(Group)
       if @context.grants_right?(@current_user, :read_as_admin)
-        @users = @context.participating_users.order_by_sortable_name.uniq
+        @users = @context.participating_users.uniq.order_by_sortable_name
       else
-        @users = @context.participating_users_in_context(sort: true).uniq
+        @users = @context.participating_users_in_context(sort: true).uniq.order_by_sortable_name
       end
       @primary_users = { t('roster.group_members', 'Group Members') => @users }
       if course = @context.context.try(:is_a?, Course) && @context.context
@@ -329,16 +335,7 @@ class ContextController < ApplicationController
         return
       end
 
-      @topics = @context.discussion_topics.active.reject{|a| a.locked_for?(@current_user, :check_policies => true) }
-      @entries = []
-      @topics.each do |topic|
-        @entries << topic if topic.user_id == @user.id
-        @entries.concat topic.discussion_entries.active.where(user_id: @user)
-      end
-      @entries = @entries.sort_by {|e| e.created_at }
       @enrollments = @context.enrollments.for_user(@user) rescue []
-      @messages = @entries
-      @messages = @messages.select{|m| m.grants_right?(@current_user, session, :read) }.sort_by{|e| e.created_at }.reverse
 
       if @domain_root_account.enable_profiles?
         @user_data = profile_data(
@@ -350,6 +347,19 @@ class ContextController < ApplicationController
         render :new_roster_user
         return false
       end
+
+      if @user.grants_right?(@current_user, session, :read_profile)
+        # self and instructors
+        @topics = @context.discussion_topics.active.reject{|a| a.locked_for?(@current_user, :check_policies => true) }
+        @messages = []
+        @topics.each do |topic|
+          @messages << topic if topic.user_id == @user.id
+        end
+        @messages += DiscussionEntry.active.where(:discussion_topic_id => @topics, :user_id => @user).to_a
+
+        @messages = @messages.select{|m| m.grants_right?(@current_user, session, :read) }.sort_by{|e| e.created_at }.reverse
+      end
+
       true
     end
   end
@@ -363,7 +373,7 @@ class ContextController < ApplicationController
   ].freeze
   def undelete_index
     if authorized_action(@context, @current_user, :manage_content)
-      @item_types = WORKFLOW_TYPES.select { |type| @context.reflections.key?(type) }.
+      @item_types = WORKFLOW_TYPES.select { |type| @context.class.reflections.key?(type.to_s) }.
           map { |type| @context.association(type).reader }
 
       @item_types << @context.wiki.wiki_pages if @context.respond_to? :wiki
@@ -385,7 +395,6 @@ class ContextController < ApplicationController
       scope = @context.wiki if type == 'wiki_page'
       type = 'all_discussion_topic' if type == 'discussion_topic'
       type = type.pluralize
-      type = type.to_sym if CANVAS_RAILS4_0
       raise "invalid type" unless ITEM_TYPES.include?(type.to_sym) && scope.class.reflections.key?(type)
       @item = scope.association(type).reader.find(id)
       @item.restore

@@ -1,4 +1,4 @@
-class CreateAccessTokens < ActiveRecord::Migration
+class CreateAccessTokens < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
@@ -9,7 +9,7 @@ class CreateAccessTokens < ActiveRecord::Migration
       t.datetime :last_used_at
       t.datetime :expires_at
       t.string :purpose
-      t.timestamps
+      t.timestamps null: true
     end
     add_index :access_tokens, [:token], :unique => true
 
@@ -26,7 +26,7 @@ class CreateAccessTokens < ActiveRecord::Migration
     end
     remove_column :developer_keys, :user_id
     rename_column :developer_keys, :user_id_int, :user_id
-    
+
     add_column :developer_keys, :name, :string
   end
 

@@ -1,4 +1,4 @@
-class CreateGradingPeriods < ActiveRecord::Migration
+class CreateGradingPeriods < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
@@ -8,7 +8,7 @@ class CreateGradingPeriods < ActiveRecord::Migration
       t.float :weight, :null => false
       t.datetime :start_date, :null => false
       t.datetime :end_date, :null => false
-      t.timestamps
+      t.timestamps null: true
     end
 
     add_index :grading_periods, :course_id

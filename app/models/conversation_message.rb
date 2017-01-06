@@ -232,7 +232,7 @@ class ConversationMessage < ActiveRecord::Base
   def format_event_message
     case event_data[:event_type]
     when :users_added
-      user_names = User.where(id: event_data[:user_ids]).order(:id).select([:name, :short_name]).map(&:short_name)
+      user_names = User.where(id: event_data[:user_ids]).order(:id).pluck(:name, :short_name).map{|name, short_name| short_name || name}
       EventFormatter.users_added(author.short_name, user_names)
     end
   end
@@ -244,7 +244,7 @@ class ConversationMessage < ActiveRecord::Base
     valid_recipients = recipients.select{|recipient| recipient.grants_right?(author, :create_user_notes) && recipient.associated_accounts.any?{|a| a.enable_user_notes }}
     return unless valid_recipients.any?
 
-    valid_recipients = User.where(:id => valid_recipients) unless CANVAS_RAILS4_0 # need to reload to get all the attributes needed for User#save
+    valid_recipients = User.where(:id => valid_recipients) # need to reload to get all the attributes needed for User#save
     valid_recipients.each do |recipient|
       title = if conversation.subject
         t(:subject_specified, "Private message: %{subject}", subject: conversation.subject)

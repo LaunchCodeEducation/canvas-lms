@@ -1,4 +1,4 @@
-class CreateContextExternalTools < ActiveRecord::Migration
+class CreateContextExternalTools < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
@@ -13,8 +13,8 @@ class CreateContextExternalTools < ActiveRecord::Migration
       t.text :description
       t.text :settings
       t.string :workflow_state
-      
-      t.timestamps
+
+      t.timestamps null: true
     end
   end
 

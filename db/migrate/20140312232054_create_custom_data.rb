@@ -1,4 +1,4 @@
-class CreateCustomData < ActiveRecord::Migration
+class CreateCustomData < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
@@ -6,7 +6,7 @@ class CreateCustomData < ActiveRecord::Migration
       t.text :data
       t.string :namespace
       t.references :user, :limit => 8
-      t.timestamps
+      t.timestamps null: true
     end
   end
 

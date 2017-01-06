@@ -1,9 +1,9 @@
-class AssignmentOverrideMigration < ActiveRecord::Migration
+class AssignmentOverrideMigration < ActiveRecord::Migration[4.2]
   tag :predeploy
 
   def self.up
     create_table :assignment_overrides do |t|
-      t.timestamps
+      t.timestamps null: true
 
       # generic info
       t.integer  :assignment_id, :null => false, :limit => 8
@@ -43,7 +43,7 @@ class AssignmentOverrideMigration < ActiveRecord::Migration
     add_foreign_key :assignment_overrides, :assignments
 
     create_table :assignment_override_students do |t|
-      t.timestamps
+      t.timestamps null: true
 
       t.integer  :assignment_id, :null => false, :limit => 8
       t.integer  :assignment_override_id, :null => false, :limit => 8

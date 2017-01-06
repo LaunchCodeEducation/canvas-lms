@@ -52,6 +52,8 @@ module Importers
 
     def self.process_migration(data, migration)
       modules = data['modules'] ? data['modules'] : []
+      migration.last_module_position = migration.context.context_modules.maximum(:position) if migration.is_a?(ContentMigration)
+
       modules.each do |mod|
         self.process_module(mod, migration)
       end
@@ -102,7 +104,11 @@ module Importers
         item.workflow_state = 'active'
       end
 
-      item.position = hash[:position] || hash[:order]
+      position = hash[:position] || hash[:order]
+      if item.new_record? && migration.try(:last_module_position) # try to import new modules after current ones instead of interweaving positions
+        position = migration.last_module_position + (position || 1)
+      end
+      item.position = position
       item.context = context
       item.unlock_at = Canvas::Migration::MigratorHelper.get_utc_time_from_timestamp(hash[:unlock_at]) if hash[:unlock_at]
       item.start_at = Canvas::Migration::MigratorHelper.get_utc_time_from_timestamp(hash[:start_at]) if hash[:start_at]
@@ -133,8 +139,8 @@ module Importers
 
       items.each do |tag_hash|
         begin
-          tag = self.add_module_item_from_migration(item, tag_hash, 0, context, item_map, migration)
-          imported_migration_ids << tag.migration_id if tag
+          tags = self.add_module_item_from_migration(item, tag_hash, 0, context, item_map, migration)
+          imported_migration_ids.concat tags.map(&:migration_id)
         rescue
           migration.add_import_warning(t(:migration_module_item_type, "Module Item"), tag_hash[:title], $!)
         end
@@ -288,23 +294,25 @@ module Importers
       else
         # We don't know what this is
       end
+      items = []
       if item
         item_map[hash[:migration_id]] = item if hash[:migration_id]
         item.migration_id = hash[:migration_id]
         item.new_tab = hash[:new_tab]
         item.position = (context_module.item_migration_position ||= context_module.content_tags.not_deleted.map(&:position).compact.max || 0)
-        if hash[:workflow_state] && !['active', 'published'].include?(item.workflow_state)
+        if hash[:workflow_state] && !item.sync_workflow_state_to_asset? && !['active', 'published'].include?(item.workflow_state)
           item.workflow_state = hash[:workflow_state]
         end
         context_module.item_migration_position += 1
         item.save!
+        items << item
       end
       if hash[:sub_items]
         hash[:sub_items].each do |tag_hash|
-          self.add_module_item_from_migration(context_module, tag_hash, level + 1, context, item_map, migration)
+          items.concat self.add_module_item_from_migration(context_module, tag_hash, level + 1, context, item_map, migration)
         end
       end
-      item
+      items
     end
 
     def self.add_custom_fields_to_url(original_url, custom_fields)

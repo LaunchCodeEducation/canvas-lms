@@ -1,7 +1,7 @@
 define [
   'jquery'
   'timezone'
-  'bower/fullcalendar/dist/fullcalendar'
+  'fullcalendar'
   'jquery.instructure_date_and_time'
 ], ($, tz) ->
 
@@ -35,4 +35,13 @@ define [
   clone = (moment) ->
     $.fullCalendar.moment(moment)
 
-  fcUtil = {wrap, unwrap, now, clone}
+  # compensates for intervals spanning DST changes
+  addMinuteDelta = (moment, minuteDelta) ->
+    dayDelta = (minuteDelta / 1440) | 0
+    minuteDelta = minuteDelta % 1440
+    date = unwrap(moment)
+    date = tz.shift(date, (if dayDelta < 0 then '' else '+') + dayDelta + ' days')
+    date = tz.shift(date, (if minuteDelta < 0 then '' else '+') + minuteDelta + ' minutes')
+    wrap(date)
+
+  fcUtil = {wrap, unwrap, now, clone, addMinuteDelta}

@@ -5,6 +5,9 @@ class ContextExternalTool < ActiveRecord::Base
   has_many :content_tags, :as => :content
   has_many :context_external_tool_placements, :autosave => true
 
+  has_many :context_external_tool_assignment_lookups, dependent: :delete_all
+  has_many :tool_settings_assignments, through: :context_external_tool_assignment_lookups, source: :assignment
+
   belongs_to :context, polymorphic: [:course, :account]
   attr_accessible :privacy_level, :domain, :url, :shared_secret, :consumer_key,
                   :name, :description, :custom_fields, :custom_fields_string,
@@ -39,33 +42,17 @@ class ContextExternalTool < ActiveRecord::Base
   set_policy do
     given { |user, session| self.context.grants_right?(user, session, :update) }
     can :read and can :update and can :delete
-  end
 
-  EXTENSION_TYPES = [:account_navigation,
-                     :assignment_menu,
-                     :assignment_selection,
-                     :collaboration,
-                     :course_home_sub_navigation,
-                     :course_navigation,
-                     :course_settings_sub_navigation,
-                     :discussion_topic_menu,
-                     :editor_button,
-                     :file_menu,
-                     :global_navigation,
-                     :homework_submission,
-                     :link_selection,
-                     :migration_selection,
-                     :module_menu,
-                     :post_grades,
-                     :quiz_menu,
-                     :resource_selection,
-                     :tool_configuration,
-                     :user_navigation,
-                     :wiki_page_menu].freeze
+    given do |user, session|
+      self.grants_right?(user, session, :update) &&
+      self.context.grants_right?(user, session, :lti_add_edit)
+    end
+    can :update_manually
+  end
 
   CUSTOM_EXTENSION_KEYS = {:file_menu => [:accept_media_types].freeze}.freeze
 
-  EXTENSION_TYPES.each do |type|
+  Lti::ResourcePlacement::PLACEMENTS.each do |type|
     class_eval <<-RUBY, __FILE__, __LINE__ + 1
       def #{type}(setting=nil)
         extension_setting(:#{type}, setting)
@@ -82,6 +69,13 @@ class ContextExternalTool < ActiveRecord::Base
     return unless tag
     launch_url = assignment.external_tool_tag.url
     self.find_external_tool(launch_url, assignment.context)
+  end
+
+  def content_migration_configured?
+    settings.key?('content_migration') &&
+      settings['content_migration'].is_a?(Hash) &&
+      settings['content_migration'].key?('export_start_url') &&
+      settings['content_migration'].key?('import_start_url')
   end
 
   def extension_setting(type, property = nil)
@@ -143,7 +137,7 @@ class ContextExternalTool < ActiveRecord::Base
 
   def sync_placements!(placements)
     old_placements = self.context_external_tool_placements.pluck(:placement_type)
-    placements_to_delete = EXTENSION_TYPES.map(&:to_s) - placements
+    placements_to_delete = Lti::ResourcePlacement::PLACEMENTS.map(&:to_s) - placements
     if placements_to_delete.any?
       self.context_external_tool_placements.where(placement_type: placements_to_delete).delete_all if self.persisted?
       self.context_external_tool_placements.reload if self.context_external_tool_placements.loaded?
@@ -155,9 +149,9 @@ class ContextExternalTool < ActiveRecord::Base
   private :sync_placements!
 
   def url_or_domain_is_set
-    setting_types = EXTENSION_TYPES
+    placements = Lti::ResourcePlacement::PLACEMENTS
     # url or domain (or url on canvas lti extension) is required
-    if url.blank? && domain.blank? && setting_types.all?{|k| !settings[k] || settings[k]['url'].blank? }
+    if url.blank? && domain.blank? && placements.all?{|k| !settings[k] || settings[k]['url'].blank? }
       errors.add(:url, t('url_or_domain_required', "Either the url or domain should be set."))
       errors.add(:domain, t('url_or_domain_required', "Either the url or domain should be set."))
     end
@@ -370,7 +364,7 @@ class ContextExternalTool < ActiveRecord::Base
     settings[:selection_width] = settings[:selection_width].to_i if settings[:selection_width]
     settings[:selection_height] = settings[:selection_height].to_i if settings[:selection_height]
 
-    EXTENSION_TYPES.each do |type|
+    Lti::ResourcePlacement::PLACEMENTS.each do |type|
       if settings[type]
         settings[type][:selection_width] = settings[type][:selection_width].to_i if settings[type][:selection_width]
         settings[type][:selection_height] = settings[type][:selection_height].to_i if settings[type][:selection_height]
@@ -384,7 +378,7 @@ class ContextExternalTool < ActiveRecord::Base
 
     ContextExternalTool.normalize_sizes!(self.settings)
 
-    EXTENSION_TYPES.each do |type|
+    Lti::ResourcePlacement::PLACEMENTS.each do |type|
       if settings[type]
         if !(extension_setting(type, :url)) || (settings[type].has_key?(:enabled) && !settings[type][:enabled])
           settings.delete(type)
@@ -394,7 +388,7 @@ class ContextExternalTool < ActiveRecord::Base
 
     settings.delete(:editor_button) unless editor_button(:icon_url) || editor_button(:canvas_icon_class)
 
-    sync_placements!(EXTENSION_TYPES.select{|type| !!settings[type]}.map(&:to_s))
+    sync_placements!(Lti::ResourcePlacement::PLACEMENTS.select{|type| !!settings[type]}.map(&:to_s))
     true
   end
 
@@ -402,7 +396,7 @@ class ContextExternalTool < ActiveRecord::Base
   def change_domain!(new_domain)
     replace_host = lambda do |url, host|
       uri = Addressable::URI.parse(url)
-      uri.host = host
+      uri.host = host if uri.host
       uri.to_s
     end
 
@@ -616,7 +610,7 @@ class ContextExternalTool < ActiveRecord::Base
     context = context.context if context.is_a?(Group)
 
     tool = context.context_external_tools.having_setting(type).where(id: id).first
-    tool ||= ContextExternalTool.having_setting(type).where(context_type: 'Account', context_id: context.account_chain, id: id).first
+    tool ||= ContextExternalTool.having_setting(type).where(context_type: 'Account', context_id: context.account_chain_ids, id: id).first
     raise ActiveRecord::RecordNotFound if !tool && raise_error
 
     tool
@@ -628,7 +622,7 @@ class ContextExternalTool < ActiveRecord::Base
     if !context.is_a?(Account) && context.respond_to?(:context_external_tools)
       tools += context.context_external_tools.having_setting(type.to_s)
     end
-    tools += ContextExternalTool.having_setting(type.to_s).where(context_type: 'Account', context_id: context.account_chain)
+    tools += ContextExternalTool.having_setting(type.to_s).where(context_type: 'Account', context_id: context.account_chain_ids)
   end
 
   def self.serialization_excludes; [:shared_secret,:settings]; end
