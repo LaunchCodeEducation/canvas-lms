@@ -179,6 +179,7 @@ define [
         groupWeight: data.group_weight
         toggleMessage: @messages.toggleMessage
         hasFrozenAssignments: @model.hasFrozenAssignments? and @model.hasFrozenAssignments()
+        hasIntegrationData: @model.hasIntegrationData? and @model.hasIntegrationData()
         ENV: ENV
       })
 
@@ -310,8 +311,12 @@ define [
       expanded = !@cache.get(key)
       @cache.set(key, expanded)
 
+    hasMasterCourseRestrictedAssignments: ->
+      @model.get('assignments').any (m) ->
+        m.isRestrictedByMasterCourse()
+
     canDelete: ->
-      @userIsAdmin or @model.canDelete()
+      (@userIsAdmin or @model.canDelete()) && !@hasMasterCourseRestrictedAssignments()
 
     canManage: ->
       ENV.PERMISSIONS.manage

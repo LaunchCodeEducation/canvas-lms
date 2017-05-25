@@ -63,7 +63,7 @@ describe "site-wide" do
   end
 
   it "should not set x-frame-options when on a files domain" do
-    user_session user(:active_all => true)
+    user_session user_factory(active_all: true)
     attachment_model(:context => @user)
     FilesController.any_instance.expects(:files_domain?).returns(true)
     get "http://files-test.host/files/#{@attachment.id}/download"
@@ -142,7 +142,7 @@ describe "site-wide" do
   end
 
   it "should use the real user's timezone and locale setting when masquerading as a fake student" do
-    @fake_user = course(:active_all => true).student_view_student
+    @fake_user = course_factory(active_all: true).student_view_student
 
     user_with_pseudonym(:active_all => true)
     account_admin_user(:user => @user)
@@ -200,6 +200,18 @@ describe "site-wide" do
     it "returns an html error page even for non-html requests" do
       Canvas::Errors.expects(:capture).once.returns({})
       get "/courses/blah.png"
+    end
+  end
+
+  context "stringifying ids" do
+    it "stringifies ids when objects are passed to render" do
+      course_with_teacher_logged_in
+      user_with_pseudonym :username => 'blah'
+      post "/courses/#{@course.id}/user_lists.json",
+           { :user_list => ['blah'], :search_type => 'unique_id', :v2 => true },
+           { 'Accept' => 'application/json+canvas-string-ids' }
+      json = JSON.parse response.body
+      expect(json['users'][0]['user_id']).to be_a String
     end
   end
 end

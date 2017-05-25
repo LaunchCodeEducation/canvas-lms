@@ -481,7 +481,7 @@ describe Group do
   end
 
   it "as_json should include group_category" do
-    course()
+    course_factory()
     gc = group_category(name: "Something")
     group = Group.create(:group_category => gc)
     hash = group.as_json
@@ -626,7 +626,7 @@ describe Group do
         account.default_group_storage_quota = 10.megabytes
         account.save!
 
-        course(:account => subaccount)
+        course_factory(:account => subaccount)
         @group = group(:group_context => @course)
 
         expect(@group.quota).to eq 10.megabytes
@@ -634,7 +634,7 @@ describe Group do
         # should reload
         account.default_group_storage_quota = 20.megabytes
         account.save!
-        @group = Group.find(@group)
+        @group = Group.find(@group.id)
 
         expect(@group.quota).to eq 20.megabytes
       end
@@ -675,7 +675,7 @@ describe Group do
 
       expect(@group.users).to eq [@student]
       @group.destroy
-      expect(@group.users(true)).to eq [@student]
+      expect(@group.users.reload).to eq [@student]
     end
   end
 

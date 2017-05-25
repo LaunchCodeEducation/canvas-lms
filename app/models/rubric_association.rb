@@ -22,7 +22,7 @@
 # The other purpose of this class is just to make rubrics reusable.
 class RubricAssociation < ActiveRecord::Base
   attr_accessor :skip_updating_points_possible
-  attr_accessible :rubric, :association_object, :context, :use_for_grading, :title, :summary_data, :purpose, :url, :hide_score_total, :bookmarked
+
   belongs_to :rubric
   belongs_to :association_object, polymorphic: [:account, :course, :assignment],
              foreign_type: :association_type, foreign_key: :association_id,
@@ -131,8 +131,11 @@ class RubricAssociation < ActiveRecord::Base
   attr_accessor :assessing_user_id
 
   set_policy do
-    given {|user, session| self.context.grants_right?(user, session, :manage) }
-    can :update and can :delete and can :manage and can :assess
+    given {|user, session| self.context.grants_right?(user, session, :manage_rubrics) }
+    can :update and can :delete and can :manage
+
+    given {|user, session| self.context.grants_right?(user, session, :manage_grades) }
+    can :assess
 
     given {|user| user && @assessing_user_id && self.assessment_requests.for_assessee(@assessing_user_id).map{|r| r.assessor_id}.include?(user.id) }
     can :assess
@@ -182,7 +185,7 @@ class RubricAssociation < ActiveRecord::Base
     if self.association_id && self.association_type == 'Assignment'
       self.association_object.submissions.each do |sub|
         sub.assessment_requests.incomplete.where(:rubric_association_id => nil).
-            update_all(:rubric_association_id => self)
+            update_all(:rubric_association_id => id)
       end
     end
   end

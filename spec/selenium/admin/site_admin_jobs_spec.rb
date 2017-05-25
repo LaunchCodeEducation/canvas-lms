@@ -41,13 +41,10 @@ describe "site admin jobs ui" do
     all_jobs.each { |job| expect(job).to have_class('selected') }
   end
 
-  def first_jobs_cell_displayed?
-    expect(f('#jobs-grid .slick-cell')).to be
-  end
-
   def load_jobs_page
     get "/jobs"
-    first_jobs_cell_displayed?
+    # wait for it
+    f('#jobs-grid .slick-cell')
   end
 
   def filter_jobs(job_flavor_text)
@@ -116,28 +113,6 @@ describe "site admin jobs ui" do
     context "all jobs" do
       before(:each) do
         load_jobs_page
-      end
-
-      it "should confirm that clicking on delete button should delete all future jobs" do
-        2.times { "test".send_at 2.hours.from_now, :to_s }
-        filter_jobs(FlavorTags::FUTURE)
-        validate_all_jobs_selected
-        expect(f("#jobs-grid .odd")).to be_displayed
-        expect(f("#jobs-grid .even")).to be_displayed
-        expect(f("#jobs-total").text).to eq(future_jobs.count.to_s)
-
-        delete = f("#delete-jobs")
-        keep_trying_until do
-          delete.click
-          expect(driver.switch_to.alert).not_to be_nil
-          driver.switch_to.alert.accept
-        end
-
-        wait_for_ajaximations
-        expect(future_jobs.count).to eq(0)
-
-        expect(f("#content")).not_to contain_css("#jobs-grid .odd")
-        expect(f("#content")).not_to contain_css("#jobs-grid .even")
       end
 
       it "should check current popular tags" do

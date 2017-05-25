@@ -70,6 +70,7 @@ body:not(.ic-no-flex-layout):not(.embedded) .ic-app-main-content {
 
 .ic-app-main-content__secondary {
   box-sizing: border-box;
+  min-width: 1px;
   padding: $ic-sp*2;
   position: relative; // note: this is also set for #right-side-wrapper in _#right-side.scss
   // prevent safari bug where content disappears on scroll
@@ -258,10 +259,10 @@ body:not(.course-menu-expanded) {
 
 .ic-app-course-nav-toggle {
   transform: translateY(1px);
-  margin-right: $ic-sp*1.5;
+  margin-right: $ic-sp;
   padding: 0;
   width: $ic-sp*3; height: ($ic-sp*3) - ($ic-sp/2);
-  @include overwrite-default-icon-size(22px);
+  @include overwrite-default-icon-size(1.5rem);
   i[class*=icon-], i[class^=icon-] { margin-right: 0; }
 }
 

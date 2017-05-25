@@ -9,7 +9,7 @@ describe GradeSummaryPresenter do
       let(:assignment) { assignment_model(:course => course) }
 
       before do
-        user
+        user_factory
         enrollment = StudentEnrollment.create!(:course => course, :user => @user)
         enrollment.update_attribute(:workflow_state, 'active')
         course.update_attribute(:workflow_state, 'available')
@@ -66,12 +66,12 @@ describe GradeSummaryPresenter do
     it 'works' do
       s1, s2, s3, s4 = n_students_in_course(4)
       a = @course.assignments.create! points_possible: 10
-      a.grade_student s1, grade:  0
-      a.grade_student s2, grade:  5
-      a.grade_student s3, grade: 10
+      a.grade_student s1, grade:  0, grader: @teacher
+      a.grade_student s2, grade:  5, grader: @teacher
+      a.grade_student s3, grade: 10, grader: @teacher
 
       # this student should be ignored
-      a.grade_student s4, grade: 99
+      a.grade_student s4, grade: 99, grader: @teacher
       s4.enrollments.each &:destroy
 
       p = GradeSummaryPresenter.new(@course, @teacher, nil)
@@ -89,11 +89,11 @@ describe GradeSummaryPresenter do
       fake_student.preferences[:fake_student] = true
 
       a = @course.assignments.create! points_possible: 10
-      a.grade_student s1, grade:  0
-      a.grade_student s2, grade:  5
-      a.grade_student s3, grade: 10
-      a.grade_student removed_student, grade: 20
-      a.grade_student fake_student, grade: 100
+      a.grade_student s1, grade:  0, grader: @teacher
+      a.grade_student s2, grade:  5, grader: @teacher
+      a.grade_student s3, grade: 10, grader: @teacher
+      a.grade_student removed_student, grade: 20, grader: @teacher
+      a.grade_student fake_student, grade: 100, grader: @teacher
 
       removed_student.enrollments.each do |enrollment|
         enrollment.workflow_state = 'inactive'
@@ -111,10 +111,10 @@ describe GradeSummaryPresenter do
     it 'doesnt factor nil grades into the average or min' do
       s1, s2, s3, s4 = n_students_in_course(4)
       a = @course.assignments.create! points_possible: 10
-      a.grade_student s1, grade:  2
-      a.grade_student s2, grade:  6
-      a.grade_student s3, grade: 10
-      a.grade_student s4, grade: nil
+      a.grade_student s1, grade:  2, grader: @teacher
+      a.grade_student s2, grade:  6, grader: @teacher
+      a.grade_student s3, grade: 10, grader: @teacher
+      a.grade_student s4, grade: nil, grader: @teacher
 
       p = GradeSummaryPresenter.new(@course, @teacher, nil)
       stats = p.assignment_stats
@@ -136,11 +136,11 @@ describe GradeSummaryPresenter do
       fake_student.preferences[:fake_student] = true
 
       a = @course.assignments.create! points_possible: 10
-      a.grade_student s1, grade:  0
-      a.grade_student s2, grade:  5
-      a.grade_student s3, grade: 10
-      a.grade_student removed_student, grade: 20
-      a.grade_student fake_student, grade: 100
+      a.grade_student s1, grade:  0, grader: @teacher
+      a.grade_student s2, grade:  5, grader: @teacher
+      a.grade_student s3, grade: 10, grader: @teacher
+      a.grade_student removed_student, grade: 20, grader: @teacher
+      a.grade_student fake_student, grade: 100, grader: @teacher
 
       removed_student.enrollments.each do |enrollment|
         enrollment.workflow_state = 'inactive'
@@ -162,8 +162,8 @@ describe GradeSummaryPresenter do
       a1, a2 = 2.times.map {
         @course.assignments.create! points_possible: 10
       }
-      a1.grade_student @student, grade: 10
-      a2.grade_student @student, grade: 10
+      a1.grade_student @student, grade: 10, grader: @teacher
+      a2.grade_student @student, grade: 10, grader: @teacher
 
       a2.destroy
 
@@ -173,7 +173,7 @@ describe GradeSummaryPresenter do
 
     it "doesn't error on submissions for assignments not in the pre-loaded assignment list" do
       assign = @course.assignments.create! points_possible: 10
-      assign.grade_student @student, grade: 10
+      assign.grade_student @student, grade: 10, grader: @teacher
       assign.update_attribute(:submission_types, "not_graded")
 
       p = GradeSummaryPresenter.new(@course, @teacher, @student.id)
@@ -247,6 +247,25 @@ describe GradeSummaryPresenter do
       @course.context_modules.create!(name: "I <3 Modules")
       expect(presenter.sort_options).to include module_option
     end
+
+    it 'localizes menu text' do
+      @course.assignments.create!(title: 'Math Assignment')
+      science_group = @course.assignment_groups.create!(name: 'Science Assignments')
+      @course.assignments.create!(title: 'Science Assignment', assignment_group: science_group)
+      @course.context_modules.create!(name: 'I <3 Modules')
+
+      expect(I18n).to receive(:t).with('Due Date')
+      expect(I18n).to receive(:t).with('Title')
+      expect(I18n).to receive(:t).with('Assignment Group')
+      expect(I18n).to receive(:t).with('Module')
+
+      presenter.sort_options
+    end
+
+    it 'sorts menu items in a locale-aware way' do
+      expect(Canvas::ICU).to receive(:collate_by).with([['Due Date', 'due_at'], ['Title', 'title']], &:first)
+      presenter.sort_options
+    end
   end
 
   describe '#sorted_assignments' do
@@ -255,9 +274,9 @@ describe GradeSummaryPresenter do
       student_in_course
     end
 
-    let!(:assignment1) { @course.assignments.create!(title: 'Apple', due_at: 2.days.ago, position: 1) }
-    let!(:assignment2) { @course.assignments.create!(title: 'Banana', due_at: 2.days.from_now, position: 2) }
-    let!(:assignment3) { @course.assignments.create!(title: 'Carrot', due_at: 5.days.ago, position: 3) }
+    let!(:assignment1) { @course.assignments.create!(title: 'Jalapeno', due_at: 2.days.ago, position: 1) }
+    let!(:assignment2) { @course.assignments.create!(title: 'Jalapeño', due_at: 2.days.from_now, position: 2) }
+    let!(:assignment3) { @course.assignments.create!(title: 'Jalapezo', due_at: 5.days.ago, position: 3) }
     let(:ordered_assignment_ids) { presenter.assignments.map(&:id) }
 
     it "assignment order defaults to due_at" do
@@ -321,7 +340,7 @@ describe GradeSummaryPresenter do
         it "sorts alphabetically for assignments not belonging to modules (ignoring case)" do
           assignment3.title = "apricot"
           assignment3.save!
-          expected_id_order = [assignment1.id, assignment3.id, assignment2.id]
+          expected_id_order = [assignment3.id, assignment1.id, assignment2.id]
           expect(ordered_assignment_ids).to eq(expected_id_order)
         end
       end
@@ -421,7 +440,7 @@ describe GradeSummaryPresenter do
 
   describe "#student_enrollment_for" do
     let(:gspcourse) do
-      course
+      course_factory
     end
 
     let(:teacher) do

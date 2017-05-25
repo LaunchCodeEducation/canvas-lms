@@ -20,7 +20,7 @@ require File.expand_path(File.dirname(__FILE__) + '/../spec_helper.rb')
 
 describe DataFixup::FixOutOfSyncOutcomeAlignments do
   before do
-    course_with_teacher_logged_in(:active_all => true)
+    course_with_teacher(:active_all => true)
     outcome_with_rubric
     @rubric_association_object = @course.assignments.create!(:title => 'blah')
     @rubric_association = @rubric.rubric_associations.create!({
@@ -75,7 +75,7 @@ describe DataFixup::FixOutOfSyncOutcomeAlignments do
   it "should delete alignments to assignments with rubrics without matching alignments" do
     align = @rubric_association_object.learning_outcome_alignments.first
     lo = LearningOutcome.create!(short_description: 's')
-    @rubric.learning_outcome_alignments.update_all(:learning_outcome_id => lo)
+    @rubric.learning_outcome_alignments.update_all(:learning_outcome_id => lo.id)
 
     expect(align.reload).not_to be_deleted
     DataFixup::FixOutOfSyncOutcomeAlignments.run

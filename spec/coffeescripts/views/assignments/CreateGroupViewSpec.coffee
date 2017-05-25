@@ -31,7 +31,7 @@ define [
 
     new CreateGroupView(args)
 
-  module 'CreateGroupView',
+  QUnit.module 'CreateGroupView',
     setup: ->
       fakeENV.setup()
     teardown: ->
@@ -60,7 +60,7 @@ define [
     ok _.isEmpty(errors)
 
   test 'it should create a new assignment group', ->
-    @stub(CreateGroupView.prototype, 'close', -> )
+    @stub(CreateGroupView.prototype, 'close')
 
     view = createView(newGroup: true)
     view.render()
@@ -69,7 +69,7 @@ define [
 
   test 'it should edit an existing assignment group', ->
     view = createView()
-    save_spy = @stub(view.model, "save", -> $.Deferred().resolve())
+    save_spy = @stub(view.model, "save").returns($.Deferred().resolve())
     view.render()
     view.open()
     #the selector uses 'new' for id because this model hasn't been saved yet
@@ -86,7 +86,7 @@ define [
 
   test 'it should not save drop rules when none are given', ->
     view = createView()
-    save_spy = @stub(view.model, "save", -> $.Deferred().resolve())
+    save_spy = @stub(view.model, "save").returns($.Deferred().resolve())
     view.render()
     view.open()
     view.$("#ag_new_drop_lowest").val("")
@@ -136,6 +136,20 @@ define [
     ok errors
     equal _.keys(errors).length, 1
 
+  test 'it should not allow NaN values for group weight', ->
+    view = createView()
+    assignments = view.assignmentGroup.get('assignments')
+
+    data =
+      name: "Assignments"
+      drop_highest: "0"
+      drop_lowest: "0"
+      group_weight: "the weighting is the hardest part"
+
+    errors = view.validateFormData(data)
+    ok errors
+    equal _.keys(errors).length, 1
+
   test 'it should trigger a render event on save success when editing', ->
     triggerSpy = @spy(AssignmentGroupCollection::, 'trigger')
     view = createView()
@@ -149,7 +163,7 @@ define [
     equal view.render.callCount, 1
 
   test 'it shows a success message', ->
-    @stub(CreateGroupView.prototype, 'close', -> )
+    @stub(CreateGroupView.prototype, 'close')
     @spy($, 'flashMessage')
     clock = sinon.useFakeTimers()
 
@@ -170,8 +184,7 @@ define [
     notOk view.$('[name="group_weight"]').length
 
   test 'disables group weight input when an assignment is due in a closed grading period', ->
-    ENV.MULTIPLE_GRADING_PERIODS_ENABLED = true
-    closed_group = group(has_assignment_due_in_closed_grading_period: true)
+    closed_group = group(any_assignment_in_closed_grading_period: true)
     groups = new AssignmentGroupCollection([group(), closed_group])
     view = createView(group: closed_group, assignmentGroups: groups)
     view.render()
@@ -179,8 +192,7 @@ define [
     ok view.$('[name="group_weight"]').attr('readonly')
 
   test 'does not disable group weight input when userIsAdmin is true', ->
-    ENV.MULTIPLE_GRADING_PERIODS_ENABLED = true
-    closed_group = group(has_assignment_due_in_closed_grading_period: true)
+    closed_group = group(any_assignment_in_closed_grading_period: true)
     groups = new AssignmentGroupCollection([group(), closed_group])
     view = createView(group: closed_group, assignmentGroups: groups, userIsAdmin: true)
     view.render()
@@ -188,8 +200,7 @@ define [
     notOk view.$('[name="group_weight"]').attr('readonly')
 
   test 'disables drop rule inputs when an assignment is due in a closed grading period', ->
-    ENV.MULTIPLE_GRADING_PERIODS_ENABLED = true
-    closed_group = group(has_assignment_due_in_closed_grading_period: true)
+    closed_group = group(any_assignment_in_closed_grading_period: true)
     groups = new AssignmentGroupCollection([group(), closed_group])
     view = createView(group: closed_group, assignmentGroups: groups)
     view.render()
@@ -197,8 +208,7 @@ define [
     ok view.$('[name="rules[drop_highest]"]').attr('readonly')
 
   test 'does not disable drop rule inputs when userIsAdmin is true', ->
-    ENV.MULTIPLE_GRADING_PERIODS_ENABLED = true
-    closed_group = group(has_assignment_due_in_closed_grading_period: true)
+    closed_group = group(any_assignment_in_closed_grading_period: true)
     groups = new AssignmentGroupCollection([group(), closed_group])
     view = createView(group: closed_group, assignmentGroups: groups, userIsAdmin: true)
     view.render()

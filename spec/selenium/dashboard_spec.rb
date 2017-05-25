@@ -1,9 +1,8 @@
 require_relative 'common'
 require_relative 'helpers/notifications_common'
-include NotificationsCommon
-
 
 describe "dashboard" do
+  include NotificationsCommon
   include_context "in-process server selenium tests"
 
   shared_examples_for 'load events list' do
@@ -35,7 +34,10 @@ describe "dashboard" do
       expect(items.first.hidden).to eq false
 
       get url
-      f('#dashboardToggleButton').click if url == '/'
+      if url =='/'
+        f('#DashboardOptionsMenu_Container button').click
+        fj('span[role="menuitemradio"]:contains("Recent Activity")').click
+      end
       click_recent_activity_header
       item_selector = '#announcement-details tbody tr'
       expect(ff(item_selector).size).to eq 1
@@ -44,7 +46,10 @@ describe "dashboard" do
 
       # should still be gone on reload
       get url
-      f('#dashboardToggleButton').click if url == '/'
+      if url =='/'
+        f('#DashboardOptionsMenu_Container button').click
+        fj('span[role="menuitemradio"]:contains("Recent Activity")').click
+      end
       expect(f("#content")).not_to contain_css(item_selector)
 
       expect(@user.recent_stream_items.size).to eq 0
@@ -71,7 +76,8 @@ describe "dashboard" do
           expect(items.first.hidden).to eq false
 
           get "/"
-          f('#dashboardToggleButton').click
+          f('#DashboardOptionsMenu_Container button').click
+          fj('span[role="menuitemradio"]:contains("Recent Activity")').click
 
           click_recent_activity_header
           expect(ff(item_selector).size).to eq 1
@@ -85,13 +91,13 @@ describe "dashboard" do
     end
 
     it "should not show announcement stream items without permissions" do
-      @course.account.role_overrides.create!(:role => student_role, :permission => 'read_announcements', :enabled => false)
-
-      announcement = create_announcement
-      item_selector = '#announcement-details tbody tr'
+      @course.account.role_overrides.create!(:role => student_role,
+                                             :permission => 'read_announcements',
+                                             :enabled => false)
 
       get "/"
-      f('#dashboardToggleButton').click
+      f('#DashboardOptionsMenu_Container button').click
+      fj('span[role="menuitemradio"]:contains("Recent Activity")').click
       expect(f('.no_recent_messages')).to include_text('No Recent Messages')
     end
 
@@ -121,7 +127,8 @@ describe "dashboard" do
     it "should expand/collapse recent activity category", priority: "1", test_id: 215580 do
       create_announcement
       get '/'
-      f('#dashboardToggleButton').click
+      f('#DashboardOptionsMenu_Container button').click
+      fj('span[role="menuitemradio"]:contains("Recent Activity")').click
       assert_recent_activity_category_closed
       click_recent_activity_header
       assert_recent_activity_category_is_open
@@ -132,7 +139,8 @@ describe "dashboard" do
     it "should not expand category when a course/group link is clicked", priority: "2", test_id: 215581 do
       create_announcement
       get '/'
-      f('#dashboardToggleButton').click
+      f('#DashboardOptionsMenu_Container button').click
+      fj('span[role="menuitemradio"]:contains("Recent Activity")').click
       assert_recent_activity_category_closed
       disable_recent_activity_header_course_link
       click_recent_activity_course_link
@@ -151,15 +159,17 @@ describe "dashboard" do
       expect(items.size).to eq 1
 
       get "/"
-      f('#dashboardToggleButton').click
+      f('#DashboardOptionsMenu_Container button').click
+      fj('span[role="menuitemradio"]:contains("Recent Activity")').click
       expect(ff('#conversation-details tbody tr').size).to eq 1
     end
 
     it "shows an assignment stream item under Recent Activity in dashboard", priority: "1", test_id: 108725 do
-      NotificationsCommon.setup_notification(@student, name: 'Assignment Created')
+      setup_notification(@student, name: 'Assignment Created')
       assignment_model({:submission_types => ['online_text_entry'], :course => @course})
       get "/"
-      f('#dashboardToggleButton').click
+      f('#DashboardOptionsMenu_Container button').click
+      fj('span[role="menuitemradio"]:contains("Recent Activity")').click
       find('.toggle-details').click
       expect(fj('.fake-link:contains("Unnamed")')).to be_present
     end
@@ -167,16 +177,17 @@ describe "dashboard" do
     it "should show account notifications on the dashboard", priority: "1", test_id: 215582 do
       a1 = @course.account.announcements.create!(:subject => 'test',
                                                  :message => "hey there",
-                                                 :start_at => Date.today - 1.day,
-                                                 :end_at => Date.today + 1.day)
+                                                 :start_at => Time.zone.today - 1.day,
+                                                 :end_at => Time.zone.today + 1.day)
       a2 = @course.account.announcements.create!(:subject => 'test 2',
                                                  :message => "another annoucement",
-                                                 :start_at => Date.today - 2.days,
-                                                 :end_at => Date.today + 1.day)
+                                                 :start_at => Time.zone.today - 2.days,
+                                                 :end_at => Time.zone.today + 1.day)
 
       get "/"
-      f('#dashboardToggleButton').click
-      messages = ffj("#dashboard .account_notification .notification_message")
+      f('#DashboardOptionsMenu_Container button').click
+      fj('span[role="menuitemradio"]:contains("Recent Activity")').click
+      messages = ff("#dashboard .account_notification .notification_message")
       expect(messages.size).to eq 2
       expect(messages[0].text).to eq a1.message
       expect(messages[1].text).to eq a2.message
@@ -244,7 +255,7 @@ describe "dashboard" do
         group = Group.create!(:name => "group1", :context => @course)
         group.add_user(@user)
 
-        other_unpublished_course = course
+        other_unpublished_course = course_factory
         other_group = Group.create!(:name => "group2", :context => other_unpublished_course)
         other_group.add_user(@user)
 
@@ -355,7 +366,7 @@ describe "dashboard" do
 
     it "should show recent feedback and it should work", priority: "1", test_id: 216373 do
       assign = @course.assignments.create!(:title => 'hi', :due_at => 1.day.ago, :points_possible => 5)
-      assign.grade_student(@student, :grade => '4')
+      assign.grade_student(@student, grade: '4', grader: @teacher)
 
       get "/"
       wait_for_ajaximations

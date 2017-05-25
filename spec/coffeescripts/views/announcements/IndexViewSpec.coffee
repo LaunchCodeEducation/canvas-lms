@@ -32,9 +32,9 @@ define [
       }, JSON.stringify anns]
 
 
-  module 'AnnouncementsIndexView',
+  QUnit.module 'AnnouncementsIndexView',
     setup: ->
-      fakeENV.setup(PERMISSIONS: { manage: false })
+      fakeENV.setup(permissions: { manage_content: false })
       $('<div id="content"></div>').appendTo fixtures
       createServer()
       collection = new AnnouncementsCollection

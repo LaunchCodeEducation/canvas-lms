@@ -1,49 +1,28 @@
-var webpack = require("webpack");
-var I18nPlugin = require("./frontend_build/i18nPlugin");
-var ClientAppsPlugin = require("./frontend_build/clientAppPlugin");
-var CompiledReferencePlugin = require("./frontend_build/CompiledReferencePlugin");
+process.env.NODE_ENV = 'test'
 
-var baseWebpackConfig = require("./frontend_build/baseWebpackConfig");
-var testWebpackConfig = baseWebpackConfig;
+const path = require('path')
+const webpack = require('webpack')
+const testWebpackConfig = require('./frontend_build/baseWebpackConfig')
+const jspecEnv = require('./spec/jspec_env')
 
-// the ember specs don't play nice with the rest,
-// so we run them in totally seperate bundles
-if(process.env.WEBPACK_TEST_BUNDLE == 'ember'){
-  testWebpackConfig.entry = {
-    'WebpackedEmberSpecs': "./spec/javascripts/webpack_ember_spec_index.js"
-  }
-}else {
-  testWebpackConfig.entry = {
-    'WebpackedSpecs': "./spec/javascripts/webpack_spec_index.js"
-  }
-}
+testWebpackConfig.entry = undefined
+testWebpackConfig.plugins.push(new webpack.DefinePlugin(jspecEnv))
 
-testWebpackConfig.devtool = undefined;
-testWebpackConfig.output.path = __dirname + '/spec/javascripts/webpack';
-testWebpackConfig.output.pathinfo = true;
-testWebpackConfig.output.filename = "[name].bundle.test.js";
-testWebpackConfig.plugins = [
+// These externals are necessary for Enzyme
+// See http://airbnb.io/enzyme/docs/guides/webpack.html
+Object.assign(testWebpackConfig.externals || (testWebpackConfig.externals = {}), {
+  'react-dom/server': 'window',
+  'react/lib/ReactContext': 'true',
+  'react/lib/ExecutionEnvironment': 'true'
+})
 
-  // expose a 'qunit' global variable to any file that uses it
-  new webpack.ProvidePlugin({qunit: 'qunitjs'}),
+testWebpackConfig.resolve.alias['spec/jsx'] = path.resolve(__dirname, 'spec/javascripts/jsx')
 
-  new I18nPlugin(),
-  new ClientAppsPlugin(),
-  new CompiledReferencePlugin(),
-  new webpack.IgnorePlugin(/\.md$/),
-  new webpack.IgnorePlugin(/(CHANGELOG|LICENSE|README)$/),
-  new webpack.IgnorePlugin(/package.json/)
-];
-
-testWebpackConfig.resolve.alias.qunit = 'qunitjs';
-testWebpackConfig.resolve.root.push(__dirname + '/spec/coffeescripts');
-testWebpackConfig.resolve.root.push(__dirname + '/spec/javascripts/support');
-
-// Some plugins use a special spec_canvas path for their specs
-testWebpackConfig.module.loaders.unshift({
+testWebpackConfig.module.rules.unshift({
   test: [
     /\/spec\/coffeescripts\//,
     /\/spec_canvas\/coffeescripts\//,
+    // Some plugins use a special spec_canvas path for their specs
     /\/spec\/javascripts\/jsx\//,
     /\/ember\/.*\/tests\//
   ],
@@ -53,24 +32,19 @@ testWebpackConfig.module.loaders.unshift({
   // inside of a closure, without truly making them globals.
   // We should get rid of this and just change our actual source to s/test/qunit.test/ and s/module/qunit.module/
   loaders: [
-    'imports?test=>qunit.test',
-    'imports?asyncTest=>qunit.asyncTest',
-    'imports?start=>qunit.start',
-    "qunitDependencyLoader"
+    'imports-loader?test=>QUnit.test',
+    'imports-loader?asyncTest=>QUnit.asyncTest',
+    'imports-loader?start=>QUnit.start',
   ]
-});
+})
 
+// For faster local debugging in karma, only add istambul cruft you've explicity set the "COVERAGE" environment variable
+if (process.env.COVERAGE) {
+  testWebpackConfig.module.rules.unshift({
+    test: /(jsx.*(\.js$|\.jsx$)|\.coffee$|public\/javascripts\/.*\.js$)/,
+    exclude: /(node_modules|spec|public\/javascripts\/(bower|client_apps|translations|vendor|custom_moment_locales))/,
+    loader: 'istanbul-instrumenter-loader'
+  })
+}
 
-testWebpackConfig.module.postLoaders = [{
-  test: /(jsx.*(\.js$|\.jsx$)|\.coffee$|public\/javascripts\/.*\.js$)/,
-  exclude: /(node_modules|spec|public\/javascripts\/(bower|client_apps|compiled|jst|jsx|translations|vendor))/,
-  loader: 'istanbul-instrumenter'
-}]
-
-
-testWebpackConfig.module.noParse = [
-  /\/sinon-1.17.2.js/,
-  /\/axe.js/
-]
-
-module.exports = testWebpackConfig;
+module.exports = testWebpackConfig

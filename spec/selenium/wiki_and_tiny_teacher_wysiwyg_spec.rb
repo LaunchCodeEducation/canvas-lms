@@ -63,7 +63,7 @@ describe "Wiki pages and Tiny WYSIWYG editor features" do
 
       f(".mce-i-bullist").click
       in_frame wiki_page_body_ifr_id do
-        ff('#tinymce li').length == 3
+        expect(ff('#tinymce li').length).to eq 3
       end
     end
 
@@ -71,7 +71,10 @@ describe "Wiki pages and Tiny WYSIWYG editor features" do
       text = "<ul><li>1</li><li>2</li><li>3</li></ul>"
       wysiwyg_state_setup(text, html: true)
 
+      # editor window needs focus in chrome to enable bullet list button
+      f("form.edit-form .edit-content").click if driver.browser == :chrome
       f(".mce-i-bullist").click
+
       in_frame wiki_page_body_ifr_id do
         expect(f("#tinymce")).not_to contain_css('li')
       end
@@ -82,7 +85,7 @@ describe "Wiki pages and Tiny WYSIWYG editor features" do
 
       f('.mce-i-numlist').click
       in_frame wiki_page_body_ifr_id do
-        ff('#tinymce li').length == 3
+        expect(ff('#tinymce li').length).to eq 3
       end
     end
 
@@ -90,7 +93,10 @@ describe "Wiki pages and Tiny WYSIWYG editor features" do
       text = "<ol><li>1</li><li>2</li><li>3</li></ol>"
       wysiwyg_state_setup(text, html: true)
 
+      # editor window needs focus in chrome to enable number list button
+      f("form.edit-form .edit-content").click if driver.browser == :chrome
       f('.mce-i-numlist').click
+
       in_frame wiki_page_body_ifr_id do
         expect(f("#tinymce")).not_to contain_css('li')
       end
@@ -254,7 +260,7 @@ describe "Wiki pages and Tiny WYSIWYG editor features" do
         wait_for_ajaximations
 
         in_frame wiki_page_body_ifr_id do
-          f("#tinymce img").click
+          move_to_click("#tinymce img")
         end
 
         f(".mce-i-align#{setting}").click

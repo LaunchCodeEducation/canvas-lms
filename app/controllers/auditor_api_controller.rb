@@ -17,12 +17,13 @@
 #
 
 class AuditorApiController < ApplicationController
-  before_filter :check_configured
+  before_action :check_configured
 
   private
 
   def check_configured
-    not_found unless Canvas::Cassandra::DatabaseBuilder.configured?('auditors')
+    return if Canvas::Cassandra::DatabaseBuilder.configured?('auditors')
+    render json: { message: "Auditors are not configured" }, status: :not_found
   end
 
   def query_options

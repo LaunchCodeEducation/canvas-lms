@@ -20,15 +20,18 @@ Bundler.require(*Rails.groups)
 
 module CanvasRails
   class Application < Rails::Application
-    config.autoload_paths += [config.root.join('lib').to_s]
     $LOAD_PATH << config.root.to_s
     config.encoding = 'utf-8'
-    require_dependency 'logging_filter'
+    require 'logging_filter'
     config.filter_parameters.concat LoggingFilter.filtered_parameters
     config.action_dispatch.rescue_responses['AuthenticationMethods::AccessTokenError'] = 401
     config.action_dispatch.rescue_responses['AuthenticationMethods::LoggedOutError'] = 401
     config.action_dispatch.default_headers['X-UA-Compatible'] = "IE=Edge,chrome=1"
     config.action_dispatch.default_headers.delete('X-Frame-Options')
+    unless CANVAS_RAILS4_2
+      config.action_controller.forgery_protection_origin_check = true
+      ActiveSupport.to_time_preserves_timezone = true
+    end
 
     config.app_generators do |c|
       c.test_framework :rspec
@@ -81,20 +84,12 @@ module CanvasRails
     # Activate observers that should always be running
     config.active_record.observers = [:cacher, :stream_item_cache, :live_events_observer, :conditional_release_observer ]
 
-    config.active_record.whitelist_attributes = false if CANVAS_RAILS4_2
-
-    config.active_record.raise_in_transactional_callbacks = true # may as well opt into the new behavior
+    config.active_record.raise_in_transactional_callbacks = true if CANVAS_RAILS4_2
 
     config.active_support.encode_big_decimal_as_string = false
 
-    config.autoload_paths += %W(#{Rails.root}/app/middleware
-                            #{Rails.root}/app/observers
-                            #{Rails.root}/app/presenters
-                            #{Rails.root}/app/services
-                            #{Rails.root}/app/serializers
-                            #{Rails.root}/app/presenters)
-
-    config.autoload_once_paths << Rails.root.join("app/middleware")
+    config.paths['lib'].eager_load!
+    config.paths.add('app/middleware', eager_load: true, autoload_once: true)
 
     # prevent directory->module inference in these directories from wreaking
     # havoc on the app (e.g. stylesheets/base -> ::Base)
@@ -104,13 +99,12 @@ module CanvasRails
     # we don't know what middleware to make SessionsTimeout follow until after
     # we've loaded config/initializers/session_store.rb
     initializer("extend_middleware_stack", after: "load_config_initializers") do |app|
-      request_throttle_position = CANVAS_RAILS4_2 ? 'ActionDispatch::ParamsParser' : 'Rack::Head'
-      app.config.middleware.insert_before(config.session_store, 'LoadAccount')
-      app.config.middleware.insert_before(config.session_store, 'SessionsTimeout')
-      app.config.middleware.swap('ActionDispatch::RequestId', 'RequestContextGenerator')
-      app.config.middleware.insert_after(config.session_store, 'RequestContextSession')
-      app.config.middleware.insert_before(request_throttle_position, 'RequestThrottle')
-      app.config.middleware.insert_before('Rack::MethodOverride', 'PreventNonMultipartParse')
+      request_throttle_position = CANVAS_RAILS4_2 ? ActionDispatch::ParamsParser : Rack::Head
+      app.config.middleware.insert_before(config.session_store, LoadAccount)
+      app.config.middleware.swap(ActionDispatch::RequestId, RequestContextGenerator)
+      app.config.middleware.insert_after(config.session_store, RequestContextSession)
+      app.config.middleware.insert_before(request_throttle_position, RequestThrottle)
+      app.config.middleware.insert_before(Rack::MethodOverride, PreventNonMultipartParse)
     end
 
     config.to_prepare do
@@ -188,6 +182,21 @@ module CanvasRails
       val.constantize
     end
 
+    module PatchThorWarning
+      # active_model_serializers should be passing `type: :boolean` here:
+      # https://github.com/rails-api/active_model_serializers/blob/v0.9.0.alpha1/lib/active_model/serializer/generators/serializer/scaffold_controller_generator.rb#L10
+      # but we don't really care about the warning, it only affects using the rails
+      # generator for a resource
+      #
+      # Easiest way to avoid the warning for now is to patch thor
+      def validate_default_type!
+        return if switch_name == "--serializer"
+        super
+      end
+    end
+
+    Autoextend.hook(:"Thor::Option", PatchThorWarning, method: :prepend)
+
     # Extend any base classes, even gem classes
     Dir.glob("#{Rails.root}/lib/ext/**/*.rb").each { |file| require file }
 
@@ -228,8 +237,13 @@ module CanvasRails
 
     class ExceptionsApp
       def call(env)
-        @app_controller ||= ActionDispatch::Routing::RouteSet::Dispatcher.new({}).controller(:controller => 'application')
-        @app_controller.action('rescue_action_dispatch_exception').call(env)
+        if CANVAS_RAILS4_2
+          ApplicationController.action('rescue_action_dispatch_exception').call(env)
+        else
+          req = ActionDispatch::Request.new(env)
+          res = ApplicationController.make_response!(req)
+          ApplicationController.dispatch('rescue_action_dispatch_exception', req, res)
+        end
       end
     end
 
@@ -242,6 +256,11 @@ module CanvasRails
     if config.action_dispatch.rack_cache != false
       config.action_dispatch.rack_cache[:ignore_headers] =
         %w[Set-Cookie X-Request-Context-Id X-Canvas-User-Id X-Canvas-Meta]
+    end
+
+    def validate_secret_key_config!
+      # no validation; we don't use Rails' CookieStore session middleware, so we
+      # don't care about secret_key_base
     end
   end
 end

@@ -8,9 +8,12 @@
 
   can_manage_courses = can_do(@context.account, @current_user, :manage_courses)
   can_rename_course = can_manage_courses || (can_manage && !@context.root_account.settings[:prevent_course_renaming_by_teachers])
+  can_manage_master_courses = can_manage_courses && can_do(@context.account, @current_user, :manage_master_courses)
   has_multiple_sections = @context.course_sections.active.count > 1
 
   can_see_users = can_do(@context, @current_user, :read_roster, :manage_students, :manage_admin_users)
+
+  is_master_course = MasterCourses::MasterTemplate.is_master_course?(@context)
 %>
 
 <% content_for :right_side do %>
@@ -25,7 +28,7 @@
     <% if can_do @context, @current_user, :update %>
       <li id="navigation_tab"><a href="#tab-navigation"><%= t('tabs.navigation', %{Navigation}) %></a></li>
     <% end %>
-    <% if can_do @context, @current_user, :update %>
+    <% if can_do @context, @current_user, :read_as_admin %>
       <li id="external_tools_tab"><a href="#tab-tools" id="tab-tools-link"><%= t('tabs.tools', %{Apps}) %></a></li>
     <% end %>
     <% if @publishing_enabled %>
@@ -97,6 +100,25 @@
           <% end %>
         </td>
       </tr>
+      <% if @context.root_account.feature_enabled?(:master_courses) %>
+      <tr>
+        <td class="form-label nobr"><%= f.blabel :blueprint_course, :en => "Blueprint Course" %></td>
+        <td class="nobr">
+          <% if can_manage_master_courses %>
+            <% mc_message = !is_master_course && why_cant_i_enable_master_course(@context) %>
+            <span <% if mc_message %>data-tooltip title="<%= mc_message %>"<% end %>>
+              <div class="ic-Form-control ic-Form-control--checkbox">
+                <%= f.check_box :blueprint, :checked => is_master_course, :disabled => !!mc_message %>
+                <%= f.label :blueprint, :class => 'ic-Label', :en => "Enable course as a Blueprint Course" %>
+              </div>
+            </span>
+            <%= render :partial => 'master_course_restrictions', :locals => {:form => f, :course => @context} %>
+          <% else %>
+            <span id="course_blueprint"><%= is_master_course ? t("Yes") : t("No") %></span>
+          <% end %>
+        </td>
+      </tr>
+      <% end %>
       <tr>
         <td><%= f.blabel :time_zone, :en => "Time Zone" %></td>
         <td>
@@ -332,15 +354,30 @@
             <%= (format_options.detect{|text, key| key == @context.course_format} || format_options.first).first %>
           <% end %>
         </td>
-      </tr><tr>
-        <td class="form-label"><label for="course_epub_export"><%= before_label('course_epub_export', %{Epub Export}) %></label></td>
-        <td colspan="3" id="course_visibility">
-          <div>
-            <%= f.check_box :organize_epub_by_content_type, :disabled => !can_manage %>
-            <%= f.label :organize_epub_by_content_type, t("Organize epub by content type (default is by module).") %>
-          </div>
-        </td>
-      </tr><tr>
+      </tr>
+      <% if @context.feature_enabled?(:epub_export) && !@context.account.enable_offline_web_export? %>
+        <tr>
+          <td class="form-label"><label for="course_epub_export"><%= before_label('course_epub_export', %{Epub Export}) %></label></td>
+          <td colspan="3" id="epub_export">
+            <div>
+              <%= f.check_box :organize_epub_by_content_type, :disabled => !can_manage %>
+              <%= f.label :organize_epub_by_content_type, t("Organize epub by content type (default is by module).") %>
+            </div>
+          </td>
+        </tr>
+      <% end %>
+      <% if @context.account.enable_offline_web_export? %>
+        <tr>
+          <td class="form-label"><label for="course_offline_export"><%= before_label('course_offline_export', %{Offline Course}) %></label></td>
+          <td colspan="3" id="offline_web_export">
+            <div>
+              <%= f.check_box :enable_offline_web_export, :disabled => !can_manage %>
+              <%= f.label :enable_offline_web_export, t("Allow course content to be downloaded and viewed offline") %>
+            </div>
+          </td>
+        </tr>
+      <% end %>
+      <tr>
         <td class="form-label"><label for="course_public_description"><%= before_label('course_description', %{Description}) %></label></td>
         <td colspan="3">
           <%= f.text_area :public_description, :style => "height: 100px;", :disabled => !can_manage %>
@@ -382,6 +419,10 @@
               <%= f.label :open_enrollment, :en => "Add a \"Join this Course\" link to the course home page" %><br/>
               </div>
             <% end %>
+            <%= f.check_box :show_announcements_on_home_page, :disabled => !can_manage %>
+            <%= f.label :show_announcements_on_home_page, :en => "Show recent announcements on Course home page" %><br/>
+            <%= f.select :home_page_announcement_limit, options_for_select(1..15, @context.home_page_announcement_limit || 3), {}, {:disabled => !can_manage || !@context.show_announcements_on_home_page?, :style => 'width: 75px'} %>
+            <%= f.label :home_page_announcement_limit, :en => 'Number of announcements shown on the homepage' %><br/>
             <%= f.check_box :allow_student_forum_attachments, :disabled => !can_manage %>
             <%= f.label :allow_student_forum_attachments, :en => "Let students attach files to discussions" %><br/>
             <%= f.check_box :allow_student_discussion_topics, :disabled => !can_manage %>
@@ -394,8 +435,8 @@
             <%= f.label :hide_final_grades, :en => "Hide totals in student grades summary" %><br/>
             <%= f.check_box :hide_distribution_graphs, :disabled => !can_manage %>
             <%= f.label :hide_distribution_graphs, :en => "Hide grade distribution graphs from students" %><br/>
-            <%= f.check_box :lock_all_announcements, :disabled => !can_manage %>
-            <%= label_tag :course_lock_all_announcements, :en => 'Disable comments on announcements' %><br />
+            <%= f.check_box :lock_all_announcements, :disabled => !can_manage || @context.account.lock_all_announcements[:locked] %>
+            <%= f.label :lock_all_announcements, :en => 'Disable comments on announcements' %><br />
             <%= f.select :default_wiki_editing_roles, [
               [t('#course.wiki_permissions.only_teachers', "Only Teachers"), "teachers"],
               [t('#course.wiki_permissions.teachers_students', "Teacher and Students"), "teachers,students"],
@@ -413,6 +454,9 @@
       <% if can_manage %>
         <tr>
           <td colspan="4">
+            <% if Setting.get('cross_root_account_course_moves', 'false') == 'true' && Account.site_admin.grants_right?(@current_user, :manage_courses) && Account.root_accounts.length > 1 %>
+              <a href="#" class="move_course_link btn"><i class="icon-arrow-right"></i> <%= t('links.move_course', %{Move To Another Account}) %></a>
+            <% end %>
             <span class="course_form">
               <div class="form-actions">
                 <button type="submit" class="btn btn-primary"><%= t('buttons.update_course', %{Update Course Details}) %></button>
@@ -519,10 +563,14 @@
               <a class="al-trigger al-trigger-gray" role="button" href="#">
                 <i class="icon-settings"></i>
                 <i class="icon-mini-arrow-down"></i>
-                <span class="screenreader-only">Settings</span>
+                <span class="screenreader-only">
+                  <span class="screenreader-only">
+                    <%= t('Settings for %{tab_label}', { tab_label: tab[:label]}) %>
+                  </span>
+                </span>
               </a>
 
-              <ul id="content-1" class="al-options" role="menu" tabindex="0" aria-hidden="true" aria-expanded="false" aria-activedescendant="content-2">
+              <ul class="al-options" role="menu" tabindex="0" aria-hidden="true" aria-expanded="false" aria-activedescendant="content-2">
                 <li role="presentation">
                   <a href="#" class="icon-x disable_nav_item_link" id="disable_nav_item_link_<%= tab[:id] %>" role="menuitem" title="Disable this item"><%= t("Disable") %></a>
                 </li>
@@ -556,7 +604,7 @@
                 <a class="al-trigger al-trigger-gray" role="button" href="#">
                   <i class="icon-settings"></i>
                   <i class="icon-mini-arrow-down"></i>
-                  <span class="screenreader-only">Settings</span>
+                  <span class="screenreader-only"><%= t('Settings for %{tab_label}', { tab_label: tab[:label]}) %></span>
                 </a>
 
                 <ul id="content-2" class="al-options" role="menu" tabindex="0" aria-hidden="true" aria-expanded="false" aria-activedescendant="content-3">
@@ -587,7 +635,8 @@
           <input type="radio" name="move_location" value="after" id="move_location_after" class="move-nav-item-label-spacer" /><label class="move-nav-item-label-width" for="move_location_after"><%= t('move_nav_item.after', "After") %></label>
         </div>
         <div class="move-nav-item-select-spacer">
-          <select name="move_nav_item_select" id="move_nav_item_select"></select>
+          <label class="move-nav-item-label-width" for="move_nav_item_select"><%= t("Move Item") %></label>
+          <select name="move_nav_item_select" aria-label="<%= t("Move Item") %>" id="move_nav_item_select"></select>
         </div>
 
       </div>
@@ -600,7 +649,7 @@
 
   <% end %>
 
-  <% if can_do @context, @current_user, :update %>
+  <% if can_do @context, @current_user, :read_as_admin %>
     <div id="tab-tools">
       <%= render :partial => 'external_tools/external_tools', :object => @context.context_external_tools.active %>
     </div>
@@ -627,6 +676,32 @@
   <% end %>
 </div><!-- end course details tab -->
 
+<% if Account.site_admin.grants_right?(@current_user, :manage_courses) %>
+  <div id="move_course_dialog" style="display: none;">
+    <h2><%= t('headings.move_course', %{Move the course to another root account}) %></h2>
+    <%= t('deatils.move_course', %{Select a new root account for this course.  After you move the course you'll want to specify a new department for the course as well.}) %>
+    <%= form_for :course, :url => course_url(@context), :html => {:method => :put} do |f| %>
+      <table class="formtable">
+        <tr>
+          <td>
+            <%= f.blabel :root_account_id, :en => "Root Account" %>
+          </td>
+          <td>
+            <%= f.select :root_account_id, Account.root_accounts.active.order("name DESC").select([:id, :name]).map{|a| [a.name, a.id] }, :selected => @context.root_account_id %>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2">
+            <div class="button-container">
+              <button type="button" class="btn cancel_button"><%= t('#buttons.cancel', %{Cancel}) %></button>
+              <button type="submit" class="btn btn-primary"><%= t('buttons.move_course', %{Move Course}) %></button>
+            </div>
+          </td>
+        </tr>
+      </table>
+    <% end %>
+  </div>
+<% end %>
 <div id="edit_letter_grades_form" style="display: none;" data-context_code="<%= @context.asset_string %>">
   <%= render partial: "shared/grading_standard", object: @context.grading_standard, locals: {read_only: !can_manage} %>
   <a href="<%= context_url(@context, :context_grading_standards_url) %>" style="display: none;" class="create_grading_standard_url">&nbsp;</a>

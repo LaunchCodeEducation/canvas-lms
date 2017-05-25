@@ -1,54 +1,11 @@
-if CANVAS_RAILS4_2
-  class WeakParameters < ActiveSupport::HashWithIndifferentAccess
-    # stealin some code from strong params to make WeakParameters from the values
-
-    def each(&block)
-      super do |key, value|
-        convert_hashes_to_parameters(key, value)
-      end
-
-      super
-    end
-
-    def [](key)
-      convert_hashes_to_parameters(key, super)
-    end
-
-    def fetch(key, *args)
-      convert_hashes_to_parameters(key, super, false)
-    end
-
-    def delete(key, &block)
-      convert_hashes_to_parameters(key, super, false)
-    end
-
-    def select!(&block)
-      convert_value_to_parameters(super)
-    end
-
-    private
-    def convert_hashes_to_parameters(key, value, assign_if_converted=true)
-      converted = convert_value_to_parameters(value)
-      self[key] = converted if assign_if_converted && !converted.equal?(value)
-      converted
-    end
-
-    def convert_value_to_parameters(value)
-      if value.is_a?(Array)
-        value.map { |_| convert_value_to_parameters(_) }
-      elsif value.is_a?(WeakParameters) || !value.is_a?(Hash)
-        value
-      else
-        self.class.new(value)
-      end
-    end
-  end
+class WeakParameters < ActiveSupport::HashWithIndifferentAccess
+  # i think we might have to leave this in for future YAML parsing :/
 end
 
 module ArbitraryStrongishParams
   ANYTHING = Object.new.freeze
 
-  def initialize(attributes = nil)
+  def initialize(attributes = (CANVAS_RAILS4_2 ? nil : {}))
     @anythings = {}.with_indifferent_access
     super
   end
@@ -67,7 +24,13 @@ module ArbitraryStrongishParams
 
       if filter[key] == ActionController::Parameters::EMPTY_ARRAY
         # Declaration { comment_ids: [] }.
-        array_of_permitted_scalars_filter(params, key)
+        if CANVAS_RAILS4_2
+          array_of_permitted_scalars_filter(params, key)
+        else
+          array_of_permitted_scalars?(self[key]) do |val|
+            params[key] = val
+          end
+        end
       elsif filter[key] == ANYTHING
         if filtered = recursive_arbitrary_filter(value)
           params[key] = filtered
@@ -76,7 +39,7 @@ module ArbitraryStrongishParams
       else
         # Declaration { user: :name } or { user: [:name, :age, { address: ... }] }.
         params[key] = each_element(value) do |element|
-          if element.is_a?(Hash)
+          if element.is_a?(Hash) || element.is_a?(ActionController::Parameters)
             element = self.class.new(element) unless element.respond_to?(:permit)
             element.permit(*Array.wrap(filter[key]))
           end
@@ -86,7 +49,7 @@ module ArbitraryStrongishParams
   end
 
   def recursive_arbitrary_filter(value)
-    if value.is_a?(Hash)
+    if value.is_a?(Hash) || value.is_a?(ActionController::Parameters)
       hash = {}
       value.each do |k, v|
         hash[k] = recursive_arbitrary_filter(v) if permitted_scalar?(k)
@@ -107,7 +70,7 @@ module ArbitraryStrongishParams
     end
   end
 
-  def convert_hashes_to_parameters(key, value, assign_if_converted=true)
+  def convert_hashes_to_parameters(key, value, *args)
     return value if @anythings.key?(key)
     super
   end
@@ -117,76 +80,27 @@ module ArbitraryStrongishParams
       duplicate.instance_variable_set(:@anythings, @anythings.dup)
     end
   end
-end
-ActionController::Parameters.prepend(ArbitraryStrongishParams)
 
-# default to *non* strong parameters
-ActionController::Base.class_eval do
-  def strong_anything
-    ArbitraryStrongishParams::ANYTHING
-  end
-
-  if CANVAS_RAILS4_2
-    def params
-      @_params ||= WeakParameters.new(request.parameters)
-    end
-
-    def strong_params
-      @_strong_params ||= ActionController::Parameters.new(request.parameters)
-    end
-
-    def params=(val)
-      @_strong_params = val.is_a?(Hash) ? ActionController::Parameters.new(val) : val
-      @_params = val.is_a?(Hash) ? WeakParameters.new(val) : val
-    end
-  else
-    def strong_params
-      params
-    end
-  end
-end
-
-# completely ignore attr_accessible if it's a strong parameters
-module ForbiddenAttributesProtectionWithoutAttrAccessible
-  module ClassMethods
-    # temporary shims to ignore protected attributes in Rails 5 so that other Rails 5 work
-    # can continue while we're still converting models over to Rails 5
-    unless CANVAS_RAILS4_2
-      def attr_accessible(*_args)
-        raise "you didn't finish converting to strong_parameters?!" if Rails.env.production?
-      end
-
-      def attr_protected(*_args)
-        raise "you didn't finish converting to strong_parameters?!" if Rails.env.production?
-      end
-    end
-
-    def strong_params
-      @strong_params = true
-    end
-
-    def strong_params?
-      !!@strong_params || (self != ActiveRecord::Base && superclass.strong_params?)
-    end
-  end
-
-  if CANVAS_RAILS4_2
-    def sanitize_for_mass_assignment(*options)
-      new_attributes = options.first
-      if new_attributes.respond_to?(:permitted?)
-        raise ActiveModel::ForbiddenAttributesError unless new_attributes.permitted?
-        new_attributes
-      elsif new_attributes.is_a?(WeakParameters) && self.class.strong_params?
-        raise ActiveModel::ForbiddenAttributesError
+  # when dropping Rails 4.2, remove this block so that we can start addressing these
+  # deprecation warnings
+  unless CANVAS_RAILS4_2
+    def method_missing(method_sym, *args, &block)
+      if @parameters.respond_to?(method_sym)
+        # DON'T warn about params not inheriting from Hash anymore
+        @parameters.public_send(method_sym, *args, &block)
       else
         super
       end
     end
   end
 end
+ActionController::Parameters.prepend(ArbitraryStrongishParams)
 
-ActiveRecord::Base.include(ForbiddenAttributesProtectionWithoutAttrAccessible) if CANVAS_RAILS4_2
-ActiveRecord::Base.singleton_class.include(ForbiddenAttributesProtectionWithoutAttrAccessible::ClassMethods)
+ActionController::Base.class_eval do
+  def strong_anything
+    ArbitraryStrongishParams::ANYTHING
+  end
+end
 
 ActionController::ParameterMissing.class_eval do
   def skip_error_report?; true; end

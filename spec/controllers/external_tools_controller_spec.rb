@@ -18,29 +18,9 @@
 
 require File.expand_path(File.dirname(__FILE__) + '/../spec_helper')
 
-# Public: Create a new valid LTI tool for the given course.
-#
-# course - The course to create the tool for.
-#
-# Returns a valid ExternalTool.
-def new_valid_tool(course)
-  tool = course.context_external_tools.new(
-      name: "bob",
-      consumer_key: "bob",
-      shared_secret: "bob",
-      tool_id: 'some_tool',
-      privacy_level: 'public'
-  )
-  tool.url = "http://www.example.com/basic_lti"
-  tool.resource_selection = {
-    :url => "http://#{HostUrl.default_host}/selection_test",
-    :selection_width => 400,
-    :selection_height => 400}
-  tool.save!
-  tool
-end
-
 describe ExternalToolsController do
+  include ExternalToolsSpecHelper
+
   before :once do
     course_with_teacher(:active_all => true)
     student_in_course(:active_all => true)
@@ -72,7 +52,7 @@ describe ExternalToolsController do
 
     it "does not return a JWT token for another context" do
       teacher_course = @course
-      other_course = course()
+      other_course = course_factory()
 
       @tool.context_id = other_course.id
       @tool.save!
@@ -572,7 +552,18 @@ describe ExternalToolsController do
         @tool.save!
 
         get :show, course_id: @course.id, id: @tool.id, launch_type: 'migration_selection'
-        expect(assigns[:lti_launch].resource_url).to eq 'http://www.instructure.com/test?first=rory&last=williams'
+        expect(assigns[:lti_launch].params['first']).to be_nil
+      end
+
+      it "does not copy query params to POST if oauth_compliant tool setting is enabled" do
+        user_session(@teacher)
+        @course.root_account.disable_feature!(:disable_lti_post_only)
+        @tool.url = 'http://www.instructure.com/test?first=rory&last=williams'
+        @tool.settings[:oauth_compliant] = true
+        @tool.save!
+
+        get :show, course_id: @course.id, id: @tool.id, launch_type: 'migration_selection'
+        expect(assigns[:lti_launch].params['first']).to be_nil
       end
     end
   end
@@ -635,11 +626,13 @@ describe ExternalToolsController do
 
     it "should return a variable expansion for a collaboration" do
       user_session(@teacher)
-      collab = ExternalToolCollaboration.create!(
+      collab = ExternalToolCollaboration.new(
         title: "my collab",
         user: @teacher,
         url: 'http://www.example.com'
       )
+      collab.context = @course
+      collab.save!
       tool = new_valid_tool(@course)
       tool.collaboration = { message_type: 'ContentItemSelectionRequest' }
       tool.settings[:custom_fields] = { 'collaboration_url' => '$Canvas.api.collaborationMembers.url' }
@@ -649,7 +642,7 @@ describe ExternalToolsController do
     end
 
     it "should remove query params when post_only is set" do
-      u = user(:active_all => true)
+      u = user_factory(active_all: true)
       account.account_users.create!(user: u)
       user_session(@user)
 
@@ -660,7 +653,7 @@ describe ExternalToolsController do
     end
 
     it "should not remove query params when post_only is not set" do
-      u = user(:active_all => true)
+      u = user_factory(active_all: true)
       account.account_users.create!(user: u)
       user_session(@user)
 
@@ -670,7 +663,7 @@ describe ExternalToolsController do
     end
 
     it "adds params from secure_params" do
-      u = user(:active_all => true)
+      u = user_factory(active_all: true)
       account.account_users.create!(user: u)
       user_session(@user)
       tool.save!
@@ -682,15 +675,18 @@ describe ExternalToolsController do
 
     context 'collaborations' do
       let(:collab) do
-        collab = ExternalToolCollaboration.create!(
+        collab = ExternalToolCollaboration.new(
           title: "my collab",
           user: @teacher,
           url: 'http://www.example.com'
         )
+        collab.context = @course
+        collab.save!
+        collab
       end
 
       it "lets you specify the selection_type" do
-        u = user(active_all: true)
+        u = user_factory(active_all: true)
         account.account_users.create!( user: u)
         user_session u
         tool.collaboration = { message_type: 'ContentItemSelectionRequest' }
@@ -700,7 +696,7 @@ describe ExternalToolsController do
       end
 
       it "creates a content-item return url with an id" do
-        u = user(active_all: true)
+        u = user_factory(active_all: true)
         account.account_users.create!(user:u)
         user_session u
         tool.collaboration = { message_type: 'ContentItemSelectionRequest' }
@@ -711,7 +707,7 @@ describe ExternalToolsController do
       end
 
       it "sets the auto_create param to true" do
-        u = user(active_all: true)
+        u = user_factory(active_all: true)
         account.account_users.create!(user:u)
         user_session u
         tool.collaboration = { message_type: 'ContentItemSelectionRequest' }
@@ -721,7 +717,7 @@ describe ExternalToolsController do
       end
 
       it "sets the accept_unsigned param to false" do
-        u = user(active_all: true)
+        u = user_factory(active_all: true)
         account.account_users.create!(user:u)
         user_session u
         tool.collaboration = { message_type: 'ContentItemSelectionRequest' }
@@ -731,7 +727,7 @@ describe ExternalToolsController do
       end
 
       it "adds a data element with a jwt that contains the id if a content_item_id param is present " do
-        u = user(active_all: true)
+        u = user_factory(active_all: true)
         account.account_users.create!(user:u)
         user_session u
         tool.collaboration = { message_type: 'ContentItemSelectionRequest' }
@@ -743,7 +739,7 @@ describe ExternalToolsController do
       end
 
       it "adds a data element with a jwt that contains the consumer_key if a content_item_id param is present " do
-        u = user(active_all: true)
+        u = user_factory(active_all: true)
         account.account_users.create!(user:u)
         user_session u
         tool.collaboration = { message_type: 'ContentItemSelectionRequest' }
@@ -755,7 +751,7 @@ describe ExternalToolsController do
       end
 
       it 'adds to the data element the default launch url' do
-        u = user(active_all: true)
+        u = user_factory(active_all: true)
         account.account_users.create!(user:u)
         user_session u
         tool.collaboration = { message_type: 'ContentItemSelectionRequest' }
@@ -863,224 +859,7 @@ describe ExternalToolsController do
     end
   end
 
-  describe "PUT 'update'" do
-
-    context "form post", type: :request do
-
-      let(:post_body) {
-        'external_tool%5Bname%5D=IMS+Cert+Tool&external_tool%5Bprivacy_level%5D=name_only'\
-        '&external_tool%5Bconsumer_key%5D=29f0c0ad-0cff-433f-8e35-797bd34710ea&external_tool'\
-        '%5Bcustom_fields%5Bsimple_key%5D%5D=custom_simple_value&external_tool%5Bcustom_fields'\
-        '%5Bcert_userid%5D%5D=%24User.id&external_tool%5Bcustom_fields%5BComplex!%40%23%24%5E*()'\
-        '%7B%7D%5B%5DKEY%5D%5D=Complex!%40%23%24%5E*%3B()%7B%7D%5B%5D%C2%BDValue&external_tool'\
-        '%5Bcustom_fields%5Bcert_username%5D%5D=%24User.username&external_tool%5Bcustom_fields'\
-        '%5Btc_profile_url%5D%5D=%24ToolConsumerProfile.url&external_tool%5Bdomain%5D=null&'\
-        'external_tool%5Burl%5D=https%3A%2F%2Fwww.imsglobal.org%2Flti%2Fcert%2Ftc_tool.php%3F'\
-        'x%3DWith%2520Space%26y%3Dyes&external_tool%5Bdescription%5D=null&external_tool%5Bshared_secret%5D=secret'
-      }
-
-      it "should not update tool if user lacks update_manually" do
-        user_session(@student)
-        tool = new_valid_tool(@course)
-        put(
-          "/api/v1/courses/#{@course.id}/external_tools/#{tool.id}",
-          post_body,
-          { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded '}
-        )
-        assert_status(401)
-      end
-
-      it "should update tool if user is granted update_manually" do
-        user_session(@teacher)
-        tool = new_valid_tool(@course)
-        put(
-          "/api/v1/courses/#{@course.id}/external_tools/#{tool.id}",
-          post_body,
-          { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded '}
-        )
-        assert_status(200)
-      end
-
-      it 'accepts form data' do
-        user_session(@teacher)
-        tool = new_valid_tool(@course)
-        put(
-          "/api/v1/courses/#{@course.id}/external_tools/#{tool.id}",
-          post_body,
-          { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded '}
-        )
-        expect(response).to be_success
-        expect(assigns[:tool]).not_to be_nil
-      end
-
-      it 'uses custom parsing for form data' do
-        user_session(@teacher)
-        tool = new_valid_tool(@course)
-        put(
-          "/api/v1/courses/#{@course.id}/external_tools/#{tool.id}",
-          post_body,
-          { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded '}
-        )
-
-        expect(assigns[:tool].settings[:custom_fields]["Complex!@#$^*(){}[]KEY"]).to eq 'Complex!@#$^*;(){}[]½Value'
-      end
-    end
-  end
-
-  describe "POST 'create_tool_with_verification'" do
-    context "form post", type: :request do
-      include WebMock::API
-
-      let(:post_body) do
-        {
-          custom_fields_string: '',
-          consumer_key: 'N/A',
-          shared_secret: 'N/A',
-          config_url: 'https://www.edu-apps.org/lti_public_resources/config.xml?id=youtube&name=YouTube&channel_name=jangbricks',
-          config_type: 'by_url',
-          name:'YouTube',
-          app_center_id: 'pr_youtube',
-          course_navigation: {enabled: true}
-        }
-      end
-
-      let(:app_center_response) do
-        {
-           "id"   =>163,
-           "short_name" => "pr_youtube",
-           "name" => "YouTube",
-           "description" => "\n<p>Search publicly available YouTube videos.</p>\n",
-           "short_description" => "Search publicly available YouTube videos.",
-           "status" => "active",
-           "app_type" => nil,
-           "preview_url" => "https://www.edu-apps.org/lti_public_resources/?tool_id=youtube",
-           "banner_image_url" => "https://edu-app-center.s3.amazonaws.com/uploads/pr_youtube.png",
-           "logo_image_url" => nil,
-           "icon_image_url" => nil,
-           "average_rating" => 4.0,
-           "total_ratings" => 5.0,
-           "is_certified" => false,
-           "config_xml_url" => "https://www.edu-apps.org/lti_public_resources/config.xml?id=youtube",
-           "requires_secret" => false,
-           "config_options" => [
-             {
-                "name" => "channel_name",
-                "param_type" => "text",
-                "default_value" => "",
-                "description" => "Channel Name (Optional)",
-                "is_required" => false
-             }
-           ]
-        }
-      end
-
-      let(:app_api) { mock() }
-
-      before do
-        AppCenter::AppApi.stubs(:new).returns(app_api)
-        app_api.stubs(:fetch_app_center_response).returns(app_center_response)
-        app_api.stubs(:get_app_config_url).returns(app_center_response['config_xml_url'])
-
-        configxml = File.read(File.join(Rails.root, 'spec', 'fixtures', 'lti', 'config.youtube.xml'))
-        stub_request(:get, app_center_response['config_xml_url']).to_return(body: configxml)
-        stub_request(:get, "https://www.edu-apps.org/tool_i_should_not_have_access_to.xml").to_return(status: 404)
-      end
-
-      it 'creates tool when provided all required params' do
-        user_session(@teacher)
-        post(
-          "/api/v1/courses/#{@course.id}/create_tool_with_verification",
-          post_body.to_json,
-          {'CONTENT_TYPE' => 'application/json'}
-        )
-
-        expect(response).to be_success
-        expect(assigns[:tool].name).to eq app_center_response['name']
-      end
-
-      it 'gives error if app_center_id is not provided' do
-        app_api.stubs(:get_app_config_url).returns('')
-        user_session(@teacher)
-
-        post(
-          "/api/v1/courses/#{@course.id}/create_tool_with_verification",
-          post_body.to_json,
-          {'CONTENT_TYPE' => 'application/json'}
-        )
-
-        expect(response).not_to be_success
-        app_api.stubs(:get_app_config_url).returns(app_center_response['config_xml_url'])
-      end
-
-      it 'ignores non-required params' do
-        user_session(@teacher)
-
-        post(
-          "/api/v1/courses/#{@course.id}/create_tool_with_verification",
-          post_body.to_json,
-          {'CONTENT_TYPE' => 'application/json'}
-        )
-
-        expect(response).to be_success
-        expect(assigns[:tool].settings[:course_navigation]).not_to be_truthy
-      end
-
-      it 'uses the config xml provided by the app center' do
-        user_session(@teacher)
-        post_body['config_url'] = 'https://www.edu-apps.org/tool_i_should_not_have_access_to.xml'
-
-        post(
-          "/api/v1/courses/#{@course.id}/create_tool_with_verification",
-          post_body.to_json,
-          {'CONTENT_TYPE' => 'application/json'}
-        )
-
-        expect(response).to be_success
-        expect(assigns[:tool].name).to eq app_center_response['name']
-      end
-    end
-  end
-
   describe "POST 'create'" do
-
-    context "form post", type: :request do
-
-      let(:post_body) {
-        'external_tool%5Bname%5D=IMS+Cert+Tool&external_tool%5Bprivacy_level%5D=name_only'\
-        '&external_tool%5Bconsumer_key%5D=29f0c0ad-0cff-433f-8e35-797bd34710ea&external_tool'\
-        '%5Bcustom_fields%5Bsimple_key%5D%5D=custom_simple_value&external_tool%5Bcustom_fields'\
-        '%5Bcert_userid%5D%5D=%24User.id&external_tool%5Bcustom_fields%5BComplex!%40%23%24%5E*()'\
-        '%7B%7D%5B%5DKEY%5D%5D=Complex!%40%23%24%5E*%3B()%7B%7D%5B%5D%C2%BDValue&external_tool'\
-        '%5Bcustom_fields%5Bcert_username%5D%5D=%24User.username&external_tool%5Bcustom_fields'\
-        '%5Btc_profile_url%5D%5D=%24ToolConsumerProfile.url&external_tool%5Bdomain%5D=null&'\
-        'external_tool%5Burl%5D=https%3A%2F%2Fwww.imsglobal.org%2Flti%2Fcert%2Ftc_tool.php%3F'\
-        'x%3DWith%2520Space%26y%3Dyes&external_tool%5Bdescription%5D=null&external_tool%5Bshared_secret%5D=secret'
-      }
-
-      it 'accepts form data' do
-        user_session(@teacher)
-        post(
-          "/api/v1/courses/#{@course.id}/external_tools",
-          post_body,
-          { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded '}
-        )
-        expect(response).to be_success
-        expect(assigns[:tool]).not_to be_nil
-      end
-
-      it 'uses custom parsing for form data' do
-        user_session(@teacher)
-        post(
-          "/api/v1/courses/#{@course.id}/external_tools",
-          post_body,
-          { 'CONTENT_TYPE' => 'application/x-www-form-urlencoded '}
-        )
-        tool = assigns[:tool]
-        expect(tool.settings[:custom_fields]["Complex!@#$^*(){}[]KEY"]).to eq 'Complex!@#$^*;(){}[]½Value'
-      end
-
-    end
-
     it "should require authentication" do
       post 'create', :course_id => @course.id, :format => "json"
       assert_status(401)
@@ -1107,6 +886,17 @@ describe ExternalToolsController do
       expect(assigns[:tool].url).to eq "http://example.com"
       expect(assigns[:tool].consumer_key).to eq "key"
       expect(assigns[:tool].shared_secret).to eq "secret"
+    end
+
+    it "sets the oauth_compliant setting" do
+      user_session(@teacher)
+      external_tool_settings = {name: "tool name",
+                                url: "http://example.com",
+                                consumer_key: "key",
+                                shared_secret: "secret",
+                                oauth_compliant: true}
+      post 'create', course_id: @course.id, external_tool: external_tool_settings, format: "json"
+      expect(assigns[:tool].settings[:oauth_compliant]).to equal true
     end
 
     it "should fail on basic xml with no url or domain set" do
@@ -1161,6 +951,9 @@ describe ExternalToolsController do
         <lticm:property name="selection_width">500</lticm:property>
         <lticm:property name="selection_height">300</lticm:property>
       </lticm:options>
+      <lticm:property name="oauth_compliant">
+       true
+      </lticm:property>
     </blti:extensions>
     <cartridge_bundle identifierref="BLTI001_Bundle"/>
     <cartridge_icon identifierref="BLTI001_Icon"/>
@@ -1177,6 +970,7 @@ describe ExternalToolsController do
       expect(assigns[:tool].shared_secret).to eq "secret"
       expect(assigns[:tool].not_selectable).to be_truthy
       expect(assigns[:tool].has_placement?(:editor_button)).to be_truthy
+      expect(assigns[:tool].settings[:oauth_compliant]).to be_truthy
     end
 
     it "should handle advanced xml configurations with no url or domain set" do

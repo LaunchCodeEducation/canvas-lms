@@ -19,7 +19,7 @@ require File.expand_path(File.dirname(__FILE__) + '/../api_spec_helper')
 
 describe "Favorites API", type: :request do
   before :once do
-    user(active_all: true)
+    user_factory(active_all: true)
     @courses = create_courses(6, enroll_user: @user, enrollment_type: "StudentEnrollment", return_type: :record)
   end
 
@@ -212,8 +212,17 @@ describe "Favorites API", type: :request do
       expect(@user.favorites.size).to eql(0)
       json = api_call(:get, "/api/v1/users/self/favorites/groups",
                       :controller=>"favorites", :action=>"list_favorite_groups", :format=>"json")
-      expect(json.any?)
+      expect(json.any?).to be
     end
   end
 
+  it "should ignore master courses if requested" do
+    MasterCourses::MasterTemplate.set_as_master_course(@courses[0])
+    json = api_call(:get, "/api/v1/users/self/favorites/courses", :controller=>"favorites", :action=>"list_favorite_courses", :format=>"json")
+    expect(json.size).to eql(6)
+
+    json = api_call(:get, "/api/v1/users/self/favorites/courses?exclude_blueprint_courses=1",
+      :controller=>"favorites", :action=>"list_favorite_courses", :format=>"json", :exclude_blueprint_courses => "1")
+    expect(json.size).to eql(5)
+  end
 end

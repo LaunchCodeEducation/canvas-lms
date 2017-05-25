@@ -84,14 +84,14 @@ describe RoleOverridesController do
 
       it "should update an existing override if override has a value" do
         post_with_settings(:override => 'unchecked')
-        expect(@account.role_overrides(true).size).to eq @initial_count
+        expect(@account.role_overrides.reload.size).to eq @initial_count
         @existing_override.reload
         expect(@existing_override.enabled).to be_falsey
       end
 
       it "should update an existing override if override is nil but locked is truthy" do
         post_with_settings(:locked => 'true')
-        expect(@account.role_overrides(true).size).to eq @initial_count
+        expect(@account.role_overrides.reload.size).to eq @initial_count
         @existing_override.reload
         expect(@existing_override.locked).to be_truthy
       end
@@ -101,8 +101,8 @@ describe RoleOverridesController do
         @existing_override.reload
         expect(@existing_override.locked).to be_falsey
       end
-      
-      it "only updates enabled" do 
+
+      it "only updates enabled" do
         @existing_override.enabled = true
         @existing_override.save
 
@@ -113,7 +113,7 @@ describe RoleOverridesController do
 
       it "should delete an existing override if override is nil and locked is not truthy" do
         post_with_settings(:locked => '0')
-        expect(@account.role_overrides(true).size).to eq @initial_count - 1
+        expect(@account.role_overrides.reload.size).to eq @initial_count - 1
         expect(RoleOverride.where(id: @existing_override).first).to be_nil
       end
     end
@@ -125,12 +125,12 @@ describe RoleOverridesController do
 
       it "should not create an override if override is nil and locked is not truthy" do
         post_with_settings(:locked => '0')
-        expect(@account.role_overrides(true).size).to eq @initial_count
+        expect(@account.role_overrides.reload.size).to eq @initial_count
       end
 
       it "should create the override if override has a value" do
         post_with_settings(:override => 'unchecked')
-        expect(@account.role_overrides(true).size).to eq @initial_count + 1
+        expect(@account.role_overrides.reload.size).to eq @initial_count + 1
         override = @account.role_overrides.where(:permission => @permission, :role_id => @role.id).first
         expect(override).not_to be_nil
         expect(override.enabled).to be_falsey
@@ -138,13 +138,13 @@ describe RoleOverridesController do
 
       it "should create the override if override is nil but locked is truthy" do
         post_with_settings(:locked => 'true')
-        expect(@account.role_overrides(true).size).to eq @initial_count + 1
+        expect(@account.role_overrides.reload.size).to eq @initial_count + 1
         override = @account.role_overrides.where(:permission => @permission, :role_id => @role.id).first
         expect(override).not_to be_nil
         expect(override.locked).to be_truthy
       end
 
-      it "sets override as false when override is unchecked" do 
+      it "sets override as false when override is unchecked" do
         post_with_settings(:override => 'unchecked')
         override = @account.role_overrides.where(:permission => @permission, :role_id => @role.id).first
         expect(override).not_to be_nil
@@ -183,7 +183,7 @@ describe RoleOverridesController do
 
         context "for a non-admin" do
           it "is false" do
-            user_session(user(account: @account))
+            user_session(user_factory(account: @account))
             get 'check_account_permission', :account_id => @account.id, :permission => 'manage_catalog'
             expect(json['granted']).to eq(false)
           end

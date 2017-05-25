@@ -1,3 +1,5 @@
+Delayed::Job.include(JobLiveEventsContext)
+
 Delayed::Backend::Base.class_eval do
   attr_writer :current_shard
 
@@ -50,13 +52,7 @@ Delayed::Worker.lifecycle.around(:perform) do |worker, job, &block|
     :session_id => worker.name,
   }
 
-  live_events_ctx = {
-    :root_account_id => job.respond_to?(:global_account_id) ? job.global_account_id : nil,
-    :job_id => job.global_id,
-    :job_tag => job.tag
-  }
-  StringifyIds.recursively_stringify_ids(live_events_ctx)
-  LiveEvents.set_context(live_events_ctx)
+  LiveEvents.set_context(job.live_events_context)
 
   starting_mem = Canvas.sample_memory()
   starting_cpu = Process.times()
@@ -92,11 +88,23 @@ Delayed::Worker.lifecycle.around(:pop) do |worker, &block|
   end
 end
 
-Delayed::Worker.lifecycle.before(:perform) do |job|
+Delayed::Worker.lifecycle.around(:work_queue_pop) do |worker, config, &block|
+  CanvasStatsd::Statsd.time(["delayedjob.workqueuepop", "delayedjob.workqueuepop.jobshard.#{Shard.current(:delayed_jobs).id}"]) do
+    block.call(worker, config)
+  end
+end
+
+Delayed::Worker.lifecycle.before(:perform) do |_job|
   # Since AdheresToPolicy::Cache uses an instance variable class cache lets clear
   # it so we start with a clean slate.
   AdheresToPolicy::Cache.clear
   LoadAccount.clear_shard_cache
+end
+
+Delayed::Worker.lifecycle.around(:perform) do |job, &block|
+  CanvasStatsd::Statsd.batch do
+    block.call(job)
+  end
 end
 
 Delayed::Worker.lifecycle.before(:exceptional_exit) do |worker, exception|

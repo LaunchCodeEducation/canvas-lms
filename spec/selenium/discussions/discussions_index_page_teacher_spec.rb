@@ -39,7 +39,7 @@ describe "discussions" do
                                   title: "Discussion Topic #{n}")
         end
 
-        get url
+        with_timeouts(script: 10) { get url }
 
         #Validate: Makes sure each topic is listed.
         #Since topics are displayed in reverse order from creation (i.e. 100 is listed first), we use the topic index [100-n]
@@ -154,7 +154,7 @@ describe "discussions" do
           end
           topic = DiscussionTopic.where(context_id: course.id).order('id DESC').last
           expect(topic).not_to be_pinned
-          get(url)
+          with_timeouts(script: 10) { get(url) }
           fj("[data-id=#{topic.id}] .al-trigger").click
           fj('.icon-pin:visible').click
           wait_for_ajaximations
@@ -210,9 +210,9 @@ describe "discussions" do
           driver.switch_to.alert.accept
           wait_for_ajaximations
           get url
-          expect(f('#open-discussions .discussion-title').text).to include('teacher topic title')
-          fln('teacher topic title').click
-          expect(ff('.discussion-entries .entry').count).to eq(1)
+          expect(f('#open-discussions .discussion-title')).to include_text('teacher topic title')
+          expect_new_page_load { fln('teacher topic title').click }
+          expect(ff('.discussion-entries .entry')).to have_size(1)
         end
 
         it "should sort the discussions", priority: "1", test_id: 150509 do

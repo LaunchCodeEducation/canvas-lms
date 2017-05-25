@@ -150,9 +150,7 @@ RSpec::Matchers.define :contain_css do |selector|
   end
 
   match_when_negated do |element|
-    disable_implicit_wait do # so find_element calls return ASAP
-      wait_for_no_such_element(method: :contain_css) { f(selector, element) }
-    end
+    wait_for_no_such_element(method: :contain_css) { f(selector, element) }
   end
 end
 
@@ -193,14 +191,12 @@ RSpec::Matchers.define :contain_link do |text|
   end
 
   match_when_negated do |element|
-    disable_implicit_wait do # so find_element calls return ASAP
-      wait_for_no_such_element(method: :contain_link) { fln(text, element) }
-    end
+    wait_for_no_such_element(method: :contain_link) { fln(text, element) }
   end
 end
 
 # assert whether or not an element is displayed. will wait up to
-# IMPLICIT_WAIT_TIMEOUT seconds
+# TIMEOUTS[:finder] seconds
 RSpec::Matchers.define :be_displayed do
   match do |element|
     wait_for(method: :be_displayed) { element.displayed? }
@@ -211,7 +207,7 @@ RSpec::Matchers.define :be_displayed do
   end
 end
 
-# assert the size of the collection. will wait up to IMPLICIT_WAIT_TIMEOUT
+# assert the size of the collection. will wait up to TIMEOUTS[:finder]
 # seconds, and will reload the collection if it can (i.e. if it's the
 # result of a ff/ffj call)
 RSpec::Matchers.define :have_size do |size|
@@ -242,10 +238,8 @@ RSpec::Matchers.define :become do |size|
 
   match do |actual|
     raise "The `become` matcher expects a block, e.g. `expect { actual }.to become(value)`, NOT `expect(actual).to become(value)`" unless actual.is_a? Proc
-    disable_implicit_wait do
-      wait_for(method: :become) do
-        actual.call == expected
-      end
+    wait_for(method: :become) do
+      disable_implicit_wait { actual.call == expected }
     end
   end
 end

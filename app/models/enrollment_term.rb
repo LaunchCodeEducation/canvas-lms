@@ -21,7 +21,6 @@ class EnrollmentTerm < ActiveRecord::Base
 
   include Workflow
 
-  attr_accessible :name, :start_at, :end_at
   belongs_to :root_account, :class_name => 'Account'
   belongs_to :grading_period_group, inverse_of: :enrollment_terms
   has_many :grading_periods, through: :grading_period_group
@@ -36,6 +35,7 @@ class EnrollmentTerm < ActiveRecord::Base
 
   before_validation :verify_unique_sis_source_id
   after_save :update_courses_later_if_necessary
+  after_save :recompute_course_scores, if: :grading_period_group_id_has_changed?
 
   include StickySisFields
   are_sis_sticky :name, :start_at, :end_at
@@ -63,6 +63,12 @@ class EnrollmentTerm < ActiveRecord::Base
 
   def touch_all_courses
     self.courses.touch_all
+  end
+
+  def recompute_course_scores(update_all_grading_period_scores: true)
+    courses.active.each do |course|
+      course.recompute_student_scores(update_all_grading_period_scores: update_all_grading_period_scores)
+    end
   end
 
   def update_courses_and_states_later(enrollment_type=nil)
@@ -124,6 +130,7 @@ class EnrollmentTerm < ActiveRecord::Base
     return true unless scope.exists?
 
     self.errors.add(:sis_source_id, t('errors.not_unique', "SIS ID \"%{sis_source_id}\" is already in use", :sis_source_id => self.sis_source_id))
+    throw :abort unless CANVAS_RAILS4_2
     false
   end
 
@@ -152,7 +159,7 @@ class EnrollmentTerm < ActiveRecord::Base
     # detect will cause the whole collection to load; that's fine, it's a small collection, and
     # we'll probably call enrollment_dates_for multiple times in a single request, so we want
     # it cached, rather than using .scoped which would force a re-query every time
-    override = enrollment_dates_overrides.detect { |override| override.enrollment_type == enrollment.type.to_s}
+    override = enrollment_dates_overrides.detect { |ov| ov.enrollment_type == enrollment.type.to_s}
 
     # ignore the start dates as admin
     [ override.try(:start_at) || (enrollment.admin? ? nil : start_at), override.try(:end_at) || end_at ]
@@ -160,7 +167,7 @@ class EnrollmentTerm < ActiveRecord::Base
 
   # return the term dates applicable to the given enrollment(s)
   def overridden_term_dates(enrollments)
-    dates = enrollments.uniq { |enrollment| enrollment.type }.map { |enrollment| enrollment_dates_for(enrollment) }
+    dates = enrollments.uniq(&:type).map { |enrollment| enrollment_dates_for(enrollment) }
     start_dates = dates.map(&:first)
     end_dates = dates.map(&:last)
     [start_dates.include?(nil) ? nil : start_dates.min, end_dates.include?(nil) ? nil : end_dates.max]
@@ -182,6 +189,17 @@ class EnrollmentTerm < ActiveRecord::Base
 
   scope :active, -> { where("enrollment_terms.workflow_state<>'deleted'") }
   scope :ended, -> { where('enrollment_terms.end_at < ?', Time.now.utc) }
+  scope :started, -> { where('enrollment_terms.start_at IS NULL OR enrollment_terms.start_at < ?', Time.now.utc) }
   scope :not_ended, -> { where('enrollment_terms.end_at IS NULL OR enrollment_terms.end_at >= ?', Time.now.utc) }
+  scope :not_started, -> { where('enrollment_terms.start_at IS NOT NULL AND enrollment_terms.start_at > ?', Time.now.utc) }
+  scope :not_default, -> { where.not(name: EnrollmentTerm::DEFAULT_TERM_NAME)}
   scope :by_name, -> { order(best_unicode_collation_key('name')) }
+
+  private
+
+  def grading_period_group_id_has_changed?
+    # migration 20111111214313_add_trust_link_for_default_account
+    # will throw an error without this check
+    respond_to?(:grading_period_group_id_changed?) && grading_period_group_id_changed?
+  end
 end

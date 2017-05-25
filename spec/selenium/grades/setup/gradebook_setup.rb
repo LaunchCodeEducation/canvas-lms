@@ -9,17 +9,15 @@ module GradebookSetup
     Factories::GradingPeriodHelper.new
   end
 
-  def create_multiple_grading_periods(term_name)
-    Account.default.enable_feature!(:multiple_grading_periods)
-
+  def create_grading_periods(term_name, now = Time.zone.now)
     set1 = backend_group_helper.create_for_account_with_term(Account.default, term_name, "Set 1")
-    @gp_closed = backend_period_helper.create_for_group(set1, closed_attributes)
-    @gp_ended = backend_period_helper.create_for_group(set1, ended_attributes)
-    @gp_current = backend_period_helper.create_for_group(set1, current_attributes)
+    @gp_closed = backend_period_helper.create_for_group(set1, closed_attributes(now))
+    @gp_ended = backend_period_helper.create_for_group(set1, ended_attributes(now))
+    @gp_current = backend_period_helper.create_for_group(set1, current_attributes(now))
   end
 
   def add_teacher_and_student
-    course(active_all: true)
+    course_factory(active_all: true)
     student_in_course
   end
 
@@ -29,8 +27,7 @@ module GradebookSetup
     @course.reload
   end
 
-  def closed_attributes
-    now = Time.zone.now
+  def closed_attributes(now = Time.zone.now)
     {
         title: "GP Closed",
         start_date: 3.weeks.ago(now),
@@ -38,8 +35,7 @@ module GradebookSetup
     }
   end
 
-  def ended_attributes
-    now = Time.zone.now
+  def ended_attributes(now = Time.zone.now)
     {
         title: "GP Ended",
         start_date: 2.weeks.ago(now),
@@ -48,12 +44,34 @@ module GradebookSetup
     }
   end
 
-  def current_attributes
-    now = Time.zone.now
+  def current_attributes(now = Time.zone.now)
     {
         title: "GP Current",
         start_date: 1.day.ago(now),
         end_date: 2.weeks.from_now
     }
+  end
+
+  def update_teacher_course_preferences(preferences)
+    @teacher.update preferences: {
+      gradebook_settings: {
+        @course.id => preferences
+      }
+    }
+  end
+
+  def update_display_preferences(concluded, inactive)
+    update_teacher_course_preferences({
+      'show_concluded_enrollments' => concluded.to_s,
+      'show_inactive_enrollments' => inactive.to_s
+    })
+  end
+
+  def display_concluded_enrollments
+    update_display_preferences(true, false)
+  end
+
+  def display_inactive_enrollments
+    update_display_preferences(false, true)
   end
 end

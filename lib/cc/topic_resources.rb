@@ -22,6 +22,7 @@ module CC
       scope = @course.discussion_topics.active
       DiscussionTopic::ScopedToUser.new(@course, @user, scope).scope.each do |topic|
         next unless export_object?(topic) || export_object?(topic.assignment)
+        next if @user && topic.locked_for?(@user, check_policies: true)
 
         title = topic.title || I18n.t('course_exports.unknown_titles.topic', "Unknown topic")
 
@@ -41,7 +42,7 @@ module CC
       add_exported_asset(topic)
       add_item_to_export(topic.attachment) if topic.attachment
 
-      migration_id = CCHelper.create_key(topic)
+      migration_id = create_key(topic)
 
       # the CC Discussion Topic
       topic_file_name = "#{migration_id}.xml"
@@ -59,7 +60,7 @@ module CC
       topic_file.close
 
       # Save all the meta-data into a canvas-specific xml schema
-      meta_migration_id = CCHelper.create_key(topic, "meta")
+      meta_migration_id = create_key(topic, "meta")
       meta_file_name = "#{meta_migration_id}.xml"
       meta_path = File.join(@export_dir, meta_file_name)
       meta_file = File.new(meta_path, 'w')
@@ -104,14 +105,13 @@ module CC
     end
 
     def create_canvas_topic(doc, topic)
-      doc.topic_id CCHelper.create_key(topic)
+      doc.topic_id create_key(topic)
       doc.title topic.title
-      doc.posted_at ims_datetime(topic.posted_at) if topic.posted_at
       doc.delayed_post_at ims_datetime(topic.delayed_post_at) if topic.delayed_post_at
       doc.lock_at ims_datetime(topic.lock_at) if topic.lock_at
       doc.position topic.position
-      doc.external_feed_identifierref CCHelper.create_key(topic.external_feed) if topic.external_feed
-      doc.attachment_identifierref CCHelper.create_key(topic.attachment) if topic.attachment
+      doc.external_feed_identifierref create_key(topic.external_feed) if topic.external_feed
+      doc.attachment_identifierref create_key(topic.attachment) if topic.attachment
       if topic.is_announcement
         doc.tag!('type', 'announcement')
       else
@@ -128,7 +128,7 @@ module CC
       doc.only_graders_can_rate topic.only_graders_can_rate
       doc.sort_by_rating topic.sort_by_rating
       if topic.assignment && !topic.assignment.deleted?
-        assignment_migration_id = CCHelper.create_key(topic.assignment)
+        assignment_migration_id = create_key(topic.assignment)
         doc.assignment(:identifier=>assignment_migration_id) do |a|
           AssignmentResources.create_canvas_assignment(a, topic.assignment, @manifest)
         end

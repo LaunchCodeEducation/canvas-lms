@@ -37,17 +37,19 @@ end
 SUBJECT_MAX_LINE_LEN = 75
 SUBJECT_IDEAL_LINE_LEN = 65
 
-if subject.size > SUBJECT_MAX_LINE_LEN
+length_exemption_regex = /^Revert/
+
+if subject.size > SUBJECT_MAX_LINE_LEN && subject !~ length_exemption_regex
   comment "error", 1, "subject line can't exceed #{SUBJECT_MAX_LINE_LEN} chars (ideally keep it well under #{SUBJECT_IDEAL_LINE_LEN})", true
-elsif subject.size > SUBJECT_IDEAL_LINE_LEN
+elsif subject.size > SUBJECT_IDEAL_LINE_LEN && subject !~ length_exemption_regex
   comment "warn", 1, "subject line shouldn't exceed #{SUBJECT_IDEAL_LINE_LEN} chars", true
 end
 
 # not perfect (won't get irregular verbs, only checks first word), but
 # close enough... does the right thing on most existing commits
 maybe_wrong_tense_regex = /\A(spec: )?[a-z]+([^e]ed|[^aijoqsu]s|ing) /i
-actually_ok_rejex = /\A
-  (spec: )?
+actually_ok_regex = /\A
+  (spec:\s+)?
   (
     # *ing words
     (brand|br|[^ ]*learn|masquerad|upcom|shard|word|grad)ing |
@@ -61,7 +63,7 @@ actually_ok_rejex = /\A
 /xi
 
 maybe_start_with_wrong_tense = subject =~ maybe_wrong_tense_regex &&
-                               subject !~ actually_ok_rejex
+                               subject !~ actually_ok_regex
 if maybe_start_with_wrong_tense
   comment "warn", 1, "make sure your commit message has an imperative verb (e.g. \"add\" instead of \"adds\", \"added\", or \"adding\")", true
 end
@@ -108,10 +110,13 @@ if File.exists?(user_config_file)
 end
 
 gh_issue = (commit_message =~ /(?:refs|fixes|closes|resolves|references) gh-\d+/i)
+SAFE_PARTS_REGEX = /UTF\-8/
+TICKET_REGEX = /([A-Z]+\-[0-9]+)/
 
 issue_ids = JiraRefParser.scan_message_for_issue_ids(commit_message)
 if issue_ids.empty? && !gh_issue
-  parts = commit_message.split(/([A-Z]+-[0-9]+)/)
+  parts = commit_message.gsub(SAFE_PARTS_REGEX, "")
+            .split(TICKET_REGEX)
   if parts.size > 1
     jira_hook_words = JiraRefParser::RefKeywords + JiraRefParser::FixKeywords
     comment "warn", parts.first.count("\n") + 1, "the jira hooks won't link this commit to #{parts[1]} unless you use one of the following keywords: #{jira_hook_words.join(", ")}"

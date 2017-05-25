@@ -52,9 +52,9 @@ class ContentTag < ActiveRecord::Base
   include CustomValidations
   validates_as_url :url
 
-  acts_as_list :scope => :context_module
+  validate :check_for_restricted_content_changes
 
-  attr_accessible :learning_outcome, :context, :tag_type, :mastery_score, :content_asset_string, :content, :title, :indent, :position, :url, :new_tab, :content_type
+  acts_as_list :scope => :context_module
 
   set_policy do
     given {|user, session| self.context && self.context.grants_right?(user, session, :manage_content)}
@@ -245,7 +245,7 @@ class ContentTag < ActiveRecord::Base
     self.content && self.content.respond_to?(:context) && self.content.context == context
   end
 
-  def update_asset_name!
+  def update_asset_name!(user=nil)
     return unless self.sync_title_to_asset_title?
     return unless self.asset_context_matches?
 
@@ -257,7 +257,10 @@ class ContentTag < ActiveRecord::Base
     elsif content.respond_to?("display_name=")
       content.display_name = asset_safe_title('display_name')
     end
-    content.save if content.changed?
+    if content.changed?
+      content.user = user if user && content.is_a?(WikiPage)
+      content.save
+    end
   end
 
   def update_asset_workflow_state!
@@ -509,6 +512,17 @@ class ContentTag < ActiveRecord::Base
       self.content.visible_to_user?(user, opts)
     else
       true
+    end
+  end
+
+  def mark_as_importing!(migration)
+    @importing_migration = migration
+  end
+
+  def check_for_restricted_content_changes
+    if !self.new_record? && self.title_changed? && !@importing_migration && self.content && self.content.respond_to?(:is_child_content?) &&
+      self.content.is_child_content? && self.content.editing_restricted?(:content)
+        self.errors.add(:title, "cannot change title - associated content locked by Master Course")
     end
   end
 end

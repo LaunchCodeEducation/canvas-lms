@@ -61,11 +61,8 @@
 #    }
 #
 class GradingPeriodsController < ApplicationController
-  include ::Filters::GradingPeriods
-
   before_action :require_user
   before_action :get_context
-  before_action :check_feature_flag
 
   # @API List grading periods
   # @beta
@@ -134,7 +131,7 @@ class GradingPeriodsController < ApplicationController
   #   }
   #
   def update
-    grading_period_params = params[:grading_periods].first
+    grading_period_params = params.require(:grading_periods).first.permit(:weight, :start_date, :end_date, :close_date, :title)
 
     if authorized_action(grading_period(inherit: false), @current_user, :update)
       respond_to do |format|
@@ -181,7 +178,7 @@ class GradingPeriodsController < ApplicationController
 
   def account_batch_update
     grading_period_group = GradingPeriodGroup.active.find(params.fetch(:set_id))
-    periods = find_or_build_periods(params[:grading_periods], grading_period_group)
+    periods = find_or_build_periods(params.require(:grading_periods), grading_period_group)
     unless batch_update_rights?(periods)
       return render_unauthorized_action
     end
@@ -240,6 +237,7 @@ class GradingPeriodsController < ApplicationController
 
     set_subquery = GradingPeriodGroup.active.select(:account_id).where(id: params[:set_id])
     @context = Account.active.where(id: set_subquery).take
+    render json: {message: t('Page not found')}, status: :not_found unless @context
   end
 
   # model level validations
@@ -254,7 +252,7 @@ class GradingPeriodsController < ApplicationController
       # skip not_overlapping model validation in model level
       first_period.skip_not_overlapping_validator
       second_period.skip_not_overlapping_validator
-      if second_period.start_date < first_period.end_date
+      if second_period.start_date.change(sec: 0) < first_period.end_date.change(sec: 0)
         second_period.errors.add(:start_date, 'Start Date overlaps with another period')
       end
     end
@@ -268,7 +266,7 @@ class GradingPeriodsController < ApplicationController
       else
         period = grading_period_group.grading_periods.build
       end
-      period.assign_attributes(period_params.except(:id))
+      period.assign_attributes(period_params.permit(:weight, :start_date, :end_date, :close_date, :title))
       period
     end
   end
@@ -325,11 +323,6 @@ class GradingPeriodsController < ApplicationController
   def index_permissions
     can_create_grading_periods = @context.is_a?(Account) &&
       @context.root_account? && @context.grants_right?(@current_user, :manage)
-    can_toggle_grading_periods = @domain_root_account.grants_right?(@current_user, :manage) ||
-      @context.feature_allowed?(:multiple_grading_periods, exclude_enabled: true)
-    {
-      can_create_grading_periods: can_create_grading_periods,
-      can_toggle_grading_periods: can_toggle_grading_periods
-    }.as_json
+    {can_create_grading_periods: can_create_grading_periods}.as_json
   end
 end

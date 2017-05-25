@@ -1,7 +1,7 @@
 require_relative '../../spec_helper'
 
 describe SupportHelpers::Crocodoc::CrocodocFixer do
-  let(:student) { user(active_all: true) }
+  let(:student) { user_factory(active_all: true) }
   let(:test_course) { Account.default.courses.create!(name: 'croco') }
   let(:assignment) do
     test_course.assignments.create!(title: 'doc',
@@ -21,6 +21,11 @@ describe SupportHelpers::Crocodoc::CrocodocFixer do
                                attachments: [shardattachment2])
   end
 
+  let!(:submission3) do
+    assignment2.submit_homework(student, submission_type: 'online_upload',
+                               attachments: [shardattachment3])
+  end
+
   let(:shardattachment) do
     Attachment.create!(filename: 'terrible.txt', uploaded_data: StringIO.new('yo, what up?'),
                        user: student, content_type: 'application/msword', context: student)
@@ -30,16 +35,24 @@ describe SupportHelpers::Crocodoc::CrocodocFixer do
                        user: student, content_type: 'application/msword', context: student)
   end
 
+  let(:shardattachment3) do
+    Attachment.create!(filename: 'terrible.txt', uploaded_data: StringIO.new('yo, what up?'),
+                       user: student, content_type: 'application/msword', context: student)
+  end
+
   let!(:crocodocument) do
     cd = shardattachment.create_crocodoc_document
-    cd.update_attributes(uuid: 'some stuff', attachment: shardattachment,
-                         process_state: 'ERROR')
+    cd.update_attributes(uuid: 'some stuff', process_state: 'ERROR')
     cd
   end
   let!(:crocodocument2) do
     cd = shardattachment2.create_crocodoc_document
-    cd.update_attributes(uuid: 'some stuff', attachment: shardattachment,
-                         process_state: 'ERROR')
+    cd.update_attributes(uuid: 'some stuff', process_state: 'ERROR')
+    cd
+  end
+  let!(:crocodocument3) do
+    cd = shardattachment3.create_crocodoc_document
+    cd.update_attributes(uuid: 'some stuff', process_state: 'PROCESSING')
     cd
   end
 
@@ -67,6 +80,24 @@ describe SupportHelpers::Crocodoc::CrocodocFixer do
     it 'resubmits crodocodcs for a given assignment and user' do
       fixer =
         SupportHelpers::Crocodoc::SubmissionFixer.new('email', nil, assignment.id, student.id)
+
+      fixer.expects(:resubmit_attachment).once.returns(nil)
+      fixer.fix
+    end
+
+    it 'does not resubmit processing crodocodcs' do
+      fixer =
+        SupportHelpers::Crocodoc::SubmissionFixer.new('email', nil, assignment2.id, student.id)
+
+      fixer.expects(:resubmit_attachment).never
+      fixer.fix
+    end
+
+    it 'resubmits processing crodocodcs if stuck for more than a day' do
+      crocodocument3.update_attributes(updated_at: 4.days.ago)
+
+      fixer =
+        SupportHelpers::Crocodoc::SubmissionFixer.new('email', nil, assignment2.id, student.id)
 
       fixer.expects(:resubmit_attachment).once.returns(nil)
       fixer.fix

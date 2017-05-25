@@ -257,19 +257,53 @@ describe CourseSection, "moving to new course" do
     course1 = account1.courses.create!
     course2 = account2.courses.create!
     cs1 = course1.course_sections.create!
-    expect(CourseAccountAssociation.where(course_id: course1).uniq.order(:account_id).pluck(:account_id)).to eq [account1.id]
-    expect(CourseAccountAssociation.where(course_id: course2).uniq.order(:account_id).pluck(:account_id)).to eq [account1.id, account2.id]
+    expect(CourseAccountAssociation.where(course_id: course1).distinct.order(:account_id).pluck(:account_id)).to eq [account1.id]
+    expect(CourseAccountAssociation.where(course_id: course2).distinct.order(:account_id).pluck(:account_id)).to eq [account1.id, account2.id]
     course1.account = account2
     course1.save
-    expect(CourseAccountAssociation.where(course_id: course1).uniq.order(:account_id).pluck(:account_id)).to eq [account1.id, account2.id].sort
-    expect(CourseAccountAssociation.where(course_id: course2).uniq.order(:account_id).pluck(:account_id)).to eq [account1.id, account2.id]
+    expect(CourseAccountAssociation.where(course_id: course1).distinct.order(:account_id).pluck(:account_id)).to eq [account1.id, account2.id].sort
+    expect(CourseAccountAssociation.where(course_id: course2).distinct.order(:account_id).pluck(:account_id)).to eq [account1.id, account2.id]
     course1.account = nil
     course1.save
-    expect(CourseAccountAssociation.where(course_id: course1).uniq.order(:account_id).pluck(:account_id)).to eq [account1.id]
-    expect(CourseAccountAssociation.where(course_id: course2).uniq.order(:account_id).pluck(:account_id)).to eq [account1.id, account2.id]
+    expect(CourseAccountAssociation.where(course_id: course1).distinct.order(:account_id).pluck(:account_id)).to eq [account1.id]
+    expect(CourseAccountAssociation.where(course_id: course2).distinct.order(:account_id).pluck(:account_id)).to eq [account1.id, account2.id]
     cs1.crosslist_to_course(course2)
-    expect(CourseAccountAssociation.where(course_id: course1).uniq.order(:account_id).pluck(:account_id)).to eq [account1.id]
-    expect(CourseAccountAssociation.where(course_id: course2).uniq.order(:account_id).pluck(:account_id)).to eq [account1.id, account2.id].sort
+    expect(CourseAccountAssociation.where(course_id: course1).distinct.order(:account_id).pluck(:account_id)).to eq [account1.id]
+    expect(CourseAccountAssociation.where(course_id: course2).distinct.order(:account_id).pluck(:account_id)).to eq [account1.id, account2.id].sort
+  end
+
+  it 'should call course#recompute_student_scores_without_send_later if :run_jobs_immediately' do
+    account1 = Account.create!(:name => "1")
+    account2 = Account.create!(:name => "2")
+    course1 = account1.courses.create!
+    course2 = account2.courses.create!
+    cs = course1.course_sections.create!
+    u = User.create!
+    u.register!
+    e = course1.enroll_user(u, 'StudentEnrollment', :section => cs)
+    e.workflow_state = 'active'
+    e.save!
+    course1.reload
+
+    expect(course2).to receive(:recompute_student_scores_without_send_later)
+    cs.move_to_course(course2, run_jobs_immediately: true)
+  end
+
+  it 'should call course##recompute_student_scores later without :run_jobs_immediately' do
+    account1 = Account.create!(:name => "1")
+    account2 = Account.create!(:name => "2")
+    course1 = account1.courses.create!
+    course2 = account2.courses.create!
+    cs = course1.course_sections.create!
+    u = User.create!
+    u.register!
+    e = course1.enroll_user(u, 'StudentEnrollment', :section => cs)
+    e.workflow_state = 'active'
+    e.save!
+    course1.reload
+
+    expect(course2).to receive(:recompute_student_scores)
+    cs.move_to_course(course2)
   end
 
   describe 'validation' do
@@ -327,7 +361,7 @@ describe CourseSection, "moving to new course" do
   describe 'deletable?' do
     before :once do
       course_with_teacher
-      @section = course.course_sections.create!
+      @section = @course.course_sections.create!
     end
 
     it 'should be deletable if empty' do
@@ -388,9 +422,9 @@ describe CourseSection, "moving to new course" do
 
   context 'enrollment state invalidation' do
     before :once do
-      course(:active_all => true)
+      course_factory(active_all: true)
       @section = @course.course_sections.create!
-      @enrollment = @course.enroll_student(user(:active_all => true), :section => @section)
+      @enrollment = @course.enroll_student(user_factory(:active_all => true), :section => @section)
     end
 
     it "should not invalidate unless something date-related changes" do
@@ -414,7 +448,7 @@ describe CourseSection, "moving to new course" do
     end
 
     it "should invalidate if course" do
-      other_course = course(:active_all => true)
+      other_course = course_factory(active_all: true)
       EnrollmentState.expects(:update_enrollment).with(@enrollment).once
       @section.crosslist_to_course(other_course)
     end

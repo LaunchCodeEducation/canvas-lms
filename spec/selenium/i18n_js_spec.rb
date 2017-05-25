@@ -6,12 +6,8 @@ describe "i18n js" do
   before (:each) do
     course_with_teacher_logged_in
     get "/"
-    if CANVAS_WEBPACK
-      # I18n will already be exposed in webpack land
-    else
-      # get I18n and _ global for all the tests
-      driver.execute_script "require(['i18nObj', 'underscore'], function (I18n, _) { window.I18n = I18n; window._ = _; });"
-    end
+    # get I18n global for all the tests
+    driver.execute_script "require(['i18nObj'], function (I18n) { window.I18n = I18n });"
   end
 
   context "strftime" do
@@ -28,11 +24,12 @@ describe "i18n js" do
 
   context "locales" do
     it "should pull in core translations for all locales" do
+      skip("Rails 4.2 specific") unless CANVAS_RAILS4_2
       skip('USE_OPTIMIZED_JS=true') unless ENV['USE_OPTIMIZED_JS']
       skip('RAILS_LOAD_ALL_LOCALES=true') unless ENV['RAILS_LOAD_ALL_LOCALES']
       core_keys = I18nTasks::Utils::CORE_KEYS
-      core_translations = Hash[I18n.available_locales.map(&:to_s).map do |locale|
-        [locale.to_s, I18n.backend.direct_lookup(locale).slice(*core_keys)]
+      core_translations = Hash[I18n.available_locales.map do |locale|
+        [locale.to_s, I18n.backend.send(:translations)[locale].slice(*core_keys)]
       end].deep_stringify_keys
 
       expect(driver.execute_script(<<-JS)).to eq core_translations
@@ -57,13 +54,9 @@ describe "i18n js" do
       skip('RAILS_LOAD_ALL_LOCALES=true') unless ENV['RAILS_LOAD_ALL_LOCALES']
 
       (I18n.available_locales - [:en]).each do |locale|
-        exec_cs("I18n.locale = '#{locale}'")
+        driver.execute_script("I18n.locale = '#{locale}'")
         rb_value = I18n.t('dashboard.confirm.close', 'fake en default', locale: locale)
-        js_value = if CANVAS_WEBPACK
-          driver.execute_script("return I18n.scoped('dashboard').t('confirm.close', 'fake en default');")
-        else
-          require_exec('i18n!dashboard', "i18n.t('confirm.close', 'fake en default')")
-        end
+        js_value = driver.execute_script("return I18n.scoped('dashboard').t('confirm.close', 'fake en default');")
         expect(js_value).to eq(rb_value)
       end
     end

@@ -23,7 +23,7 @@ module Api::V1::User
 
   API_USER_JSON_OPTS = {
     :only => %w(id name).freeze,
-    :methods => %w(sortable_name short_name display_name).freeze
+    :methods => %w(sortable_name short_name).freeze
   }.freeze
 
   def user_json_preloads(users, preload_email=false, opts={})
@@ -46,10 +46,12 @@ module Api::V1::User
     includes ||= []
     excludes ||= []
     api_json(user, current_user, session, API_USER_JSON_OPTS).tap do |json|
-
+      enrollment_json_opts = { current_grading_period_scores: includes.include?('current_grading_period_scores') }
       if !excludes.include?('pseudonym') && user_json_is_admin?(context, current_user)
         include_root_account = @domain_root_account.trust_exists?
-        if sis_pseudonym = sis_pseudonym_for(user)
+        sis_pseudonym = sis_pseudonym_for(user)
+        enrollment_json_opts[:sis_pseudonym] = sis_pseudonym
+        if sis_pseudonym
           # the sis fields on pseudonym are poorly named -- sis_user_id is
           # the id in the SIS import data, where on every other table
           # that's called sis_source_id.
@@ -73,15 +75,17 @@ module Api::V1::User
         json[:avatar_url] = avatar_url_for_user(user, blank_fallback)
       end
       if enrollments
-        json[:enrollments] = enrollments.map { |e| enrollment_json(e, current_user, session, includes) }
+        json[:enrollments] = enrollments.map do |enrollment|
+          enrollment_json(enrollment, current_user, session, includes, enrollment_json_opts)
+        end
       end
       # include a permissions check here to only allow teachers and admins
       # to see user email addresses.
-      if includes.include?('email') && context.grants_right?(current_user, session, :read_roster)
+      if includes.include?('email') && !excludes.include?('personal_info') && context.grants_right?(current_user, session, :read_roster)
         json[:email] = user.email
       end
 
-      if includes.include?('bio') && @domain_root_account.enable_profiles? && user.profile
+      if includes.include?('bio') && !excludes.include?('personal_info') && @domain_root_account.enable_profiles? && user.profile
         json[:bio] = user.profile.bio
       end
 
@@ -222,7 +226,7 @@ module Api::V1::User
         json[:sis_import_id] = enrollment.sis_batch_id
       end
       if enrollment.student?
-        json[:grades] = grades_hash(enrollment, user, opts[:grading_period])
+        json[:grades] = grades_hash(enrollment, user, opts)
       end
       if user_can_read_sis_data?(@current_user, enrollment.course)
         json[:sis_account_id] = enrollment.course.account.sis_source_id
@@ -230,7 +234,8 @@ module Api::V1::User
         json[:course_integration_id] = enrollment.course.integration_id
         json[:sis_section_id] = enrollment.course_section.sis_source_id
         json[:section_integration_id] = enrollment.course_section.integration_id
-        json[:sis_user_id] = sis_pseudonym_for(enrollment.user).try(:sis_user_id)
+        pseudonym = opts.key?(:sis_pseudonym) ? opts[:sis_pseudonym] : sis_pseudonym_for(enrollment.user)
+        json[:sis_user_id] = pseudonym.try(:sis_user_id)
       end
       json[:html_url] = course_user_url(enrollment.course_id, enrollment.user_id)
       user_includes = includes.include?('avatar_url') ? ['avatar_url'] : []
@@ -253,43 +258,36 @@ module Api::V1::User
   end
 
   private
-  def grades_hash(enrollment, user, grading_period)
+  def grades_hash(enrollment, user, opts = {})
     grades = {
       html_url: course_student_grades_url(enrollment.course_id, enrollment.user_id)
     }
 
     if grade_permissions?(user, enrollment)
-      if grading_period
-        student_id = enrollment.is_a?(StudentEnrollment) ? enrollment.student.id : user.id
-        calculator = GradeCalculator.new(
-          student_id,
-          enrollment.course,
-          grading_period: grading_period
-        )
+      gpid = grading_period(enrollment.course, opts)&.id
 
-        computed        = calculator.compute_scores.first
-        current, final  = computed[:current], computed[:final]
-
-        grades[:current_score] = current[:grade]
-        grades[:current_grade] = enrollment.course.score_to_grade(current[:grade])
-        grades[:final_score]   = final[:grade]
-        grades[:final_grade]   = enrollment.course.score_to_grade(final[:grade])
-      else
-        grades[:current_score] = enrollment.computed_current_score
-        grades[:current_grade] = enrollment.computed_current_grade
-        grades[:final_score]   = enrollment.computed_final_score
-        grades[:final_grade]   = enrollment.computed_final_grade
-      end
+      grades[:current_score] = enrollment.computed_current_score(grading_period_id: gpid)
+      grades[:current_grade] = enrollment.computed_current_grade(grading_period_id: gpid)
+      grades[:final_score]   = enrollment.computed_final_score(grading_period_id: gpid)
+      grades[:final_grade]   = enrollment.computed_final_grade(grading_period_id: gpid)
+      grades[:grading_period_id] = gpid if opts[:current_grading_period_scores]
     end
     grades
+  end
+
+  def grading_period(course, opts)
+    return opts[:grading_period] if opts[:grading_period]
+    return nil unless opts[:current_grading_period_scores]
+
+    GradingPeriod.current_period_for(course)
   end
 
   def grade_permissions?(user, enrollment)
     course = enrollment.course
 
     (user.id == enrollment.user_id && !course.hide_final_grades?) ||
-     course.grants_any_right?(user, :manage_grades, :view_all_grades) ||
-     enrollment.user.grants_right?(user, :read_as_parent)
+      course.grants_any_right?(user, :manage_grades, :view_all_grades) ||
+      enrollment.user.grants_right?(user, :read_as_parent)
   end
 
   def get_context_groups(context)

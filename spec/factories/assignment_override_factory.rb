@@ -21,9 +21,9 @@ module Factories
     override_for = opts.delete(:set)
     assignment = opts.delete(:assignment) || opts.delete(:quiz) || assignment_model(opts)
     attrs = assignment_override_valid_attributes.merge(opts)
-    attrs[:due_at_overridden] = true if opts[:due_at]
-    attrs[:lock_at_overridden] = true if opts[:lock_at]
-    attrs[:unlock_at_overridden] = true if opts[:unlock_at]
+    attrs[:due_at_overridden] = opts.key?(:due_at)
+    attrs[:lock_at_overridden] = opts.key?(:lock_at)
+    attrs[:unlock_at_overridden] = opts.key?(:unlock_at)
     attrs[:set] = override_for if override_for
     @override = factory_with_protected_attributes(assignment.assignment_overrides, attrs)
   end
@@ -58,5 +58,14 @@ module Factories
       @override_student.save!
     end
     @override
+  end
+
+  def create_mastery_paths_override_for_assignment(assignment_or_quiz, opts={})
+    mastery_paths_opts = {
+      assignment: assignment_or_quiz,
+      set_type: AssignmentOverride::SET_TYPE_NOOP,
+      set_id: AssignmentOverride::NOOP_MASTERY_PATHS
+    }
+    assignment_override_model(opts.merge(mastery_paths_opts))
   end
 end

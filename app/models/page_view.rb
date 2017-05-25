@@ -34,8 +34,6 @@ class PageView < ActiveRecord::Base
   attr_accessor :generated_by_hand
   attr_accessor :is_update
 
-  attr_accessible :url, :user, :controller, :action, :session_id, :developer_key, :user_agent, :real_user, :context
-
   # note that currently we never query page views from the perspective of the course;
   # we simply don't record them for non-logged-in users in a public course
   # if we ever do either of the above, we'll need to remove this, and figure out
@@ -216,7 +214,7 @@ class PageView < ActiveRecord::Base
     shard = PageView.global_storage_namespace? ? Shard.birth : Shard.current
     page_view = shard.activate do
       if new_record
-        new{ |pv| pv.assign_attributes(attrs, :without_protection => true) }
+        new{ |pv| pv.assign_attributes(attrs) }
       else
         instantiate(@blank_template.merge(attrs))
       end
@@ -291,19 +289,9 @@ class PageView < ActiveRecord::Base
   scope :for_users, lambda { |users| where(:user_id => users) }
 
   def self.pv4_client
-    @pv4_client ||= begin
-      config = ConfigFile.load('pv4')
-      raise "Page Views v4 not configured!" unless config
+    ConfigFile.cache_object('pv4') do |config|
       Pv4Client.new(config['uri'], config['access_token'])
     end
-  end
-
-  def self.reset_pv4_client
-    @pv4_client = nil
-  end
-
-  Canvas::Reloader.on_reload do
-    reset_pv4_client
   end
 
   # returns a collection with very limited functionality
@@ -325,7 +313,7 @@ class PageView < ActiveRecord::Base
   end
 
   class << self
-    def transaction_with_cassandra_check(*args)
+    def transaction(*args)
       if PageView.cassandra?
         # Rails 3 autosave associations re-assign the attributes;
         # for sharding to work, the page view's shard has to be
@@ -340,10 +328,9 @@ class PageView < ActiveRecord::Base
           yield
         end
       else
-        self.transaction_without_cassandra_check(*args) { yield }
+        super
       end
     end
-    alias_method_chain :transaction, :cassandra_check
   end
 
   def add_to_transaction

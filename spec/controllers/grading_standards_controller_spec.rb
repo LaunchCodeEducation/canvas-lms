@@ -48,6 +48,8 @@ describe GradingStandardsController do
         title: 'New Grading Standard!',
         data: [['A', 0.61], ['F', 0.00]]
       }
+      # send the request as JSON, so that the nested arrays are preserved
+      request.content_type = 'application/json' unless CANVAS_RAILS4_2
       post 'create', course_id: @course.id, grading_standard: standard, format: 'json'
       expect(json_response).to eq(standard[:data])
     end
@@ -98,9 +100,9 @@ describe GradingStandardsController do
         expect(subject).to be_ok
       end
 
-      it "renders the 'index' template" do
+      it "renders the 'course_index' template" do
         user_session(@teacher)
-        expect(subject).to render_template(:index)
+        expect(subject).to render_template(:course_index)
       end
     end
   end

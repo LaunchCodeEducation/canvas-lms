@@ -18,13 +18,14 @@
 
 class Rubric < ActiveRecord::Base
   include Workflow
-  attr_accessible :user, :rubric, :context, :points_possible, :title, :description, :reusable, :public, :free_form_criterion_comments, :hide_score_total
+
+  attr_writer :skip_updating_points_possible
   belongs_to :user
   belongs_to :rubric # based on another rubric
   belongs_to :context, polymorphic: [:course, :account]
   has_many :rubric_associations, :class_name => 'RubricAssociation', :dependent => :destroy
   has_many :rubric_assessments, :through => :rubric_associations, :dependent => :destroy
-  has_many :learning_outcome_alignments, -> { where("content_tags.tag_type='learning_outcome' AND content_tags.workflow_state<>'deleted'").preload(:learning_outcome) }, as: :content, class_name: 'ContentTag'
+  has_many :learning_outcome_alignments, -> { where("content_tags.tag_type='learning_outcome' AND content_tags.workflow_state<>'deleted'").preload(:learning_outcome) }, as: :content, inverse_of: :content, class_name: 'ContentTag'
 
   validates_presence_of :context_id, :context_type, :workflow_state
   validates_length_of :description, :maximum => maximum_text_length, :allow_nil => true, :allow_blank => true
@@ -210,6 +211,7 @@ class Rubric < ActiveRecord::Base
   end
 
   def will_change_with_update?(params)
+    params ||= {}
     return true if params[:free_form_criterion_comments] && !!self.free_form_criterion_comments != (params[:free_form_criterion_comments] == '1')
     data = generate_criteria(params)
     return true if data.title != self.title || data.points_possible != self.points_possible

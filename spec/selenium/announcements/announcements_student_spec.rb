@@ -10,7 +10,7 @@ describe "announcements" do
     student_2_entry = 'reply from student 2'
     topic_title = 'new replies hidden until post topic'
 
-    course
+    course_factory
     @course.offer
     student = user_with_pseudonym(:unique_id => 'student@example.com', :password => password, :active_user => true)
     teacher = user_with_pseudonym(:unique_id => 'teacher@example.com', :password => password, :active_user => true)
@@ -111,7 +111,8 @@ describe "announcements" do
         @student.enrollments.first.update_attribute(:workflow_state, 'active')
         @course.announcements.create!(:title => 'Something', :message => 'Announcement time!')
         get "/"
-        f('#dashboardToggleButton').click
+        f('#DashboardOptionsMenu_Container button').click
+        fj('span[role="menuitemradio"]:contains("Recent Activity")').click
         expect(ff('.title .count')[0].text).to eq '1'
         @student.enrollments.first.destroy
         get "/"

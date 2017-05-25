@@ -41,10 +41,10 @@ class Enrollment < ActiveRecord::Base
 
   has_one :enrollment_state, :dependent => :destroy
 
-  has_many :role_overrides, :as => :context
+  has_many :role_overrides, :as => :context, :inverse_of => :context
   has_many :pseudonyms, :primary_key => :user_id, :foreign_key => :user_id
   has_many :course_account_associations, :foreign_key => 'course_id', :primary_key => 'course_id'
-  has_many :grading_period_grades, dependent: :destroy
+  has_many :scores, -> { active }
 
   validates_presence_of :user_id, :course_id, :type, :root_account_id, :course_section_id, :workflow_state, :role_id
   validates_inclusion_of :limit_privileges_to_course_section, :in => [true, false]
@@ -65,6 +65,7 @@ class Enrollment < ActiveRecord::Base
   before_validation :infer_privileges
   after_create :create_linked_enrollments
   after_create :create_enrollment_state
+  after_save :copy_scores_from_existing_enrollment, if: :need_to_copy_scores?
   after_save :clear_email_caches
   after_save :cancel_future_appointments
   after_save :update_linked_enrollments
@@ -78,8 +79,6 @@ class Enrollment < ActiveRecord::Base
   after_destroy :update_assignment_overrides_if_needed
 
   attr_accessor :already_enrolled, :need_touch_user, :skip_touch_user
-  attr_accessible :user, :course, :workflow_state, :course_section, :limit_privileges_to_course_section, :already_enrolled, :start_at, :end_at
-
   scope :current, -> { joins(:course).where(QueryBuilder.new(:active).conditions).readonly(false) }
   scope :current_and_invited, -> { joins(:course).where(QueryBuilder.new(:current_and_invited).conditions).readonly(false) }
   scope :current_and_future, -> { joins(:course).where(QueryBuilder.new(:current_and_future).conditions).readonly(false) }
@@ -153,9 +152,7 @@ class Enrollment < ActiveRecord::Base
     active_student? != active_student?(:was)
   end
 
-  def adjust_needs_grading_count(mode = :increment)
-    amount = mode == :increment ? 1 : -1
-
+  def touch_assignments
     Assignment.
       where(context_id: course_id, context_type: 'Course').
       where("EXISTS (?) AND NOT EXISTS (?)",
@@ -165,14 +162,14 @@ class Enrollment < ActiveRecord::Base
         Enrollment.where(Enrollment.active_student_conditions).
           where(user_id: user_id, course_id: course_id).
           where("id<>?", self)).
-      update_all(["needs_grading_count=needs_grading_count+?, updated_at=?", amount, Time.now.utc])
+      update_all(["updated_at=?", Time.now.utc])
   end
 
-  after_create :update_needs_grading_count, if: :active_student?
-  after_update :update_needs_grading_count, if: :active_student_changed?
-  def update_needs_grading_count
+  after_create :needs_grading_count_updated, if: :active_student?
+  after_update :needs_grading_count_updated, if: :active_student_changed?
+  def needs_grading_count_updated
     self.class.connection.after_transaction_commit do
-      adjust_needs_grading_count(active_student? ? :increment : :decrement)
+      touch_assignments
     end
   end
 
@@ -340,7 +337,7 @@ class Enrollment < ActiveRecord::Base
 
   def update_user_account_associations_if_necessary
     return if self.fake_student?
-    if id_was.nil? || (workflow_state_changed? && workflow_state_was == 'deleted')
+    if id_was.nil? || being_restored?
       return if %w{creation_pending deleted}.include?(self.user.workflow_state)
       associations = User.calculate_account_associations_from_accounts([self.course.account_id, self.course_section.course.account_id, self.course_section.nonxlist_course.try(:account_id)].compact.uniq)
       self.user.update_account_associations(:incremental => true, :precalculated_associations => associations)
@@ -484,7 +481,9 @@ class Enrollment < ActiveRecord::Base
 
   def cancel_future_appointments
     if workflow_state_changed? && %w{completed deleted}.include?(workflow_state)
-      course.appointment_participants.active.current.for_context_codes(user.asset_string).update_all(:workflow_state => 'deleted')
+      unless self.course.current_enrollments.where(:user_id => self.user_id).exists? # ignore if they have another still valid enrollment
+        course.appointment_participants.active.current.for_context_codes(user.asset_string).update_all(:workflow_state => 'deleted')
+      end
     end
   end
 
@@ -605,7 +604,7 @@ class Enrollment < ActiveRecord::Base
     TYPE_RANK_HASHES[order][self.class.to_s]
   end
 
-  STATE_RANK = ['active', ['invited', 'creation_pending'], 'inactive', 'completed', 'rejected', 'deleted']
+  STATE_RANK = ['active', ['invited', 'creation_pending'], 'completed', 'inactive', 'rejected', 'deleted']
   STATE_RANK_HASH = rank_hash(STATE_RANK)
   def self.state_rank_sql
     # don't call rank_sql during class load
@@ -616,7 +615,7 @@ class Enrollment < ActiveRecord::Base
     STATE_RANK_HASH[state.to_s]
   end
 
-  STATE_BY_DATE_RANK = ['active', ['invited', 'creation_pending', 'pending_active', 'pending_invited'], 'inactive', 'completed', 'rejected', 'deleted']
+  STATE_BY_DATE_RANK = ['active', ['invited', 'creation_pending', 'pending_active', 'pending_invited'], 'completed', 'inactive', 'rejected', 'deleted']
   STATE_BY_DATE_RANK_HASH = rank_hash(STATE_BY_DATE_RANK)
   def self.state_by_date_rank_sql
     @state_by_date_rank_sql ||= rank_sql(STATE_BY_DATE_RANK, 'enrollment_states.state').
@@ -639,7 +638,7 @@ class Enrollment < ActiveRecord::Base
     Message.where(:id => ids).delete_all if ids.present?
     update_attribute(:workflow_state, 'active')
     if self.type == 'StudentEnrollment'
-      Enrollment.recompute_final_score([self.user_id], self.course_id)
+      Enrollment.recompute_final_score_in_singleton(self.user_id, self.course_id)
     end
     touch_user
   end
@@ -811,7 +810,7 @@ class Enrollment < ActiveRecord::Base
     if result
       self.user.try(:update_account_associations)
       self.user.touch
-      grading_period_grades.destroy_all
+      scores.update_all(workflow_state: :deleted)
     end
     result
   end
@@ -820,6 +819,8 @@ class Enrollment < ActiveRecord::Base
     self.workflow_state = 'active'
     self.completed_at = nil
     self.save
+    Score.where(enrollment_id: self, workflow_state: :deleted).find_each(&:undestroy)
+    true
   end
 
   def re_send_confirmation!
@@ -935,14 +936,6 @@ class Enrollment < ActiveRecord::Base
     Enrollment.readable_type(self.class.to_s)
   end
 
-  def self.recompute_final_scores(user_id)
-    user = User.find(user_id)
-    enrollments = user.student_enrollments.to_a.uniq { |e| e.course_id }
-    enrollments.each do |enrollment|
-      send_later(:recompute_final_score, user_id, enrollment.course_id)
-    end
-  end
-
   # This is called to recompute the users' cached scores for a given course
   # when:
   #
@@ -982,24 +975,86 @@ class Enrollment < ActiveRecord::Base
   # please add appropriate calls to this so that the cached values don't get
   # stale! And once you've added the call, add the condition to the comment
   # here for future enlightenment.
-  def self.recompute_final_score(user_ids, course_id)
-    GradeCalculator.recompute_final_score(user_ids, course_id)
+
+  def self.recompute_final_score(*args)
+    GradeCalculator.recompute_final_score(*args)
   end
 
-  def self.recompute_final_score_if_stale(course, user=nil)
-    Rails.cache.fetch(['recompute_final_scores', course.id, user].cache_key, :expires_in => Setting.get('recompute_grades_window', 600).to_i.seconds) do
-      recompute_final_score user ? user.id : course.student_enrollments.except(:preload).distinct.pluck(:user_id), course.id
+  def self.recompute_final_score_if_stale(course, user=nil, compute_score_opts = {})
+    Rails.cache.fetch(
+      ['recompute_final_scores', course.id, user, compute_score_opts[:grading_period_id]].cache_key,
+      expires_in: Setting.get('recompute_grades_window', 600).to_i.seconds
+    ) do
+      user_id = user ? user.id : course.student_enrollments.except(:preload).distinct.pluck(:user_id)
+      recompute_final_score(user_id, course.id, compute_score_opts)
       yield if block_given?
       true
     end
   end
 
-  def computed_current_grade
-    self.course.score_to_grade(self.computed_current_score)
+  # This method is intended to not duplicate work for a single user.
+  def self.recompute_final_score_in_singleton(user_id, course_id, opts = {})
+    # Guard against getting more than one user_id
+    raise ArgumentError, "Cannot call with more than one user" if Array(user_id).size > 1
+
+    send_later_if_production_enqueue_args(
+      :recompute_final_score,
+      {
+        singleton: "Enrollment.recompute_final_score:#{user_id}:#{course_id}:#{opts[:grading_period_id]}",
+        run_at: 2.seconds.from_now # why is this needed?
+      },
+      user_id,
+      course_id,
+      opts
+    )
   end
 
-  def computed_final_grade
-    self.course.score_to_grade(self.computed_final_score)
+  def self.recompute_final_scores(user_id)
+    StudentEnrollment.where(user_id: user_id).pluck('distinct course_id').each do |course_id|
+      recompute_final_score_in_singleton(user_id, course_id)
+    end
+  end
+
+  def computed_current_grade(grading_period_id: nil)
+    cached_score_or_grade(:current, :grade, grading_period_id: grading_period_id)
+  end
+
+  def computed_final_grade(grading_period_id: nil)
+    cached_score_or_grade(:final, :grade, grading_period_id: grading_period_id)
+  end
+
+  def computed_current_score(grading_period_id: nil)
+    cached_score_or_grade(:current, :score, grading_period_id: grading_period_id)
+  end
+
+  def computed_final_score(grading_period_id: nil)
+    cached_score_or_grade(:final, :score, grading_period_id: grading_period_id)
+  end
+
+  def cached_score_or_grade(current_or_final, score_or_grade, grading_period_id: nil)
+    score = find_score(grading_period_id: grading_period_id)
+    score&.send("#{current_or_final}_#{score_or_grade}")
+  end
+  private :cached_score_or_grade
+
+  # when grading period is nil, we are fetching the overall course score
+  def find_score(grading_period_id: nil)
+    if scores.loaded?
+      scores.find { |score| score.grading_period_id == grading_period_id }
+    else
+      scores.where(grading_period_id: grading_period_id).first
+    end
+  end
+
+  def graded_at
+    score = find_score
+    if score.present?
+      score.updated_at
+    else
+      # TODO: drop the graded_at column after the data fixup to populate
+      # the scores table completes
+      read_attribute(:graded_at)
+    end
   end
 
   def self.typed_enrollment(type)
@@ -1154,7 +1209,12 @@ class Enrollment < ActiveRecord::Base
   end
 
   def self.top_enrollment_by(key, rank_order = :default)
-    raise "top_enrollment_by_user must be scoped" unless all.where_values.present?
+    if CANVAS_RAILS4_2
+      raise "top_enrollment_by_user must be scoped" unless all.where_values.present?
+    else
+      raise "top_enrollment_by_user must be scoped" unless all.where_clause.present?
+    end
+
     key = key.to_s
     order("#{key}, #{type_rank_sql(rank_order)}").distinct_on(key)
   end
@@ -1253,5 +1313,43 @@ class Enrollment < ActiveRecord::Base
         .where(user_id: self.user_id, assignment_id: assignment_ids)
         .find_each(&:destroy)
     end
+  end
+
+  def section_or_course_date_in_past?
+    if self.course_section && self.course_section.end_at
+      self.course_section.end_at < Time.now
+    elsif self.course.conclude_at
+      self.course.conclude_at < Time.now
+    end
+  end
+
+  private
+
+  def copy_scores_from_existing_enrollment
+    Score.where(enrollment_id: self).each(&:destroy_permanently!)
+    other_enrollment_of_same_type.scores.each { |score| score.dup.update!(enrollment: self) }
+  end
+
+  def need_to_copy_scores?
+    return false unless id_changed? || being_restored?
+    student_or_fake_student? && other_enrollment_of_same_type.present?
+  end
+
+  def student_or_fake_student?
+    ['StudentEnrollment', 'StudentViewEnrollment'].include?(type)
+  end
+
+  def other_enrollment_of_same_type
+    return @other_enrollment_of_same_type if defined?(@other_enrollment_of_same_type)
+
+    @other_enrollment_of_same_type = Enrollment.where(
+      course_id: course,
+      user_id: user,
+      type: type
+    ).where.not(id: id, workflow_state: :deleted).first
+  end
+
+  def being_restored?
+    workflow_state_changed? && workflow_state_was == 'deleted'
   end
 end

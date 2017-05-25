@@ -8,7 +8,7 @@ define [
   'jsx/shared/modal-buttons'
 ], ($, Modal, React, ReactDOM, TestUtils, ModalContent, ModalButtons) ->
 
-  module 'Modal',
+  QUnit.module 'Modal',
     setup: ->
       $('body').append("<div id=application />")
     teardown: ->
@@ -79,7 +79,7 @@ define [
       "buttons here"
     )))
 
-    TestUtils.Simulate.click(@component.refs.closeWithX.getDOMNode())
+    TestUtils.Simulate.click(@component.closeBtn)
     # how do you know the modal isn't there? check a class, maybe check the state of the modal
     ok functionCalled, "calls closeWithX"
     equal @component.state.modalIsOpen, false, "modal open state is false"

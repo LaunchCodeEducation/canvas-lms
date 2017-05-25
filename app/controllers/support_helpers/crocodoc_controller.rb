@@ -2,7 +2,7 @@ module SupportHelpers
   class CrocodocController < ApplicationController
     include SupportHelpers::ControllerHelpers
 
-    before_filter :require_site_admin
+    before_action :require_site_admin
 
     protect_from_forgery with: :exception
 
@@ -15,7 +15,7 @@ module SupportHelpers
         run_fixer(SupportHelpers::Crocodoc::SubmissionFixer,
                   params[:assignment_id].to_i, params[:user_id].to_i)
       else
-        render text: "Missing either assignment and/or user id parameters", status: 400
+        render plain: "Missing either assignment and/or user id parameters", status: 400
       end
     end
   end

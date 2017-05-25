@@ -27,6 +27,10 @@
     fieldset {
       margin: 2em 0;
     }
+    fieldset.nested {
+      margin-top: 0;
+      margin-left: 20px;
+    }
     legend{
       font-size: 1.1em;
     }
@@ -49,7 +53,7 @@
     <% if !@available_reports.blank? %>
       <li><a href="#tab-reports" id="tab-reports-link"><%= t(:tab_reports, "Reports") %></a></li>
     <% end %>
-    <% if can_do(@context, @current_user, :manage_account_settings) %>
+    <% if can_do(@context, @current_user, :read_as_admin) %>
       <li><a href="#tab-tools" id="tab-tools-link"><%= t(:tab_external_tools, "Apps") %></a></li>
     <% end %>
     <% if @context.root_account.settings[:enable_alerts] && can_do(@context, @current_user, :manage_interaction_alerts) %>
@@ -190,7 +194,7 @@ TEXT
                   <% disabled = hash[:locked] && hash[:inherited] %>
                   <tr>
                     <td colspan="2"><%= r.check_box :value, :checked => hash[:value], :disabled => disabled %>
-                      <%= r.label :restrict_student_future_view, :en => "Restrict students from accessing courses before start date" %>
+                      <%= r.label :value , t("Restrict students from accessing courses before start date") %>
                     </td>
                   </tr>
                   <% unless disabled %>
@@ -226,7 +230,7 @@ TEXT
                   <% disabled = hash[:locked] && hash[:inherited] %>
                   <tr>
                     <td colspan="2"><%= r.check_box :value, :checked => hash[:value], :disabled => disabled %>
-                      <%= r.label :restrict_student_past_view, :en => "Restrict students from accessing courses after end date" %>
+                      <%= r.label :value, t("Restrict students from accessing courses after end date") %>
                     </td>
                   </tr>
                   <% unless disabled %>
@@ -237,6 +241,35 @@ TEXT
                       </td>
                     </tr>
                   <% end %>
+                <% end %>
+
+                <%= settings.fields_for :lock_all_announcements do |r| %>
+                  <% hash = @account.lock_all_announcements %>
+                  <% disabled = hash[:locked] && hash[:inherited] %>
+                  <tr>
+                    <td colspan="2"><%= r.check_box :value, :checked => hash[:value], :disabled => disabled %>
+                      <%= r.label :value, :en => "Disable comments on announcements" %>
+                    </td>
+                  </tr>
+                  <% unless disabled %>
+                    <tr>
+                      <td colspan="2" class="sub_checkbox">
+                        <%= r.check_box :locked, :checked => hash[:locked] %>
+                        <%= r.label :locked, :en => "Lock this setting for sub-accounts and courses" %>
+                      </td>
+                    </tr>
+                  <% end %>
+                <% end %>
+
+                <%= settings.fields_for :enable_offline_web_export do |r| %>
+                  <% hash = @account.enable_offline_web_export %>
+                  <% disabled = hash[:locked] && hash[:inherited] %>
+                  <tr>
+                    <td colspan="2">
+                      <%= r.check_box :value, checked: hash[:value], disabled: disabled %>
+                      <%= r.label :value, t("Allow students to download course content and view offline") %>
+                    </td>
+                  </tr>
                 <% end %>
               <% end %>
             <% end %>
@@ -278,10 +311,8 @@ TEXT
               <tbody id="ip_filters">
                 <% ((@account.settings[:ip_filters] || {}).sort_by(&:first) << [nil, nil]).each do |name, filter| %>
                   <tr class="ip_filter <%= raw ' blank" style="display: none;' if name.nil? %>">
-                    <td><%= before_label(t(:ip_filter_name_label, "Name")) %></td>
-                    <td><input type="text" class="name" value="<%= name %>"/></td>
-                    <td><%= before_label(t(:ip_filter_filter_label, "Filter")) %></td>
-                    <td><input type="text" class="value" value="<%= filter %>" maxlength="255"/></td>
+                    <td> <label> <%= t("Name:") %></label> <input aria-label="<%= t("Name") %>" type="text" class="name" value="<%= name %>"/></td>
+                    <td> <label> <%= t("Filter:") %></label> <input aria-label="<%= t("Filter") %>" type="text" class="value" value="<%= filter %>" maxlength="255"/></td>
                     <td>
                       <a href="#" title="<%= t(:quiz_ip_filters_delete, "Remove Filter") %>" class="delete_filter_link"><i class="icon-end standalone-icon"></i></a>
                     </td>
@@ -413,11 +444,13 @@ TEXT
                 <input type="checkbox" id="enable_equella" <%= 'checked' if !@account.settings[:equella_endpoint].blank? %> />
                 <label for="enable_equella"><%= t 'labels.equella', 'Equella' %></label>
               </div>
+            <% end %>
+            <% if @account.grants_right?(@current_user, :manage_site_settings) %>
               <div>
-                <input type="checkbox" name="turnitin" id="turnitin" <%= 'checked' unless @account.turnitin_account_id.blank? %> />
-                <label for="turnitin"><%= t 'labels.turnitin', 'Turnitin' %></label>
+                <%= settings.check_box :enable_turnitin, :checked => @account.settings[:enable_turnitin] %>
+                <%= settings.label :enable_turnitin, :en => "Turnitin" %>
               </div>
-             <% end %>
+            <% end %>
           <% end %>
           <%= f.fields_for :services do |services| %>
             <% Account.services_exposed_to_ui_hash(:setting, @current_user, @account).sort_by { |k,h| Canvas::ICU.collation_key(h[:name]) }.each do |key, service| %>
@@ -461,51 +494,53 @@ TEXT
             <% end %>
           </fieldset>
 
-          <fieldset id="turnitin_settings" style="display: none;">
-            <legend><%= t(:turnitin_settings_title, "Turnitin Settings") %></legend>
-            <table class="formtable">
-              <tr>
-                <td><%= f.blabel :turnitin_account_id, :en => "Turnitin Account ID" %></td>
-                <td><%= f.text_field :turnitin_account_id, :class => "turnitin_account_settings" %></td>
-              </tr>
-              <tr>
-                <td><%= f.blabel :turnitin_shared_secret, :en => "Turnitin Shared Secret" %></td>
-                <td><%= f.text_field :turnitin_shared_secret, :class => "turnitin_account_settings" %></td>
-              </tr>
-              <tr>
-                <td><%= f.blabel :turnitin_host, :en => "Turnitin Host" %></td>
-                <td><%= f.text_field :turnitin_host, :class => "turnitin_account_settings", :placeholder => "api.turnitin.com" %></td>
-              </tr>
-              <tr>
-                <td>&nbsp;</td>
-                <td>
-                  <a href="<%= account_turnitin_confirmation_path(@account) %>" class="confirm_turnitin_settings_link Button">
-                    <%= t(:confirm_turnitin_settings_link, "confirm Turnitin settings") %>
-                  </a>
-                </td>
-              </tr>
-              <tr>
-                <td><%= f.blabel :turnitin_comments, :en => "Submission Comments" %></td>
-                <td>
-                  <span style="font-size: 0.9em;"><%= t(:turnitin_comments_help, "these comments will be shown to students when submitting a Turnitin-enabled assignment") %></span>
-                  <%= f.text_area :turnitin_comments, :style => "width: 90%; height: 50px;" %>
-                </td>
-              </tr>
-              <tr>
-                <td><%= f.blabel :turnitin_pledge, :en => "Turnitin Pledge" %></td>
-                <td>
-                  <span style="font-size: 0.9em;"><%= t(:turnitin_pledge_help, "students must check a box acknowledging that they agree with this pledge") %></span>
-                  <%= f.text_area :turnitin_pledge, :style => "width: 90%; height: 50px;" %>
-                </td>
-              </tr>
-              <tr>
-                <td><%= f.blabel :originality_report_visibility, :en => "Students can see the originality report" %></td>
-                <td>
-                  <%= f.select :turnitin_originality, options_for_select(turnitin_originality_options, @account.turnitin_originality)%>
-                </td>
-              </tr>
-            </table>
-          </fieldset>
+          <% if @account.settings[:enable_turnitin] %>
+            <fieldset id="turnitin_settings">
+              <legend><%= t(:turnitin_settings_title, "Turnitin Settings") %></legend>
+              <table class="formtable">
+                <tr>
+                  <td><%= f.blabel :turnitin_account_id, :en => "Turnitin Account ID" %></td>
+                  <td><%= f.text_field :turnitin_account_id, :class => "turnitin_account_settings" %></td>
+                </tr>
+                <tr>
+                  <td><%= f.blabel :turnitin_shared_secret, :en => "Turnitin Shared Secret" %></td>
+                  <td><%= f.text_field :turnitin_shared_secret, :class => "turnitin_account_settings" %></td>
+                </tr>
+                <tr>
+                  <td><%= f.blabel :turnitin_host, :en => "Turnitin Host" %></td>
+                  <td><%= f.text_field :turnitin_host, :class => "turnitin_account_settings", :placeholder => "api.turnitin.com" %></td>
+                </tr>
+                <tr>
+                  <td>&nbsp;</td>
+                  <td>
+                    <a href="<%= account_turnitin_confirmation_path(@account) %>" class="confirm_turnitin_settings_link Button">
+                      <%= t(:confirm_turnitin_settings_link, "confirm Turnitin settings") %>
+                    </a>
+                  </td>
+                </tr>
+                <tr>
+                  <td><%= f.blabel :turnitin_comments, :en => "Submission Comments" %></td>
+                  <td>
+                    <span style="font-size: 0.9em;"><%= t(:turnitin_comments_help, "these comments will be shown to students when submitting a Turnitin-enabled assignment") %></span>
+                    <%= f.text_area :turnitin_comments, :style => "width: 90%; height: 50px;" %>
+                  </td>
+                </tr>
+                <tr>
+                  <td><%= f.blabel :turnitin_pledge, :en => "Turnitin Pledge" %></td>
+                  <td>
+                    <span style="font-size: 0.9em;"><%= t(:turnitin_pledge_help, "students must check a box acknowledging that they agree with this pledge") %></span>
+                    <%= f.text_area :turnitin_pledge, :style => "width: 90%; height: 50px;" %>
+                  </td>
+                </tr>
+                <tr>
+                  <td><%= f.blabel :originality_report_visibility, :en => "Students can see the originality report" %></td>
+                  <td>
+                    <%= f.select :turnitin_originality, options_for_select(turnitin_originality_options, @account.turnitin_originality)%>
+                  </td>
+                </tr>
+              </table>
+            </fieldset>
+          <% end %>
         <% end %>
 
         <% if @account.root_account? and not (exposed_services = Account.services_exposed_to_ui_hash(:service, @current_user)).empty? %>
@@ -603,7 +638,7 @@ acknowledge that you have read and agreed to the
               </tr>
               <tr>
                 <td><%= t 'notifications.email_date', 'Date' %></td>
-                <td><%= DateTime.now.strftime('%B %d, %Y %I:%M:%S %p %z') %></td>
+                <td><%= datetime_string(Time.zone.now) %></td>
               </tr>
               <tr>
                 <td><%= t 'notifications.email_to', 'To' %></td>
@@ -643,7 +678,7 @@ acknowledge that you have read and agreed to the
               </tr>
               <tr>
                 <td><%= t 'notifications.email_date', 'Date' %></td>
-                <td><%= DateTime.now.strftime('%B %d, %Y %I:%M:%S %p %z') %></td>
+                <td><%= datetime_string(Time.zone.now) %></td>
               </tr>
               <tr>
                 <td><%= t 'notifications.email_to', 'To' %></td>
@@ -702,7 +737,7 @@ acknowledge that you have read and agreed to the
         <h2><%= t(:add_admin_title, "Add Account Admins") %></h2>
         <div style="margin-top: 5px;">
           <div>
-            <%= label_tag :role_id, :en => "Add More" %>
+            <%= label_tag :role_id, t("Add More") %>
             <select name="role_id" id="admin_role_id">
             <% available_roles.each do |role| %>
               <option value="<%= role.id %>"><%= AccountUser.readable_type(role.name) %></option>
@@ -740,6 +775,12 @@ acknowledge that you have read and agreed to the
             <div class="notification_account_content">
               <div class="ic-notification__content">
                 <div class="ic-notification__message">
+                  <h4 class="ic-notification__title notification_subject">
+                    <%= announcement.subject %>
+                  </h4>
+                  <span class="notification_message">
+                    <%= user_content(announcement.message) %>
+                  </span>
                   <% if can_do(@account, @current_user, :manage_alerts) %>
                     <div class="ic-notification__admin-actions">
                       <button
@@ -748,21 +789,15 @@ acknowledge that you have read and agreed to the
                         aria-controls="<%= "edit_notification_form_#{announcement.id}" %>"
                         data-edit-toggle-id="<%= announcement.id %>"
                       >
-                        <span class="screenreader-only"><%= t("Edit this Announcement") %></span>
+                        <span class="screenreader-only"><%= t("Edit announcement %{title}", :title => announcement.subject) %></span>
                         <i class="icon-edit"></i>
                       </button>
-                      <a href="#" rel="<%= context_url(@account, :context_account_notification_url, announcement) %>" class="Button Button--icon-action delete_notification_link" title="<%= t("Delete this Announcement") %>">
-                        <span class="screenreader-only"><%= t("Delete this Announcement") %></span>
+                      <a href="#" rel="<%= context_url(@account, :context_account_notification_url, announcement) %>" class="Button Button--icon-action delete_notification_link" title="<%= t("Delete announcement %{title}", :title => announcement.subject) %>">
+                        <span class="screenreader-only"><%= t("Delete announcement %{title}", :title => announcement.subject) %></span>
                         <i class="icon-trash"></i>
                       </a>
                     </div>
                   <% end %>
-                  <h4 class="ic-notification__title notification_subject">
-                    <%= announcement.subject %>
-                  </h4>
-                  <span class="notification_message">
-                    <%= user_content(announcement.message) %>
-                  </span>
                 </div>
               </div>
               <span class="notification_account_content_text">
@@ -851,9 +886,9 @@ acknowledge that you have read and agreed to the
                 class="ic-Input"
                 name="account_notification[icon]"
               >
-                <%= options_for_select([[t("warning"), "warning", {:class=>"error"}],
+                <%= options_for_select([[t("information"), "information", {:class=>"information"}],
                   [t("error"), "error", {:class=>"error"}],
-                  [t("information"), "information", {:class=>"information"}],
+                  [t("warning"), "warning", {:class=>"warning"}],
                   [t("question"), "question", {:class=>"question"}],
                   [t("calendar"), "calendar", {:class=>"calendar"}]]) %>
               </select>
@@ -1029,7 +1064,7 @@ acknowledge that you have read and agreed to the
                   (<%= extra_text %>)
                 <% end %>
                 <% if last_complete.workflow_state == 'complete' %>
-                  <%= link_to "<i class='icon-download'></i>".html_safe, context_url(last_complete.account, :context_file_download_url, last_complete.attachment.id) %>
+                  <%= link_to "<i class='icon-download'></i>".html_safe, context_url(last_complete.account, :context_file_download_url, last_complete.attachment.id), 'aria-label' => t('Download Report'), 'title' => t('Download Report') %>
                 <% end %>
               <% else %>
                 <%= t 'report_last_run_never', 'Never' %>
@@ -1066,7 +1101,7 @@ acknowledge that you have read and agreed to the
       </table>
     </div>
   <% end %>
-  <% if can_do(@context, @current_user, :manage_account_settings) %>
+  <% if can_do(@context, @current_user, :read_as_admin) %>
       <div id="tab-tools">
         <%= render :partial => 'external_tools/external_tools', :object => @context.context_external_tools.active %>
       </div>

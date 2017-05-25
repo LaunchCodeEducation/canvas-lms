@@ -182,10 +182,11 @@ class SubmissionList
         h
       end
 
-      hsh.each do |k, v|
+      hsh.each_value do |v|
+        v['submissions'] = Canvas::ICU.collate_by(v.submissions, &:student_name)
         v.submission_count = v.submissions.size
       end
-      # puts "-------------------------------Time Spent in assignments_for_grader_and_day: #{Time.now-start}-------------------------------"
+
       hsh.values
     end
 
@@ -193,7 +194,7 @@ class SubmissionList
     # all the meta data we need and no banned keys included.
     def process
       @list = self.submission_entries.sort_by { |a| [a[:graded_at] ? -a[:graded_at].to_f : CanvasSort::Last, a[:safe_grader_id], a[:assignment_id]] }.
-          inject(Dictionary.new) do |d, se|
+          inject(Hashery::Dictionary.new) do |d, se|
         d[se[:graded_on]] ||= []
         d[se[:graded_on]] << se
         d

@@ -37,6 +37,7 @@ describe Enrollment do
     expect(@enrollment.state).to eql(:active)
     @enrollment.reject
     expect(@enrollment.state).to eql(:rejected)
+    Score.where(enrollment_id: @enrollment).delete_all
     @enrollment.destroy_permanently!
     enrollment_model
     @enrollment.complete
@@ -100,6 +101,339 @@ describe Enrollment do
     it "should return the sis enrollment type otherwise" do
       e = TaEnrollment.new
       expect(e.sis_role).to eq 'ta'
+    end
+  end
+
+  describe '#restore' do
+    before(:once) do
+      @enrollment.save!
+      @enrollment.scores.create!
+      @enrollment.destroy
+    end
+
+    it 'restores associated scores that are deleted' do
+      expect { @enrollment.restore }.to change {
+        Score.find_by(enrollment_id: @enrollment, grading_period_id: nil).workflow_state
+      }.from('deleted').to('active')
+    end
+
+    it 'does not restore scores associated with other enrollments' do
+      new_enrollment = StudentEnrollment.create!(user: User.create!, course: @course)
+      new_score = new_enrollment.scores.new
+      new_score.workflow_state = :deleted
+      new_score.save!
+      expect { @enrollment.restore }.not_to change { new_score.reload.workflow_state }
+    end
+  end
+
+  describe 'scores and grades' do
+    let(:new_student_enrollment) do
+      @course.enroll_user(
+        @enrollment.user,
+        'StudentEnrollment',
+        section: @course.course_sections.create!,
+        allow_multiple_enrollments: true
+      )
+    end
+
+    let(:new_fake_student_enrollment) do
+      @course.enroll_user(
+        @enrollment.user,
+        'StudentViewEnrollment',
+        section: @course.course_sections.create!,
+        allow_multiple_enrollments: true
+      )
+    end
+
+    describe 'current scores and grades' do
+      before(:once) do
+        @enrollment = StudentEnrollment.create!(valid_enrollment_attributes)
+      end
+
+      let(:period) do
+        group = @course.root_account.grading_period_groups.create!
+        group.grading_periods.create!(
+          title: 'period',
+          start_date: 'Jan 1, 2015',
+          end_date: 'Jan 5, 2015'
+        )
+      end
+
+      describe '#computed_current_score' do
+        it 'uses the value from the associated score object, if one exists' do
+          @enrollment.scores.create!(current_score: 80.3)
+          expect(@enrollment.computed_current_score).to eq 80.3
+        end
+
+        it 'uses the value from the associated score object, even if it is nil' do
+          @enrollment.scores.create!(current_score: nil)
+          expect(@enrollment.computed_current_score).to be_nil
+        end
+
+        it 'ignores grading period scores when passed no arguments' do
+          @enrollment.scores.create!(current_score: 80.3, grading_period: period)
+          expect(@enrollment.computed_current_score).to be_nil
+        end
+
+        it 'ignores soft-deleted scores' do
+          score = @enrollment.scores.create!(current_score: 80.3)
+          score.destroy
+          expect(@enrollment.computed_current_score).to be_nil
+        end
+
+        it 'computes current score for a given grading period id' do
+          @enrollment.scores.create!(current_score: 80.3)
+          @enrollment.scores.create!(current_score: 70.6, grading_period: period)
+          current_score = @enrollment.computed_current_score(grading_period_id: period.id)
+          expect(current_score).to eq 70.6
+        end
+
+        it 'returns nil if a grading period score is requested and does not exist' do
+          current_score = @enrollment.computed_current_score(grading_period_id: period.id)
+          expect(current_score).to be_nil
+        end
+      end
+
+      describe '#computed_current_grade' do
+        before(:each) do
+          @course.grading_standard_enabled = true
+          @course.save!
+        end
+
+        it 'uses the value from the associated score object, if one exists' do
+          @enrollment.scores.create!(current_score: 80.3)
+          expect(@enrollment.computed_current_grade).to eq 'B-'
+        end
+
+        it 'ignores grading period grades when passed no arguments' do
+          @enrollment.scores.create!(current_score: 80.3, grading_period: period)
+          expect(@enrollment.computed_current_grade).to be_nil
+        end
+
+        it 'ignores grades from soft-deleted scores' do
+          score = @enrollment.scores.create!(current_score: 80.3)
+          score.destroy
+          expect(@enrollment.computed_current_grade).to be_nil
+        end
+
+        it 'computes current grade for a given grading period id' do
+          @enrollment.scores.create!(current_score: 70.6, grading_period: period)
+          current_grade = @enrollment.computed_current_grade(grading_period_id: period.id)
+          expect(current_grade).to eq 'C-'
+        end
+
+        it 'returns nil if a grading period grade is requested and does not exist' do
+          current_grade = @enrollment.computed_current_grade(grading_period_id: period.id)
+          expect(current_grade).to be_nil
+        end
+      end
+
+      describe '#graded_at' do
+        it 'uses the updated_at from the associated score object, if one exists' do
+          score = @enrollment.scores.create!(current_score: 80.3)
+          score.update_attribute(:updated_at, 5.days.from_now)
+          expect(@enrollment.graded_at).to eq score.updated_at
+        end
+
+        it 'uses the graded_at attribute if no associated score object exists' do
+          expect(@enrollment.graded_at).to eq @enrollment.read_attribute(:graded_at)
+        end
+
+        it 'ignores grading period scores' do
+          @enrollment.scores.create!(current_score: 80.3, grading_period: period)
+          expect(@enrollment.graded_at).to eq @enrollment.read_attribute(:graded_at)
+        end
+
+        it 'ignores soft-deleted scores' do
+          score = @enrollment.scores.create!(current_score: 80.3)
+          score.destroy
+          expect(@enrollment.graded_at).to eq @enrollment.read_attribute(:graded_at)
+        end
+      end
+
+      describe 'copying current scores' do
+        before(:once) do
+          teacher = User.create!
+          @course.enroll_teacher(teacher, active_all: true)
+          assignment = @course.assignments.create!(points_possible: 100)
+          assignment.grade_student(@enrollment.user, grade: 95, grader: teacher)
+        end
+
+        context 'on creation' do
+          it 'copies scores over from existing student enrollments to new student enrollments' do
+            expect(new_student_enrollment.computed_current_score).to eq(@enrollment.computed_current_score)
+          end
+
+          it 'copies scores over from existing fake student enrollments to new fake student enrollments' do
+            @enrollment.update!(type: 'StudentViewEnrollment')
+            expect(new_fake_student_enrollment.computed_current_score).to eq(@enrollment.computed_current_score)
+          end
+
+          it 'does not copy scores if the new enrollment type does not match existing enrollment types' do
+            expect(new_fake_student_enrollment.computed_current_score).to be_nil
+          end
+
+          it 'does not copy scores if the existing enrollment is soft-deleted' do
+            @enrollment.destroy
+            expect(new_student_enrollment.computed_current_score).to be_nil
+          end
+        end
+
+        context 'on restoration' do
+          it 'copies scores over from existing student enrollments to restored student enrollments' do
+            new_student_enrollment.destroy
+            new_student_enrollment.update!(workflow_state: :active)
+            expect(new_student_enrollment.computed_current_score).to eq(@enrollment.computed_current_score)
+          end
+
+          it 'copies scores over from existing fake student enrollments to restored fake student enrollments' do
+            @enrollment.update!(type: 'StudentViewEnrollment')
+            new_fake_student_enrollment.destroy
+            new_fake_student_enrollment.update!(workflow_state: :active)
+            expect(new_fake_student_enrollment.computed_current_score).to eq(@enrollment.computed_current_score)
+          end
+
+          it 'does not copy scores if the restored enrollment type does not match existing enrollment types' do
+            new_fake_student_enrollment.destroy
+            new_fake_student_enrollment.update!(workflow_state: :active)
+            expect(new_fake_student_enrollment.computed_current_score).to be_nil
+          end
+
+          it 'does not copy scores if the existing enrollment is soft-deleted' do
+            @enrollment.destroy
+            new_student_enrollment.destroy
+            new_student_enrollment.update!(workflow_state: :active)
+            expect(new_student_enrollment.computed_current_score).to be_nil
+          end
+        end
+      end
+    end
+
+    describe 'final scores and grades' do
+      before(:once) do
+        @enrollment.save!
+      end
+
+      let(:period) do
+        group = @course.root_account.grading_period_groups.create!
+        group.grading_periods.create!(
+          title: 'period',
+          start_date: 'Jan 1, 2015',
+          end_date: 'Jan 5, 2015'
+        )
+      end
+
+      describe '#find_score' do
+        it 'returns the course score when no arg is passed' do
+          score = @enrollment.scores.create!(final_score: 80.3)
+          @enrollment.scores.create!(final_score: 80.3, grading_period_id: period.id)
+          expect(@enrollment.find_score).to eq score
+        end
+
+        it 'returns the grading period score when grading_period_id is passed' do
+          @enrollment.scores.create!(final_score: 80.3)
+          score = @enrollment.scores.create!(final_score: 80.3, grading_period_id: period.id)
+          expect(@enrollment.find_score(grading_period_id: period.id)).to eq score
+        end
+      end
+
+      describe '#computed_final_score' do
+        it 'uses the value from the associated score object, if one exists' do
+          @enrollment.scores.create!(final_score: 80.3)
+          expect(@enrollment.computed_final_score).to eq 80.3
+        end
+
+        it 'uses the value from the associated score object, even if it is nil' do
+          @enrollment.scores.create!(final_score: nil)
+          expect(@enrollment.computed_final_score).to eq nil
+        end
+
+        it 'ignores grading period scores when passed no arguments' do
+          @enrollment.scores.create!(final_score: 80.3, grading_period: period)
+          expect(@enrollment.computed_final_score).to be_nil
+        end
+
+        it 'ignores soft-deleted scores' do
+          score = @enrollment.scores.create!(final_score: 80.3)
+          score.destroy
+          expect(@enrollment.computed_final_score).to be_nil
+        end
+
+        it 'computes final score for a given grading period id' do
+          @enrollment.scores.create!(final_score: 70.6, grading_period: period)
+          final_score = @enrollment.computed_final_score(grading_period_id: period.id)
+          expect(final_score).to eq 70.6
+        end
+
+        it 'returns nil if a grading period score is requested and does not exist' do
+          final_score = @enrollment.computed_final_score(grading_period_id: period.id)
+          expect(final_score).to eq nil
+        end
+      end
+
+      describe '#computed_final_grade' do
+        before(:each) do
+          @course.grading_standard_enabled = true
+          @course.save!
+        end
+
+        it 'uses the value from the associated score object, if one exists' do
+          @enrollment.scores.create!(final_score: 80.3)
+          expect(@enrollment.computed_final_grade).to eq 'B-'
+        end
+
+        it 'ignores grading period grades when passed no arguments' do
+          @enrollment.scores.create!(final_score: 80.3, grading_period: period)
+          expect(@enrollment.computed_final_grade).to be_nil
+        end
+
+        it 'ignores grades from soft-deleted scores' do
+          score = @enrollment.scores.create!(final_score: 80.3)
+          score.destroy
+          expect(@enrollment.computed_final_grade).to be_nil
+        end
+
+        it 'computes final grade for a given grading period id' do
+          @enrollment.scores.create!(final_score: 80.3)
+          @enrollment.scores.create!(final_score: 70.6, grading_period: period)
+          final_grade = @enrollment.computed_final_grade(grading_period_id: period.id)
+          expect(final_grade).to eq 'C-'
+        end
+
+        it 'returns nil if a grading period grade is requested and does not exist' do
+          final_grade = @enrollment.computed_final_grade(grading_period_id: period.id)
+          expect(final_grade).to eq nil
+        end
+      end
+
+      context 'copying final scores on creation' do
+        before(:once) do
+          teacher = User.create!
+          @course.enroll_teacher(teacher, active_all: true)
+          assignment = @course.assignments.create!(points_possible: 100)
+          assignment.grade_student(@enrollment.user, grade: 95, grader: teacher)
+          # create this so the enrollment's current_score differs from its final_score
+          @course.assignments.create!(points_possible: 100)
+        end
+
+        it 'copies scores over from the user\'s existing student enrollments to new student enrollments' do
+          expect(new_student_enrollment.computed_final_score).to eq(@enrollment.computed_final_score)
+        end
+
+        it 'copies scores over from the user\'s existing fake student enrollments to new fake student enrollments' do
+          @enrollment.update!(type: 'StudentViewEnrollment')
+          expect(new_fake_student_enrollment.computed_final_score).to eq(@enrollment.computed_final_score)
+        end
+
+        it 'does not copy scores if the new enrollment type does not match existing enrollment types' do
+          expect(new_fake_student_enrollment.computed_final_score).to be_nil
+        end
+
+        it 'does not copy scores if the existing enrollment is soft-deleted' do
+          @enrollment.destroy
+          expect(new_student_enrollment.computed_final_score).to be_nil
+        end
+      end
     end
   end
 
@@ -214,7 +548,8 @@ describe Enrollment do
 
   context "drop scores" do
     before(:once) do
-      course_with_student
+      course_with_teacher
+      course_with_student(course: @course)
       @group = @course.assignment_groups.create!(:name => "some group", :group_weight => 50, :rules => "drop_lowest:1")
       @assignment = @group.assignments.build(:title => "some assignments", :points_possible => 10)
       @assignment.context = @course
@@ -228,10 +563,10 @@ describe Enrollment do
       @enrollment = @user.enrollments.first
       @group.update_attribute(:rules, "drop_highest:1")
       expect(@enrollment.reload.computed_current_score).to eql(nil)
-      @submission = @assignment.grade_student(@user, :grade => "9")
+      @submission = @assignment.grade_student(@user, grade: "9", grader: @teacher)
       expect(@submission[0].score).to eql(9.0)
       expect(@enrollment.reload.computed_current_score).to eql(90.0)
-      @submission2 = @assignment2.grade_student(@user, :grade => "20")
+      @submission2 = @assignment2.grade_student(@user, grade: "20", grader: @teacher)
       expect(@submission2[0].score).to eql(20.0)
       expect(@enrollment.reload.computed_current_score).to eql(50.0)
       @group.update_attribute(:rules, nil)
@@ -241,8 +576,8 @@ describe Enrollment do
     it "should drop low scores for groups when specified" do
       @enrollment = @user.enrollments.first
       expect(@enrollment.reload.computed_current_score).to eql(nil)
-      @submission = @assignment.grade_student(@user, :grade => "9")
-      @submission2 = @assignment2.grade_student(@user, :grade => "20")
+      @submission = @assignment.grade_student(@user, grade: "9", grader: @teacher)
+      @submission2 = @assignment2.grade_student(@user, grade: "20", grader: @teacher)
       expect(@submission2[0].score).to eql(20.0)
       expect(@enrollment.reload.computed_current_score).to eql(90.0)
       @group.update_attribute(:rules, "")
@@ -253,10 +588,10 @@ describe Enrollment do
       @enrollment = @user.enrollments.first
       @group.update_attribute(:rules, "drop_lowest:2")
       expect(@enrollment.reload.computed_current_score).to eql(nil)
-      @submission = @assignment.grade_student(@user, :grade => "9")
+      @submission = @assignment.grade_student(@user, grade: "9", grader: @teacher)
       expect(@submission[0].score).to eql(9.0)
       expect(@enrollment.reload.computed_current_score).to eql(90.0)
-      @submission2 = @assignment2.grade_student(@user, :grade => "20")
+      @submission2 = @assignment2.grade_student(@user, grade: "20", grader: @teacher)
       expect(@submission2[0].score).to eql(20.0)
       expect(@enrollment.reload.computed_current_score).to eql(90.0)
     end
@@ -348,6 +683,17 @@ describe Enrollment do
       expect(Message.last.notification).to eql(n)
       expect(Message.last.to).to eql(@user.email)
     end
+
+    it "should send out notifications for enrollment acceptance correctly" do
+      teacher = user_with_pseudonym(:active_all => true)
+      n = Notification.create!(:name => "Enrollment Accepted")
+      NotificationPolicy.create!(:notification => n, :communication_channel => @user.communication_channel, :frequency => "immediately")
+      course_with_teacher(:active_all => true, :user => teacher)
+      student = user_factory
+      e = @course.enroll_student(student)
+      e.accept!
+      expect(teacher.messages).to be_exists
+    end
   end
 
   context "atom" do
@@ -409,19 +755,37 @@ describe Enrollment do
     end
   end
 
+  context "recompute_final_score_in_singleton" do
+    before(:once) { course_with_student }
+
+    it "should raise an exception if called with more than one user" do
+      expect { Enrollment.recompute_final_score_in_singleton([@user.id, 5], @course.id) }.
+        to raise_error(ArgumentError)
+    end
+
+    it "sends later for a single student" do
+      expect(Enrollment).to receive(:send_later_if_production_enqueue_args).with(
+        :recompute_final_score,
+        hash_including(singleton: "Enrollment.recompute_final_score:#{@user.id}:#{@course.id}:"),
+        @user.id, @course.id, {}
+      )
+
+      Enrollment.recompute_final_score_in_singleton(@user.id, @course.id)
+    end
+  end
+
   context "recompute_final_scores" do
     it "should only recompute once per student, per course" do
       course_with_student(:active_all => true)
       @c1 = @course
       @s2 = @course.course_sections.create!(:name => 's2')
       @course.enroll_student(@user, :section => @s2, :allow_multiple_enrollments => true)
-      expect(@user.student_enrollments(true).count).to eq 2
+      expect(@user.student_enrollments.reload.count).to eq 2
       course_with_student(:user => @user)
       @c2 = @course
+      Enrollment.expects(:recompute_final_score).with(@user.id, @c1.id, {})
+      Enrollment.expects(:recompute_final_score).with(@user.id, @c2.id, {})
       Enrollment.recompute_final_scores(@user.id)
-      jobs = Delayed::Job.find_available(100).select { |j| j.tag == 'Enrollment.recompute_final_score' }
-      # pull the course ids out of the job params
-      expect(jobs.map { |j| j.payload_object.args[1] }.sort).to eq [@c1.id, @c2.id]
     end
   end
 
@@ -663,7 +1027,7 @@ describe Enrollment do
         end
 
         it "recomputes scores for the student" do
-          Enrollment.expects(:recompute_final_score).with([@enrollment.user_id], @enrollment.course_id)
+          Enrollment.expects(:recompute_final_score).with(@enrollment.user_id, @enrollment.course_id, {})
           @enrollment.workflow_state = 'invited'
           @enrollment.save!
           @enrollment.accept
@@ -745,7 +1109,6 @@ describe Enrollment do
       describe 'term dates' do
         before do
           @term = @course.enrollment_term
-          expect(@term).to_not be_nil
         end
 
         it "should return active" do
@@ -795,7 +1158,6 @@ describe Enrollment do
       describe 'enrollment_dates_override dates' do
         before do
           @term = @course.enrollment_term
-          expect(@term).to_not be_nil
           @override = @term.enrollment_dates_overrides.create!(:enrollment_type => @enrollment.type, :enrollment_term => @term)
         end
 
@@ -852,7 +1214,6 @@ describe Enrollment do
       describe 'section dates' do
         before do
           @section = @course.course_sections.first
-          expect(@section).to_not be_nil
           @section.restrict_enrollments_to_section_dates = true
         end
 
@@ -1465,11 +1826,11 @@ describe Enrollment do
 
   describe "for_email" do
     before :once do
-      course(:active_all => 1)
+      course_factory(active_all: true)
     end
 
     it "should return candidate enrollments" do
-      user
+      user_factory
       @user.update_attribute(:workflow_state, 'creation_pending')
       @user.communication_channels.create!(:path => 'jt@instructure.com')
       @course.enroll_user(@user)
@@ -1478,27 +1839,27 @@ describe Enrollment do
 
     it "should not return non-candidate enrollments" do
       # mismatched e-mail
-      user
+      user_factory
       @user.update_attribute(:workflow_state, 'creation_pending')
       @user.communication_channels.create!(:path => 'bob@instructure.com')
       @course.enroll_user(@user)
       # registered user
-      user
+      user_factory
       @user.communication_channels.create!(:path => 'jt@instructure.com')
       @user.register!
       @course.enroll_user(@user)
       # active e-mail
-      user
+      user_factory
       @user.update_attribute(:workflow_state, 'creation_pending')
       @user.communication_channels.create!(:path => 'jt@instructure.com') { |cc| cc.workflow_state = 'active' }
       @course.enroll_user(@user)
       # accepted enrollment
-      user
+      user_factory
       @user.update_attribute(:workflow_state, 'creation_pending')
       @user.communication_channels.create!(:path => 'jt@instructure.com')
       @course.enroll_user(@user).accept
       # rejected enrollment
-      user
+      user_factory
       @user.update_attribute(:workflow_state, 'creation_pending')
       @user.communication_channels.create!(:path => 'jt@instructure.com')
       @course.enroll_user(@user).reject
@@ -1510,8 +1871,8 @@ describe Enrollment do
   describe "cached_temporary_invitations" do
     it "should uncache temporary user invitations when state changes" do
       enable_cache do
-        course(:active_all => 1)
-        user
+        course_factory(active_all: true)
+        user_factory
         @user.update_attribute(:workflow_state, 'creation_pending')
         @user.communication_channels.create!(:path => 'jt@instructure.com')
         @enrollment = @course.enroll_user(@user)
@@ -1567,15 +1928,15 @@ describe Enrollment do
 
       describe "cached_temporary_invitations" do
         before :once do
-          course(:active_all => 1)
-          user
+          course_factory(active_all: true)
+          user_factory
           @user.update_attribute(:workflow_state, 'creation_pending')
           @user.communication_channels.create!(:path => 'jt@instructure.com')
           @enrollment1 = @course.enroll_user(@user)
           @shard1.activate do
             account = Account.create!
-            course(:active_all => 1, :account => account)
-            user
+            course_factory(active_all: true, :account => account)
+            user_factory
             @user.update_attribute(:workflow_state, 'creation_pending')
             @user.communication_channels.create!(:path => 'jt@instructure.com')
             @enrollment2 = @course.enroll_user(@user)
@@ -1633,16 +1994,7 @@ describe Enrollment do
       course_with_teacher(:active_all => 1)
       expect(@user.associated_accounts).to eq [Account.default]
       @enrollment.destroy
-      expect(@user.associated_accounts(true)).to eq []
-    end
-
-    it "should delete its grading period grades" do
-      course_with_teacher
-      period = Factories::GradingPeriodHelper.new.create_with_group_for_course(@course)
-      grade = @enrollment.grading_period_grades.create!(grading_period_id: period.id)
-      expect(grade).to be_active
-      @enrollment.destroy
-      expect(grade).to be_deleted
+      expect(@user.associated_accounts.reload).to eq []
     end
 
     it "should remove assignment overrides if they are only linked to this enrollment" do
@@ -1665,13 +2017,20 @@ describe Enrollment do
       ao.reload
       expect(ao.workflow_state).to eq("deleted")
     end
+
+    it "destroys associated scores" do
+      @enrollment.save
+      score = @enrollment.scores.create!
+      @enrollment.destroy
+      expect(score.reload).to be_deleted
+    end
   end
 
   describe "effective_start_at" do
     before :once do
       course_with_student(:active_all => true)
-      expect(@term = @course.enrollment_term).not_to be_nil
-      expect(@section = @enrollment.course_section).not_to be_nil
+      @term = @course.enrollment_term
+      @section = @enrollment.course_section
 
       # 7 different possible times, make sure they're distinct
       @enrollment_date_start_at = 7.days.ago
@@ -1729,8 +2088,8 @@ describe Enrollment do
   describe "effective_end_at" do
     before :once do
       course_with_student(:active_all => true)
-      expect(@term = @course.enrollment_term).not_to be_nil
-      expect(@section = @enrollment.course_section).not_to be_nil
+      @term = @course.enrollment_term
+      @section = @enrollment.course_section
 
       # 5 different possible times, make sure they're distinct
       @enrollment_date_end_at = 1.days.ago
@@ -1807,7 +2166,7 @@ describe Enrollment do
 
   describe 'observing users' do
     before :once do
-      @student = user(:active_all => true)
+      @student = user_factory(active_all: true)
       @parent = user_with_pseudonym(:active_all => true)
       @student.observers << @parent
     end
@@ -1824,7 +2183,7 @@ describe Enrollment do
     end
 
     it 'should default observer enrollments to "active" state' do
-      course(:active_all => true)
+      course_factory(active_all: true)
       @course.enroll_student(@student, :enrollment_state => 'invited')
       pe = @parent.observer_enrollments.where(course_id: @course).first
       expect(pe).not_to be_nil
@@ -1953,13 +2312,13 @@ describe Enrollment do
     it "triggers a batch when enrollment is created" do
       DueDateCacher.expects(:recompute).never
       DueDateCacher.expects(:recompute_course).with(@course)
-      @course.enroll_student(user)
+      @course.enroll_student(user_factory)
     end
 
     it "does not trigger a batch when enrollment is not student" do
       DueDateCacher.expects(:recompute).never
       DueDateCacher.expects(:recompute_course).never
-      @course.enroll_teacher(user)
+      @course.enroll_teacher(user_factory)
     end
 
     it "triggers a batch when enrollment is deleted" do
@@ -2049,8 +2408,8 @@ describe Enrollment do
 
   describe "readable_state_based_on_date" do
     before :once do
-      course(:active_all => true)
-      @enrollment = @course.enroll_student(user)
+      course_factory(active_all: true)
+      @enrollment = @course.enroll_student(user_factory)
       @enrollment.accept!
     end
 
@@ -2102,7 +2461,7 @@ describe Enrollment do
     it "should create a user_account_association when restoring a deleted enrollment" do
       sub_account = Account.default.sub_accounts.create!
       course = Course.create!(:account => sub_account)
-      @enrollment = course.enroll_student(user)
+      @enrollment = course.enroll_student(user_factory)
       expect(@user.user_account_associations.where(account: sub_account).exists?).to eq true
 
       @enrollment.destroy
@@ -2114,8 +2473,8 @@ describe Enrollment do
   end
 
   it "should order by state based on date correctly" do
-    u = user(:active_all => true)
-    c1 = course(:active_all => true)
+    u = user_factory(active_all: true)
+    c1 = course_factory(active_all: true)
     c1.start_at = 1.day.from_now
     c1.conclude_at = 2.days.from_now
     c1.restrict_enrollments_to_course_dates = true
@@ -2123,14 +2482,14 @@ describe Enrollment do
     c1.save!
     restricted_enroll = c1.enroll_student(u)
 
-    c2 = course(:active_all => true)
+    c2 = course_factory(active_all: true)
     c2.start_at = 1.day.from_now
     c2.conclude_at = 2.days.from_now
     c2.restrict_enrollments_to_course_dates = true
     c2.save!
     future_enroll = c2.enroll_student(u)
 
-    c3 = course(:active_all => true)
+    c3 = course_factory(active_all: true)
     active_enroll = c3.enroll_student(u)
 
     [restricted_enroll, future_enroll, active_enroll].each do |e|

@@ -1,10 +1,13 @@
 define [
+  'jquery'
+  'i18n!assignments'
   'compiled/util/round'
+  'jsx/shared/helpers/numberHelper'
   'underscore'
   'compiled/views/DialogFormView'
   'jst/EmptyDialogFormWrapper'
   'jst/assignments/AssignmentSettings'
-], (round, _, DialogFormView, wrapper, assignmentSettingsTemplate) ->
+], ($, I18n, round, numberHelper, _, DialogFormView, wrapper, assignmentSettingsTemplate) ->
 
   class AssignmentSettingsView extends DialogFormView
     template: assignmentSettingsTemplate
@@ -29,13 +32,24 @@ define [
       super
       @weights = []
 
+    validateFormData: ->
+      errors = {}
+      weights = @$el.find('.group_weight_value')
+      _.each weights, (weight) =>
+        weight_value = $(weight).val()
+        field_selector = weight.getAttribute("name")
+        if (weight_value && isNaN(numberHelper.parse(weight_value)))
+          errors[field_selector] = [{type: 'number', message: I18n.t("Must be a valid number")}]
+      errors
+
     openAgain: ->
       super
       @toggleTableByModel()
       @addAssignmentGroups()
 
     canChangeWeights: ->
-      @userIsAdmin or !_.any(@assignmentGroups.models, (ag) -> ag.hasAssignmentDueInClosedGradingPeriod())
+      @userIsAdmin or !_.any @assignmentGroups.models, (ag) ->
+        ag.anyAssignmentInClosedGradingPeriod()
 
     submit: (event) ->
       if @canChangeWeights()
@@ -57,6 +71,8 @@ define [
     onSaveSuccess: ->
       super
       @assignmentGroups.trigger 'change:groupWeights'
+      checked = @model.get('apply_assignment_group_weights')
+      @trigger('weightedToggle', checked)
 
     toggleTableByModel: ->
       checked = @model.get('apply_assignment_group_weights')
@@ -94,7 +110,7 @@ define [
         total_weight += model.get('group_weight') || 0
       total_weight = round(total_weight,2)
 
-      @$el.find('#percent_total').text(total_weight + "%")
+      @$el.find('#percent_total').text(I18n.n(total_weight, { percentage: true }))
 
     clearWeights: ->
       @weights = []
@@ -105,7 +121,7 @@ define [
       for v in @weights
         total_weight += v.findWeight() || 0
       total_weight = round(total_weight,2)
-      @$el.find('#percent_total').text(total_weight + "%")
+      @$el.find('#percent_total').text(I18n.n(total_weight, { percentage: true }))
 
     toJSON: ->
       data = super

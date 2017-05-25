@@ -63,7 +63,7 @@ describe CollaborationsController, type: :request do
     end
 
     it 'should require authorization' do
-      user
+      user_factory
       raw_api_call(:get, url, url_options)
       expect(response.code).to eq '401'
     end
@@ -171,13 +171,48 @@ describe CollaborationsController, type: :request do
 
     describe 'a non-group member' do
       before(:each) do
-        user
+        user_factory
       end
 
       it 'should receive a 401' do
         raw_api_call(:get, url, url_options)
         expect(response.code).to eq '401'
       end
+    end
+  end
+
+  context '/api/v1/courses/:course_id/potential_collaborators' do
+    before :once do
+      collaboration_model(:user => @teacher, :context => @course)
+    end
+
+    it 'requires :read_roster rights' do
+      user_factory
+      api_call(:get, "/api/v1/courses/#{@course.id}/potential_collaborators",
+               { :controller => 'collaborations', :action => 'potential_collaborators',
+                 :format => 'json', :course_id => @course.to_param},
+               {}, {}, expected_status: 401)
+    end
+
+    it 'returns course members for course collaborations' do
+      json = api_call(:get, "/api/v1/courses/#{@course.id}/potential_collaborators",
+               { :controller => 'collaborations', :action => 'potential_collaborators',
+                 :format => 'json', :course_id => @course.to_param })
+      expect(json.map { |user| user['id'] }).to match_array(@course.users.pluck(:id))
+    end
+  end
+
+  context '/api/v1/groups/:group_id/potential_collaborators' do
+    it 'returns group members plus course admins for group collaborations' do
+      group_model(:context => @course)
+      user_with_pseudonym
+      @course.enroll_student(@user).accept!
+      @group.add_user(@user)
+      gc = collaboration_model(:user => @user, :context => @group)
+      json = api_call(:get, "/api/v1/groups/#{@group.id}/potential_collaborators",
+               { :controller => 'collaborations', :action => 'potential_collaborators',
+                 :format => 'json', :group_id => @group.to_param })
+      expect(json.map { |user| user['id'] }).to match_array(@course.admins.pluck(:id) + @group.users.pluck(:id))
     end
   end
 end

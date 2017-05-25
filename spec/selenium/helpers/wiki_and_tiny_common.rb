@@ -114,15 +114,13 @@ module WikiAndTinyCommon
 
   def activate_editor_embed_image(el)
     el.find_element(:css, "div[aria-label='Embed Image'] button").click
-    ff('.ui-dialog').reverse.detect(&:displayed?)
+    fj('.ui-dialog:visible')
   end
 
   def add_canvas_image(el, folder, filename)
     dialog = activate_editor_embed_image(el)
-    f('a[href="#tabUploaded"]', dialog).click
-    expect(f('.treeLabel', dialog)).to be_displayed
-    folder_el = ff('.treeLabel', dialog).detect { |e| e.text == folder }
-    expect(folder_el).not_to be_nil
+    fj('a[href="#tabUploaded"]:visible').click
+    folder_el = fj(".treeLabel:contains(#{folder.inspect})")
     folder_el.click unless folder_el['class'].split.include?('expanded')
     expect(f('.treeFile', dialog)).to be_displayed
     file_el = f(".treeFile[title=\"#{filename}\"]", dialog)
@@ -148,6 +146,7 @@ module WikiAndTinyCommon
     clear_wiki_rce
     f('#editor_tabs .ui-tabs-nav li:nth-child(3) a').click
     f('.upload_new_image_link').click
+    wait_for_animations
     wiki_page_tools_upload_file('#sidebar_upload_image_form', :image)
     in_frame wiki_page_body_ifr_id do
       expect(f('#tinymce img')).to be_displayed

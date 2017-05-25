@@ -21,7 +21,9 @@ module UserSearch
         context.grants_right?(searcher, session, :manage_admin_users)
       restrict_search = true
     end
-    base_scope.where(conditions_statement(search_term, {:restrict_search => restrict_search}))
+    context.shard.activate do
+      base_scope.where(conditions_statement(search_term, {:restrict_search => restrict_search}))
+    end
   end
 
   def self.conditions_statement(search_term, options={})
@@ -29,7 +31,7 @@ module UserSearch
     conditions = []
 
     if complex_search_enabled? && !options[:restrict_search]
-      conditions << complex_sql << pattern << pattern << CommunicationChannel::TYPE_EMAIL << pattern
+      conditions << complex_sql << pattern << pattern << pattern << CommunicationChannel::TYPE_EMAIL << pattern
     else
       conditions << like_condition('users.name') << pattern
     end
@@ -55,7 +57,7 @@ module UserSearch
               User.of_account(context).active
             elsif context.is_a?(Course)
               context.users_visible_to(searcher, include_prior_enrollments,
-                enrollment_state: enrollment_states, include_inactive: include_inactive_enrollments).uniq
+                enrollment_state: enrollment_states, include_inactive: include_inactive_enrollments).distinct
             else
               context.users_visible_to(searcher).uniq
             end
@@ -99,7 +101,8 @@ module UserSearch
   def self.complex_sql
     <<-SQL
       (EXISTS (SELECT 1 FROM #{Pseudonym.quoted_table_name}
-         WHERE #{like_condition('pseudonyms.sis_user_id')}
+         WHERE (#{like_condition('pseudonyms.sis_user_id')} OR
+             #{like_condition('pseudonyms.unique_id')})
            AND pseudonyms.user_id = users.id
            AND pseudonyms.workflow_state='active')
        OR (#{like_condition('users.name')})
@@ -107,7 +110,7 @@ module UserSearch
          WHERE communication_channels.user_id = users.id
            AND communication_channels.path_type = ?
            AND #{like_condition('communication_channels.path')}
-           AND communication_channels.workflow_state='active'))
+           AND communication_channels.workflow_state in ('active', 'unconfirmed')))
     SQL
   end
 

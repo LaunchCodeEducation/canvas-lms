@@ -23,14 +23,19 @@ describe UsersController, type: :request do
   include Api
   include Api::V1::Assignment
   def update_assignment_json
-    @a1_json['assignment'] = controller.assignment_json(@a1,@user,session)
-    @a2_json['assignment'] = controller.assignment_json(@a2,@user,session)
+    @a1_json['assignment'] = controller.assignment_json(@a1,@user,session).as_json
+    @a2_json['assignment'] = controller.assignment_json(@a2,@user,session).as_json
+  end
+
+  def strip_secure_params(json)
+    json['assignment'].delete('secure_params')
+    json
   end
 
   before :once do
     @teacher = course_with_teacher(:active_all => true, :user => user_with_pseudonym(:active_all => true))
     @teacher_course = @course
-    @student_course = course(:active_all => true)
+    @student_course = course_factory(active_all: true)
     @student_course.enroll_student(@user).accept!
     # an assignment i need to submit (needs_submitting)
     @a1 = Assignment.create!(:context => @student_course, :due_at => 6.days.from_now, :title => 'required work', :submission_types => 'online_text_entry', :points_possible => 10)
@@ -38,7 +43,7 @@ describe UsersController, type: :request do
     # an assignment i created, and a student who submits the assignment (needs_grading)
     @a2 = Assignment.create!(:context => @teacher_course, :due_at => 1.day.from_now, :title => 'text', :submission_types => 'online_text_entry', :points_possible => 15)
     @me = @user
-    student = user(:active_all => true)
+    student = user_factory(active_all: true)
     @user = @me
     @teacher_course.enroll_student(student).accept!
     @sub = @a2.reload.submit_homework(student, :submission_type => 'online_text_entry', :body => 'done')
@@ -71,7 +76,7 @@ describe UsersController, type: :request do
 
   def another_submission
     @me = @user
-    student2 = user(:active_all => true)
+    student2 = user_factory(active_all: true)
     @user = @me
     @teacher_course.enroll_student(student2).accept!
     @sub2 = @a2.reload.submit_homework(student2,
@@ -95,8 +100,8 @@ describe UsersController, type: :request do
                     :controller => "users", :action => "todo_items", :format => "json")
     update_assignment_json
     json = json.sort_by { |t| t['assignment']['id'] }
-    compare_json json.first, @a1_json
-    compare_json json.second, @a2_json
+    expect(strip_secure_params(json.first)).to eq strip_secure_params(@a1_json)
+    expect(strip_secure_params(json.second)).to eq strip_secure_params(@a2_json)
   end
 
   it "returns a course-specific todo list for a student" do
@@ -106,7 +111,7 @@ describe UsersController, type: :request do
                     .first
 
     update_assignment_json
-    compare_json(json, @a1_json)
+    expect(strip_secure_params(json)).to eq strip_secure_params(@a1_json)
   end
 
   it "returns a course-specific todo list for a teacher" do
@@ -115,7 +120,7 @@ describe UsersController, type: :request do
                     :format => "json", :course_id => @teacher_course.to_param)
                     .first
     update_assignment_json
-    compare_json(json, @a2_json)
+    expect(strip_secure_params(json)).to eq strip_secure_params(@a2_json)
   end
 
   it "should return a list for users who are both teachers and students" do
@@ -126,8 +131,8 @@ describe UsersController, type: :request do
     @a1_json.deep_merge!({ 'assignment' => { 'needs_grading_count' => 0 } })
     json = json.sort_by { |t| t['assignment']['id'] }
     update_assignment_json
-    compare_json(json.first, @a1_json)
-    compare_json(json.second, @a2_json)
+    expect(strip_secure_params(json.first)).to eq strip_secure_params(@a1_json)
+    expect(strip_secure_params(json.second)).to eq strip_secure_params(@a2_json)
   end
 
   it "should ignore a todo item permanently" do
@@ -165,11 +170,11 @@ describe UsersController, type: :request do
     @a2_json['needs_grading_count'] = 2
     @a2_json['assignment']['needs_grading_count'] = 2
     update_assignment_json
-    compare_json(json.first, @a2_json)
+    expect(strip_secure_params(json.first)).to eq strip_secure_params(@a2_json)
   end
 
   it "should ignore excused assignments for students" do
-    @a1.grade_student(@me, excuse: true)
+    @a1.grade_student(@me, excuse: true, grader: @teacher)
 
     json = api_call(:get, "/api/v1/courses/#{@student_course.id}/todo",
       :controller => "courses", :action => "todo_items",
@@ -178,22 +183,28 @@ describe UsersController, type: :request do
     expect(json).to eq []
   end
 
-  it "should include assignments that don't expect an online submission (courses endpoint)" do
-    ungraded = @student_course.assignments.create! due_at: 2.days.ago, workflow_state: 'published', submission_types: 'not_graded'
+  it "should include future assignments that don't expect an online submission (courses endpoint)" do
+    past_ungraded = @student_course.assignments.create! due_at: 2.days.ago, workflow_state: 'published', submission_types: 'not_graded'
+    ungraded = @student_course.assignments.create! due_at: 2.days.from_now, workflow_state: 'published', submission_types: 'not_graded'
     json = api_call :get, "/api/v1/courses/#{@student_course.id}/todo", :controller => "courses", :action => "todo_items",
         :format => "json", :course_id => @student_course.to_param
     expect(json.map {|e| e['assignment']['id']}).to include ungraded.id
+    expect(json.map {|e| e['assignment']['id']}).not_to include past_ungraded.id
   end
 
-  it "should include assignments that don't expect an online submission (users endpoint)" do
-    ungraded = @student_course.assignments.create! due_at: 2.days.ago, workflow_state: 'published', submission_types: 'not_graded'
+  it "should include future assignments that don't expect an online submission (users endpoint)" do
+    past_ungraded = @student_course.assignments.create! due_at: 2.days.ago, workflow_state: 'published', submission_types: 'not_graded'
+    ungraded = @student_course.assignments.create! due_at: 2.days.from_now, workflow_state: 'published', submission_types: 'not_graded'
     json = api_call :get, "/api/v1/users/self/todo", :controller => "users", :action => "todo_items", :format => "json"
     expect(json.map {|e| e['assignment']['id']}).to include ungraded.id
+    expect(json.map {|e| e['assignment']['id']}).not_to include past_ungraded.id
   end
 
   it "includes ungraded quizzes by request" do
     survey = @student_course.quizzes.create!(quiz_type: 'survey', due_at: 1.day.from_now)
     survey.publish!
+    past_survey = @student_course.quizzes.create!(quiz_type: 'survey', due_at: 1.day.ago)
+    past_survey.publish!
 
     # course endpoint
     json = api_call :get, "/api/v1/courses/#{@student_course.id}/todo", :controller => "courses",
@@ -211,6 +222,21 @@ describe UsersController, type: :request do
 
     json = api_call :get, "/api/v1/users/self/todo?include[]=ungraded_quizzes", :controller => "users",
                     :action => "todo_items", :format => "json", :include => %w(ungraded_quizzes)
+    expect(json.map { |el| el['quiz'] && el['quiz']['id'] }.compact).to eql([survey.id])
+  end
+
+  it "doesn't include ungraded quizzes if not assigned to user" do
+    survey = @student_course.quizzes.create!(quiz_type: 'survey', due_at: 1.day.from_now, only_visible_to_overrides: true)
+    survey.publish!
+    override = survey.assignment_overrides.create!(:set => @course.default_section)
+
+    survey2 = @student_course.quizzes.create!(quiz_type: 'survey', due_at: 1.day.from_now, only_visible_to_overrides: true)
+    survey2.publish!
+    section = @course.course_sections.create!
+    override = survey.assignment_overrides.create!(:set => section)
+
+    json = api_call :get, "/api/v1/users/self/todo?include[]=ungraded_quizzes", :controller => "users",
+      :action => "todo_items", :format => "json", :include => %w(ungraded_quizzes)
     expect(json.map { |el| el['quiz'] && el['quiz']['id'] }.compact).to eql([survey.id])
   end
 

@@ -16,12 +16,12 @@ describe "account admin terms" do
     #expect(term_header).to include_text("#{user_count} User")
   end
 
-  before (:each) do
+  before do
     course_with_admin_logged_in
   end
 
   context "default term" do
-    before (:each) do
+    before do
       get "/accounts/#{Account.default.id}/terms"
       @default_term = ff('.term')[0]
     end
@@ -34,7 +34,7 @@ describe "account admin terms" do
       edit_term_name = 'edited term title'
       click_term_action_link(@default_term, '.edit_term_link')
       replace_content(f('#enrollment_term_name'), edit_term_name)
-      submit_form('.enrollment_term_form')
+      f('.submit_button').click
       wait_for_ajax_requests
       validate_term_display(0, edit_term_name)
       check_element_has_focus f(".edit_term_link", @default_term)
@@ -43,7 +43,7 @@ describe "account admin terms" do
     it "should cancel editing" do
       click_term_action_link(@default_term, '.edit_term_link')
       replace_content(f('#enrollment_term_name'), 'cancel this edit')
-      f('.enrollment_term_form .cancel_button').click
+      f('.cancel_button').click
       wait_for_animations
       validate_term_display
       check_element_has_focus f(".edit_term_link", @default_term)
@@ -66,12 +66,12 @@ describe "account admin terms" do
       new_term_name = 'New Term'
       get "/accounts/#{Account.default.id}/terms"
 
-      expect {
+      expect do
         f('.add_term_link').click
         replace_content(f('#enrollment_term_name'), new_term_name)
-        submit_form('.enrollment_term_form')
+        f('.submit_button').click
         wait_for_ajax_requests
-      }.to change(EnrollmentTerm, :count).by(1)
+      end.to change(EnrollmentTerm, :count).by(1)
       expect(ff('.term .header')[0].text).to eq new_term_name
       check_element_has_focus f("#term_#{EnrollmentTerm.last.id} .edit_term_link")
     end
@@ -103,19 +103,18 @@ describe "account admin terms" do
     end
   end
 
-  context "with mgp enabled" do
+  context "with grading periods" do
     let(:account) { Account.default }
 
-    before(:each) do
+    before do
       admin_logged_in
-      account.enable_feature!(:multiple_grading_periods)
     end
 
     context "with grading period set associated to a new term" do
       let(:term) { account.enrollment_terms.create! }
       let(:group) { Factories::GradingPeriodGroupHelper.new.create_for_account(account) }
 
-      before(:each) do
+      before do
         group.enrollment_terms = [ term ]
       end
 

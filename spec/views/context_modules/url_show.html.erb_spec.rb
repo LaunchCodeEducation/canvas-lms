@@ -21,14 +21,14 @@ require File.expand_path(File.dirname(__FILE__) + '/../views_helper')
 
 describe "/context_modules/url_show" do
   it "should render" do
-    course
+    course_factory
     view_context(@course, @user)
     @module = @course.context_modules.create!(:name => 'teh module')
     @tag = @module.add_item(:type => 'external_url',
                             :url => 'http://example.com/lolcats',
                             :title => 'pls view')
-    assigns[:module] = @module
-    assigns[:tag] = @tag
+    assign(:module, @module)
+    assign(:tag, @tag)
     render 'context_modules/url_show'
     doc = Nokogiri::HTML.parse(response.body)
     expect(doc.at_css('iframe')['src']).to eq 'http://example.com/lolcats'

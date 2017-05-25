@@ -18,7 +18,7 @@
 
 # @API Enrollment Terms
 class TermsController < ApplicationController
-  before_filter :require_context, :require_root_account_management
+  before_action :require_context, :require_root_account_management
   include Api::V1::EnrollmentTerm
 
   def index
@@ -48,6 +48,14 @@ class TermsController < ApplicationController
   # @argument enrollment_term[sis_term_id] [String]
   #   The unique SIS identifier for the term.
   #
+  # @argument enrollment_term[overrides][enrollment_type][start_at] [DateTime]
+  #   The day/time the term starts, overridden for the given enrollment type.
+  #   *enrollment_type* can be one of StudentEnrollment, TeacherEnrollment, TaEnrollment, or DesignerEnrollment
+  #
+  # @argument enrollment_term[overrides][enrollment_type][end_at] [DateTime]
+  #   The day/time the term ends, overridden for the given enrollment type.
+  #   *enrollment_type* can be one of StudentEnrollment, TeacherEnrollment, TaEnrollment, or DesignerEnrollment
+  #
   # @returns EnrollmentTerm
   #
   def create
@@ -72,6 +80,14 @@ class TermsController < ApplicationController
   #
   # @argument enrollment_term[sis_term_id] [String]
   #   The unique SIS identifier for the term.
+  #
+  # @argument enrollment_term[overrides][enrollment_type][start_at] [DateTime]
+  #   The day/time the term starts, overridden for the given enrollment type.
+  #   *enrollment_type* can be one of StudentEnrollment, TeacherEnrollment, TaEnrollment, or DesignerEnrollment
+  #
+  # @argument enrollment_term[overrides][enrollment_type][end_at] [DateTime]
+  #   The day/time the term ends, overridden for the given enrollment type.
+  #   *enrollment_type* can be one of StudentEnrollment, TeacherEnrollment, TaEnrollment, or DesignerEnrollment
   #
   # @returns EnrollmentTerm
   #
@@ -103,18 +119,38 @@ class TermsController < ApplicationController
 
   private
   def save_and_render_response
-    overrides = params[:enrollment_term].delete(:overrides)
-    sis_id = params[:enrollment_term].delete(:sis_source_id) || params[:enrollment_term].delete(:sis_term_id)
+    params.require(:enrollment_term)
+    overrides = params[:enrollment_term][:overrides]
+    if overrides.present?
+      unless (overrides.keys.map(&:classify) - %w(StudentEnrollment TeacherEnrollment TaEnrollment DesignerEnrollment)).empty?
+        return render :json => {:message => 'Invalid enrollment type in overrides'}, :status => :bad_request
+      end
+    end
+    sis_id = params[:enrollment_term][:sis_source_id] || params[:enrollment_term][:sis_term_id]
     if sis_id && !(sis_id.is_a?(String) || sis_id.is_a?(Numeric))
       return render :json => {:message => "Invalid SIS ID"}, :status => :bad_request
     end
     handle_sis_id_param(sis_id)
-    if @term.update_attributes(params[:enrollment_term])
+
+    term_params = params.require(:enrollment_term).permit(:name, :start_at, :end_at)
+    if validate_dates(@term, term_params, overrides) && @term.update_attributes(term_params)
       @term.set_overrides(@context, overrides)
       render :json => serialized_term
     else
       render :json => @term.errors, :status => :bad_request
     end
+  end
+
+  def validate_dates(term, term_params, overrides)
+    hashes = [term_params]
+    hashes += overrides.values if overrides
+    invalid_dates = hashes.any? do |hash|
+      start_at = DateTime.parse(hash[:start_at]) rescue nil
+      end_at = DateTime.parse(hash[:end_at]) rescue nil
+      start_at && end_at && end_at < start_at
+    end
+    term.errors.add(:base, t("End dates cannot be before start dates")) if invalid_dates
+    !invalid_dates
   end
 
   def handle_sis_id_param(sis_id)
@@ -127,7 +163,7 @@ class TermsController < ApplicationController
 
   def serialized_term
     if api_request?
-      enrollment_term_json(@term, @current_user, session)
+      enrollment_term_json(@term, @current_user, session, nil, ['overrides'])
     else
       @term.as_json(:include => :enrollment_dates_overrides)
     end

@@ -193,7 +193,7 @@
 #     }
 #
 class AccountAuthorizationConfigsController < ApplicationController
-  before_filter :require_context, :require_root_account_management
+  before_action :require_context, :require_root_account_management
   include Api::V1::AccountAuthorizationConfig
 
   # @API List authentication providers
@@ -603,7 +603,7 @@ class AccountAuthorizationConfigsController < ApplicationController
   #
   # @returns AuthenticationProvider
   def create
-    aac_data = strong_params.fetch(:authentication_provider, strong_params)
+    aac_data = params.fetch(:authentication_provider, params)
     position = aac_data.delete(:position)
     data = filter_data(aac_data)
     deselect_parent_registration(data)
@@ -659,7 +659,7 @@ class AccountAuthorizationConfigsController < ApplicationController
   #
   # @returns AuthenticationProvider
   def update
-    aac_data = strong_params.fetch(:authentication_provider, strong_params)
+    aac_data = params.fetch(:authentication_provider, params)
     aac = @account.authentication_providers.active.find params[:id]
     update_deprecated_account_settings_data(aac_data, aac)
     position = aac_data.delete(:position)
@@ -779,7 +779,7 @@ class AccountAuthorizationConfigsController < ApplicationController
   #
   # @returns SSOSettings
   def update_sso_settings
-    sets = strong_params.require(:sso_settings).permit(:login_handle_name,
+    sets = params.require(:sso_settings).permit(:login_handle_name,
                                                        :change_password_url,
                                                        :auth_discovery_url,
                                                        :unknown_user_url)
@@ -914,6 +914,8 @@ class AccountAuthorizationConfigsController < ApplicationController
     auth_type = data.delete(:auth_type)
     klass = AccountAuthorizationConfig.find_sti_class(auth_type)
     federated_attributes = data[:federated_attributes]
+    federated_attributes = {} if federated_attributes == ""
+    federated_attributes = federated_attributes&.to_hash
     data = data.permit(klass.recognized_params)
     data[:federated_attributes] = federated_attributes if federated_attributes
     data[:auth_type] = auth_type

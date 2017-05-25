@@ -26,20 +26,20 @@ describe "/courses/_recent_event" do
     view_context
     render :partial => "courses/recent_event", :object => assignment, :locals => { :is_hidden => false }
     expect(response).not_to be_nil
-    expect(response.body).to match %r{<b>my assignment</b>}
+    expect(response.body).to match %r{<b class="event-details__title">my assignment</b>}
   end
 
   it "should render without a user" do
-    course
+    course_factory
     assignment = @course.assignments.create!(:title => 'my assignment')
     view_context
     render :partial => "courses/recent_event", :object => assignment, :locals => { :is_hidden => false }
     expect(response).not_to be_nil
-    expect(response.body).to match %r{<b>my assignment</b>}
+    expect(response.body).to match %r{<b class="event-details__title">my assignment</b>}
   end
 
   it "shows the context when asked to" do
-    course_with_student_logged_in
+    course_with_student
     event = @course.calendar_events.create(title: "some assignment", start_at: Time.zone.now)
 
     render partial: "courses/recent_event", object: event, locals: {is_hidden: false, show_context: true}
@@ -48,7 +48,7 @@ describe "/courses/_recent_event" do
   end
 
   it "doesn't show the context when not asked to" do
-    course_with_student_logged_in
+    course_with_student
     event = @course.calendar_events.create(title: "some assignment", start_at: Time.zone.now)
 
     render partial: "courses/recent_event", object: event, locals: {is_hidden: false}
@@ -60,7 +60,7 @@ describe "/courses/_recent_event" do
     before do
       course_with_student(active_all: true)
       submission_model
-      assigns[:current_user] = @user
+      assign(:current_user, @user)
     end
 
     it 'shows points possible for an ungraded assignment' do
@@ -70,7 +70,7 @@ describe "/courses/_recent_event" do
     end
 
     it 'shows the grade for a graded assignment' do
-      @assignment.grade_student(@user, grade: 7)
+      @assignment.grade_student(@user, grade: 7, grader: @teacher)
 
       render partial: "courses/recent_event", object: @assignment, locals: {is_hidden: false}
 
@@ -102,24 +102,27 @@ describe "/courses/_recent_event" do
       @quiz.workflow_state = 'available'
       @quiz.published_at = Time.zone.now
       @quiz.save
-      expect(@quiz.assignment).not_to be_nil
 
       @quiz_submission = @quiz.generate_submission(@user)
       Quizzes::SubmissionGrader.new(@quiz_submission).grade_submission
 
       @submission = @quiz_submission.submission
-      Submission.any_instance.stubs(:grade).returns(1234567890987654400)
+      Submission.any_instance.stubs(:grade).returns('1234567890')
     end
 
     it "should show the grade for a non-muted assignment" do
-      render :partial => "courses/recent_event", :object => @quiz.assignment, :locals => { :is_hidden => false, :submissions => [ @submission ] }
-      expect(response.body).to match /#{@submission.grade}/
+      render :partial => "courses/recent_event",
+        :object => @quiz.assignment,
+        :locals => { :is_hidden => false, :submissions => [ @submission ] }
+      expect(response.body).to match(/1,234,567,890/)
     end
 
     it "should not show the grade for a muted assignment" do
       @quiz.assignment.mute!
-      render :partial => "courses/recent_event", :object => @quiz.assignment, :locals => { :is_hidden => false, :submissions => [ @submission ] }
-      expect(response.body).not_to match /#{@submission.grade}/
+      render :partial => "courses/recent_event",
+        :object => @quiz.assignment,
+        :locals => { :is_hidden => false, :submissions => [ @submission ] }
+      expect(response.body).not_to match(/1,234,567,890/)
     end
   end
 end

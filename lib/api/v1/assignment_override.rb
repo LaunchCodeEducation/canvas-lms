@@ -110,7 +110,7 @@ module Api::V1::AssignmentOverride
 
   def interpret_assignment_override_data(assignment, data, set_type=nil)
     data ||= {}
-    return {}, ["invalid override data"] unless data.is_a?(Hash)
+    return {}, ["invalid override data"] unless data.is_a?(Hash) || data.is_a?(ActionController::Parameters)
 
     # validate structure of parameters
     override_data = {}
@@ -130,7 +130,9 @@ module Api::V1::AssignmentOverride
         # look up all the active students since the assignment will affect all
         # active students in the course on this override and not just what the
         # teacher can see that were sent in the request object
-        students = api_find_all(assignment.context.students.active, student_ids).uniq
+        students = api_find_all(assignment.context.students.active, student_ids)
+        students = students.distinct if students.is_a?(ActiveRecord::Relation)
+        students = students.uniq if students.is_a?(Array)
 
         # make sure they were all valid
         found_ids = students.map{ |s| [
@@ -456,7 +458,7 @@ module Api::V1::AssignmentOverride
   private :get_override_from_params
 
   def deserialize_overrides(overrides)
-    if overrides.is_a?(Hash)
+    if overrides.is_a?(Hash) || overrides.is_a?(ActionController::Parameters)
       return unless overrides.keys.all?{ |k| k.to_i.to_s == k.to_s }
       indices = overrides.keys.sort_by(&:to_i)
       return unless indices.map(&:to_i) == (0...indices.size).to_a

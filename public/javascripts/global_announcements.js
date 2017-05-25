@@ -62,7 +62,7 @@ define([
       });
 
       $("#account_notification_required_account_service").click(function(event) {
-        $this = $(this);
+        var $this = $(this);
         $("#confirm_global_announcement_field").showIf(!$this.is(":checked"));
         $("#account_notification_months_in_display_cycle").prop("disabled", !$this.is(":checked"));
       });
@@ -83,7 +83,6 @@ define([
     },
 
     augmentView: function(){
-      $("#add_notification_form textarea").width('100%');
       $("textarea.edit_notification_form, #add_notification_form textarea").each(function(i){
         RichContentEditor.loadNewEditor($(this));
       })

@@ -22,12 +22,12 @@ class DiscussionTopicsApiController < ApplicationController
   include Api::V1::User
   include SubmittableHelper
 
-  before_filter :require_context_and_read_access
-  before_filter :require_topic
-  before_filter :require_initial_post, except: [:add_entry, :mark_topic_read,
+  before_action :require_context_and_read_access
+  before_action :require_topic
+  before_action :require_initial_post, except: [:add_entry, :mark_topic_read,
                                                 :mark_topic_unread, :show,
                                                 :unsubscribe_topic]
-  before_filter only: [:replies, :entries, :add_entry, :add_reply, :show,
+  before_action only: [:replies, :entries, :add_entry, :add_reply, :show,
                        :view, :entry_list, :subscribe_topic] do
     check_differentiated_assignments(@topic)
   end
@@ -121,6 +121,12 @@ class DiscussionTopicsApiController < ApplicationController
         structure = entries.to_json
       end
 
+      if new_entries
+        new_entries.each do |e|
+          e["message"] = resolve_placeholders(e["message"]) if e["message"]
+        end
+      end
+
       participants = Shard.partition_by_shard(participant_ids) do |shard_ids|
         # Preload accounts because they're needed to figure out if a user's avatar should be shown in
         # AvatarHelper#avatar_url_for_user, which is used by user_display_json. We get an N+1 on the
@@ -128,21 +134,33 @@ class DiscussionTopicsApiController < ApplicationController
         User.where(id: shard_ids).preload({pseudonym: :account}).to_a
       end
 
+      include_context_card_info = value_to_boolean(
+        params[:include_context_card_info]
+      )
       include_enrollment_state = params[:include_enrollment_state] && (@context.is_a?(Course) || @context.is_a?(Group)) &&
         @context.grants_right?(@current_user, session, :read_as_admin)
       enrollments = nil
-      if include_enrollment_state
+      if include_enrollment_state || include_context_card_info
         enrollment_context = @context.is_a?(Course) ? @context : @context.context
         all_enrollments = enrollment_context.enrollments.where(:user_id => participants).to_a
-        Canvas::Builders::EnrollmentDateBuilder.preload_state(all_enrollments)
+        if include_enrollment_state
+          Canvas::Builders::EnrollmentDateBuilder.preload_state(all_enrollments)
+        end
         all_enrollments = all_enrollments.group_by(&:user_id)
       end
 
+      all_enrollments ||= {}
+
       participant_info = participants.map do |participant|
         json = user_display_json(participant, @context.is_a_context? && @context)
+        enrolls = all_enrollments[participant.id] || []
         if include_enrollment_state
-          enrolls = all_enrollments[participant.id] || []
           json[:isInactive] = enrolls.any? && enrolls.all?(&:inactive?)
+        end
+
+        if include_context_card_info
+          json[:is_student] = enrolls.any? { |e| e.type == "StudentEnrollment" }
+          json[:course_id] = enrollment_context.id.to_s
         end
 
         json
@@ -173,7 +191,7 @@ class DiscussionTopicsApiController < ApplicationController
       fragments = fragments.map { |k, v| %("#{k}": #{v}) }
       render :json => "{ #{fragments.join(', ')} }"
     else
-      render :nothing => true, :status => 503
+      head 503
     end
   end
 
@@ -680,7 +698,7 @@ class DiscussionTopicsApiController < ApplicationController
   # for failure with participant errors if there are any
   def render_state_change_result(result)
     if result == true || result.try(:errors).blank?
-      render :nothing => true, :status => :no_content
+      head :no_content
     else
       render :json => result.try(:errors) || {}, :status => :bad_request
     end

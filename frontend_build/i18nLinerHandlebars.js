@@ -7,9 +7,16 @@ const Handlebars = require('handlebars')
 const {pick} = require('lodash')
 const {EmberHandlebars} = require('ember-template-compiler')
 const ScopedHbsExtractor = require('./../gems/canvas_i18nliner/js/scoped_hbs_extractor')
+require('babel-polyfill')
 const {allFingerprintsFor} = require('brandable_css/lib/main')
-const PreProcessor = require('./../gems/canvas_i18nliner/node_modules/i18nliner-handlebars/dist/lib/pre_processor')
+const PreProcessor = require('./../gems/canvas_i18nliner/node_modules/i18nliner-handlebars/dist/lib/pre_processor').default
 require('./../gems/canvas_i18nliner/js/scoped_hbs_pre_processor')
+
+// In this main file, we do a bunch of stuff to monkey-patch the default behavior of
+// i18nliner's HbsProcessor (specifically, we set the the `directories` and define a
+// `normalizePath` function so that translation keys stay relative to canvas root dir).
+// By requiring it here the code here will use that monkeypatched behavior.
+require('../gems/canvas_i18nliner/js/main')
 
 const compileHandlebars = (data) => {
   const path = data.path
@@ -21,14 +28,12 @@ const compileHandlebars = (data) => {
     const scope = extractor.scope
     PreProcessor.scope = scope
     PreProcessor.process(ast)
-    extractor.forEach(() => translationCount++ )
+    extractor.forEach(() => translationCount++)
 
     const precompiler = data.ember ? EmberHandlebars : Handlebars
-    const result = precompiler.precompile(ast).toString()
-    const payload = {template: result, scope: scope, translationCount: translationCount}
-    return payload
-  }
-  catch (e) {
+    const template = precompiler.precompile(ast).toString()
+    return {template, scope, translationCount}
+  } catch (e) {
     e = e.message || e
     console.log(e)
     throw {error: e}
@@ -39,11 +44,12 @@ const emitTemplate = (path, name, result, dependencies, cssRegistration, partial
   const moduleName = `jst/${path.replace(/.*\/\jst\//, '').replace(/\.handlebars/, '')}`
   return `
     define('${moduleName}', ${JSON.stringify(dependencies)}, function(Handlebars){
+      Handlebars = Handlebars.default
       var template = Handlebars.template, templates = Handlebars.templates = Handlebars.templates || {};
       var name = '${name}';
       templates[name] = template(${result['template']});
-      ${partialRegistration}
-      ${cssRegistration}
+      ${partialRegistration};
+      ${cssRegistration};
       return templates[name];
     });
   `
@@ -92,7 +98,7 @@ const partialRegexp = /\{\{>\s?\[?(.+?)\]?( .*?)?}}/g
 const findReferencedPartials = (source) => {
   let partials = []
   let match
-  while(match = partialRegexp.exec(source)){
+  while (match = partialRegexp.exec(source)){
     partials.push(match[1].trim())
   }
 
@@ -126,12 +132,12 @@ const buildPartialRequirements = (partialPaths) => {
 module.exports = function i18nLinerHandlebarsLoader (source) {
   this.cacheable()
   const name = resourceName(this.resourcePath)
-  const dependencies = ['handlebars']
+  const dependencies = ['handlebars/runtime']
 
   const partialRegistration = emitPartialRegistration(this.resourcePath, name)
 
   const cssRegistration = buildCssReference(name)
-  if (cssRegistration){
+  if (cssRegistration) {
     // arguments[1] will be brandableCss
     dependencies.push('compiled/util/brandableCss')
   }
@@ -141,7 +147,7 @@ module.exports = function i18nLinerHandlebarsLoader (source) {
   partialRequirements.forEach(requirement => dependencies.push(requirement))
 
   const result = compileHandlebars({path: this.resourcePath, source})
-  if (result.error){
+  if (result.error) {
     console.log('THERE WAS AN ERROR IN PRECOMPILATION', result)
     throw result
   }
@@ -149,6 +155,10 @@ module.exports = function i18nLinerHandlebarsLoader (source) {
   if (result.translationCount > 0) {
     dependencies.push('i18n!' + result.scope)
   }
+
+  // make sure the template has access to all our handlebars helpers
+  dependencies.push('coffeescripts/handlebars_helpers.coffee')
+
   const compiledTemplate = emitTemplate(this.resourcePath, name, result, dependencies, cssRegistration, partialRegistration)
   return compiledTemplate
 }

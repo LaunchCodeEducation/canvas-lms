@@ -22,7 +22,102 @@ require File.expand_path(File.dirname(__FILE__) + '/../../lib/canvas/draft_state
 describe Quizzes::Quiz do
 
   before :once do
-    course
+    course_factory
+  end
+
+  describe "default values for boolean attributes" do
+    before(:once) do
+      @quiz = @course.quizzes.create!(title: "hello")
+    end
+
+    let(:default_false_values) do
+      Quizzes::Quiz.where(id: @quiz).pluck(
+        :shuffle_answers,
+        :could_be_locked,
+        :anonymous_submissions,
+        :require_lockdown_browser,
+        :require_lockdown_browser_for_results,
+        :one_question_at_a_time,
+        :cant_go_back,
+        :require_lockdown_browser_monitor,
+        :only_visible_to_overrides,
+        :one_time_results,
+        :show_correct_answers_last_attempt
+      ).first
+    end
+
+    it "saves boolean attributes as false if they are set to nil" do
+      @quiz.update!(
+        shuffle_answers: nil,
+        could_be_locked: nil,
+        anonymous_submissions: nil,
+        require_lockdown_browser: nil,
+        require_lockdown_browser_for_results: nil,
+        one_question_at_a_time: nil,
+        cant_go_back: nil,
+        require_lockdown_browser_monitor: nil,
+        only_visible_to_overrides: nil,
+        one_time_results: nil,
+        show_correct_answers_last_attempt: nil
+      )
+
+      expect(default_false_values).to eq([false] * default_false_values.length)
+    end
+
+    it "saves show_correct_answers as true if it is set to nil" do
+      @quiz.update!(show_correct_answers: nil)
+      expect(@quiz.show_correct_answers).to eq(true)
+    end
+
+    it "saves boolean attributes as false if they are set to false" do
+      @quiz.update!(
+        shuffle_answers: false,
+        could_be_locked: false,
+        anonymous_submissions: false,
+        require_lockdown_browser: false,
+        require_lockdown_browser_for_results: false,
+        one_question_at_a_time: false,
+        cant_go_back: false,
+        require_lockdown_browser_monitor: false,
+        only_visible_to_overrides: false,
+        one_time_results: false,
+        show_correct_answers_last_attempt: false
+      )
+
+      expect(default_false_values).to eq([false] * default_false_values.length)
+    end
+
+    it "saves show_correct_answers as false if it is set to false" do
+      @quiz.update!(show_correct_answers: false)
+      expect(@quiz.show_correct_answers).to eq(false)
+    end
+
+    it "saves boolean attributes as true if they are set to true" do
+      Quizzes::Quiz.stubs(:lockdown_browser_plugin_enabled?).returns(true)
+      @quiz.update!(
+        shuffle_answers: true,
+        could_be_locked: true,
+        anonymous_submissions: true,
+        require_lockdown_browser: true,
+        require_lockdown_browser_for_results: true,
+        one_question_at_a_time: true,
+        cant_go_back: true,
+        require_lockdown_browser_monitor: true,
+        only_visible_to_overrides: true,
+        one_time_results: true,
+        show_correct_answers_last_attempt: true,
+        # if allowed_attempts is <= 1, show_correct_answers_last_attempt
+        # cannot be set to true
+        allowed_attempts: 2
+      )
+
+      expect(default_false_values).to eq([true] * default_false_values.length)
+    end
+
+    it "saves show_correct_answers as true if it is set to true" do
+      @quiz.update!(show_correct_answers: true)
+      expect(@quiz.show_correct_answers).to eq(true)
+    end
   end
 
   describe ".mark_quiz_edited" do
@@ -440,7 +535,7 @@ describe Quizzes::Quiz do
     q.save
     expect(q.active_quiz_questions.size).to eql(4)
     expect(q.quiz_groups.length).to eql(1)
-    expect(g.quiz_questions(true).active.size).to eql(2)
+    expect(g.quiz_questions.reload.active.size).to eql(2)
 
     entries = q.root_entries(true)
     expect(entries.length).to eql(3)
@@ -809,7 +904,8 @@ describe Quizzes::Quiz do
     expect(q.quiz_submissions.size).to eq 0
 
     # create a graded submission
-    Quizzes::SubmissionGrader.new(q.generate_submission(User.create!(:name => "some_user"))).grade_submission
+    student_in_course(course: @course, active_all: true)
+    Quizzes::SubmissionGrader.new(q.generate_submission(@student)).grade_submission
     q.reload
 
     expect(q.quiz_submissions.size).to eq 1
@@ -1120,7 +1216,7 @@ describe Quizzes::Quiz do
       it "should not allow quiz points higher than allowable by postgres" do
         q = Quizzes::Quiz.new(:points_possible => 2000000001)
         expect(q.valid?).to eq false
-        expect(Array(q.errors[:points_possible])).to eq ["must be less than or equal to 2000000000"]
+        expect(Array(q.errors[:points_possible])).to eq ["must be less than or equal to 2,000,000,000"]
       end
     end
 
@@ -1302,7 +1398,7 @@ describe Quizzes::Quiz do
     before(:once) { @quiz = @course.quizzes.create! title: 'Test Quiz' }
 
     it "returns the regrade for the quiz and quiz version" do
-      course_with_teacher_logged_in(active_all: true, course: @course)
+      course_with_teacher(active_all: true, course: @course)
       question = @quiz.quiz_questions.create(question_data: { question_text: "test 1" })
 
       regrade = Quizzes::QuizRegrade.create!(quiz: @quiz, quiz_version: @quiz.version_number, user: @teacher)
@@ -1311,7 +1407,7 @@ describe Quizzes::Quiz do
     end
 
     it "should not return disabled regrade options" do
-      course_with_teacher_logged_in(active_all: true, course: @course)
+      course_with_teacher(active_all: true, course: @course)
       question = @quiz.quiz_questions.create(question_data: { question_text: "test 1" })
 
       regrade = Quizzes::QuizRegrade.create!(quiz: @quiz, quiz_version: @quiz.version_number, user: @teacher)
@@ -1325,7 +1421,7 @@ describe Quizzes::Quiz do
     before { @quiz = @course.quizzes.create! title: 'Test Quiz' }
 
     it "returns the correct question ids" do
-      course_with_teacher_logged_in(active_all: true, course: @course)
+      course_with_teacher(active_all: true, course: @course)
       q = @quiz.quiz_questions.create!
       regrade = Quizzes::QuizRegrade.create!(quiz: @quiz, quiz_version: @quiz.version_number, user: @teacher)
       rq = regrade.quiz_question_regrades.create! quiz_question_id: q.id, regrade_option: 'current_correct_only'
@@ -1336,7 +1432,7 @@ describe Quizzes::Quiz do
   describe "#regrade_if_published" do
 
     it "queues a job to regrade if there are current question regrades" do
-      course_with_teacher_logged_in(course: @course, active_all: true)
+      course_with_teacher(course: @course, active_all: true)
       quiz = @course.quizzes.create!
       q = quiz.quiz_questions.create!
       regrade = Quizzes::QuizRegrade.create!(quiz: quiz, quiz_version: quiz.version_number, user: @teacher)
@@ -1349,7 +1445,7 @@ describe Quizzes::Quiz do
     end
 
     it "does not queue a job to regrade when no current question regrades" do
-      course_with_teacher_logged_in(course: @course, active_all: true)
+      course_with_teacher(course: @course, active_all: true)
       Quizzes::QuizRegrader::Regrader.expects(:send_later).never
       quiz = @course.quizzes.create!
       quiz.save!
@@ -1358,7 +1454,7 @@ describe Quizzes::Quiz do
 
   describe "#questions_regraded_since" do
     before :once do
-      course_with_teacher_logged_in(active_all: true)
+      course_with_teacher(active_all: true)
       @quiz = @course.quizzes.create!
     end
 
@@ -1642,7 +1738,7 @@ describe Quizzes::Quiz do
     end
 
     context "show_correct_answers_last_attempt is true" do
-      let(:user) { User.create! }
+      let(:student) { student_in_course(course: @course, active_all: true) }
 
       it "shows the correct answers on last attempt completed" do
         quiz = @course.quizzes.create!({
@@ -1654,15 +1750,15 @@ describe Quizzes::Quiz do
 
         quiz.publish!
 
-        submission = quiz.generate_submission(user)
-        expect(quiz.show_correct_answers?(user, submission)).to be_falsey
+        submission = quiz.generate_submission(student)
+        expect(quiz.show_correct_answers?(student, submission)).to be_falsey
         submission.complete!
 
-        submission = quiz.generate_submission(user)
-        expect(quiz.show_correct_answers?(user, submission)).to be_falsey
+        submission = quiz.generate_submission(student)
+        expect(quiz.show_correct_answers?(student, submission)).to be_falsey
         submission.complete!
 
-        expect(quiz.show_correct_answers?(user, submission)).to be_truthy
+        expect(quiz.show_correct_answers?(student, submission)).to be_truthy
       end
 
       it "hides the correct answers on last attempt" do
@@ -1675,9 +1771,9 @@ describe Quizzes::Quiz do
 
         quiz.publish!
 
-        submission = quiz.generate_submission(user)
+        submission = quiz.generate_submission(student)
 
-        expect(quiz.show_correct_answers?(user, submission)).to be_falsey
+        expect(quiz.show_correct_answers?(student, submission)).to be_falsey
       end
     end
   end
@@ -1713,7 +1809,7 @@ describe Quizzes::Quiz do
     end
 
     it "doesn't let students submit quizzes that are excused" do
-      @quiz.assignment.grade_student(@student, excuse: true)
+      @quiz.assignment.grade_student(@student, excuse: true, grader: @teacher)
       expect(@quiz.grants_right?(@student, :submit)).to eq false
       expect(@quiz.grants_right?(@student, :read)).to eq true
     end
@@ -1744,19 +1840,15 @@ describe Quizzes::Quiz do
     end
 
     context "to delete" do
-      before(:each) do
-        @course.root_account.enable_feature!(:multiple_grading_periods)
-      end
-
-      context "when multiple grading periods is disabled" do
+      context "when there are no grading periods" do
         it "is true for admins" do
-          @course.root_account.disable_feature!(:multiple_grading_periods)
-          expect(@quiz.reload.grants_right?(@admin, :delete)).to eql(true)
+          @course.stubs(:grading_periods?).returns false
+          expect(@quiz.reload.grants_right?(@admin, :delete)).to be true
         end
 
         it "is false for teachers" do
-          @course.root_account.disable_feature!(:multiple_grading_periods)
-          expect(@quiz.reload.grants_right?(@teacher, :delete)).to eql(true)
+          @course.stubs(:grading_periods?).returns false
+          expect(@quiz.reload.grants_right?(@teacher, :delete)).to be true
         end
       end
 
@@ -1918,7 +2010,7 @@ describe Quizzes::Quiz do
 
   describe "restore" do
     before do
-      course
+      course_factory
     end
 
     it "should restore to published state if there are student submissions" do
@@ -2037,10 +2129,6 @@ describe Quizzes::Quiz do
       end
 
       context 'assignment is not locked' do
-        before do
-          expect(assignment_lock_info).not_to be_present
-        end
-
         it { is_expected.to be false }
       end
 

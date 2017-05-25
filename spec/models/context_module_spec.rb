@@ -20,8 +20,40 @@ require File.expand_path(File.dirname(__FILE__) + '/../spec_helper.rb')
 
 describe ContextModule do
   def course_module
-    @course = course(:active_all => true)
+    course_with_student(active_all: true)
     @module = @course.context_modules.create!(:name => "some module")
+  end
+
+  describe "publish_items!" do
+    context "with file usage rights required" do
+      before :each do
+        course_module
+        @course.enable_feature! :usage_rights_required
+        @file = @course.attachments.create!(:display_name => "some file", :uploaded_data => default_uploaded_data, :locked => true)
+        @tag = @module.add_item(:id => @file.id, :type => "attachment")
+      end
+
+      it "should not publish Attachment module items if usage rights are missing" do
+        @file.usage_rights = nil
+        @module.publish_items!
+        expect(@tag.published?).to eql(false)
+        expect(@file.published?).to eql(false)
+      end
+
+      it "should publish Attachment module items if usage rights are present" do
+        @file.usage_rights = @course.usage_rights.create(:use_justification => 'own_copyright')
+        @file.save!
+
+        # ensure models are in sync around publish_items!
+        @module.reload
+        @module.publish_items!
+        @file.reload
+        @tag.reload
+
+        expect(@tag.published?).to eql(true)
+        expect(@file.published?).to eql(true)
+      end
+    end
   end
 
   describe "available_for?" do
@@ -47,6 +79,20 @@ describe ContextModule do
       expect(@module.available_for?(@student)).to be_falsey
       opts = {user_context_module_progressions: {@module.id => @progression}}
       expect(@module.available_for?(@student, opts)).to be_truthy
+    end
+
+    it "should reevaluate progressions if a tag is not provided and deep_check_if_needed is given" do
+      module1 = course_module
+      module1.find_or_create_progression(@student)
+      module2 = course_module
+      url_item = module2.content_tags.create!(content_type: 'ExternalUrl', context: @course,
+        title: 'url', url: 'https://www.google.com')
+      module2.completion_requirements = [{id: url_item.id, type: 'must_view'}]
+      module2.prerequisites = [{id: module1.id, type: 'context_module', name: 'some module'}]
+      module2.save!
+
+      expect(module2.available_for?(@student)).to be false
+      expect(module2.available_for?(@student, deep_check_if_needed: true)).to be true
     end
   end
 
@@ -102,7 +148,7 @@ describe ContextModule do
     it "should not allow adding invalid prerequisites" do
       course_module
       @module2 = @course.context_modules.build(:name => "next module")
-      invalid = course().context_modules.build(:name => "nope")
+      invalid = course_factory().context_modules.build(:name => "nope")
       @module2.prerequisites = "module_#{@module.id},module_#{invalid.id}"
 
       expect(@module2.prerequisites).to be_is_a(Array)
@@ -473,7 +519,7 @@ describe ContextModule do
       expect(@module2.prerequisites).not_to be_empty
       expect(@module2.available_for?(@student, :tag => @tag2, :deep_check_if_needed => true)).to be_falsey
 
-      @course.enroll_user(user, 'ObserverEnrollment', :enrollment_state => 'active', :associated_user_id => @student.id)
+      @course.enroll_user(user_factory, 'ObserverEnrollment', :enrollment_state => 'active', :associated_user_id => @student.id)
       user_session(@user)
 
       expect(@module2.available_for?(@user, :tag => @tag2, :deep_check_if_needed => true)).to be_truthy
@@ -913,7 +959,7 @@ describe ContextModule do
       @user = User.create!(:name => "some name")
       @course.enroll_student(@user).accept!
 
-      @quiz.assignment.grade_student(@user, :grade => 100)
+      @quiz.assignment.grade_student(@user, grade: 100, grader: @teacher)
 
       @progression = @module.evaluate_for(@user)
       expect(@progression).to be_completed
@@ -1018,13 +1064,10 @@ describe ContextModule do
         {id: @other_assignment_tag.id, type: 'min_score', min_score: 90},
       ]
       @module.save!
-
-      expect(@module.completion_requirements.include?({id: @assignment_tag.id, type: 'min_score', min_score: 90})).to be_truthy
-      expect(@module.completion_requirements.include?({id: @other_assignment_tag.id, type: 'min_score', min_score: 90})).to be_truthy
     end
 
     it 'should not prevent a student from completing a module' do
-      @other_assignment.grade_student(@student, :grade => '95')
+      @other_assignment.grade_student(@student, grade: '95', grader: @teacher)
       expect(@module.evaluate_for(@student)).to be_completed
     end
   end
@@ -1159,7 +1202,7 @@ describe ContextModule do
 
   describe "restore" do
     it "should restore to unpublished state" do
-      course
+      course_factory
       @module = @course.context_modules.create!
       @module.destroy
       @module.restore
@@ -1169,7 +1212,7 @@ describe ContextModule do
 
   describe "#relock_warning?" do
     before :each do
-      course(:active_all => true)
+      course_factory(active_all: true)
     end
 
     it "should be true when adding a prerequisite" do

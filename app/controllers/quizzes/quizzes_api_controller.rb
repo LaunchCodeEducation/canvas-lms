@@ -284,9 +284,9 @@ class Quizzes::QuizzesApiController < ApplicationController
   include ::Filters::Quizzes
   include SubmittablesGradingPeriodProtection
 
-  before_filter :require_context
-  before_filter :require_quiz, :only => [:show, :update, :destroy, :reorder, :validate_access_code]
-  before_filter :check_differentiated_assignments, :only => [:show]
+  before_action :require_context
+  before_action :require_quiz, :only => [:show, :update, :destroy, :reorder, :validate_access_code]
+  before_action :check_differentiated_assignments, :only => [:show]
 
   # @API List quizzes in a course
   #
@@ -513,6 +513,7 @@ class Quizzes::QuizzesApiController < ApplicationController
   # @returns Quiz
   def destroy
     if authorized_action(@quiz, @current_user, :delete)
+      return render_unauthorized_action if editing_restricted?(@quiz)
       @quiz.destroy
       if accepts_jsonapi?
         head :no_content

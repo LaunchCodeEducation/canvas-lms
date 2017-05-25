@@ -7,6 +7,7 @@ module AddressBook
   STRATEGIES = {
     'messageable_user' => { implementation: AddressBook::MessageableUser, label: lambda{ I18n.t('MessageableUser library') } }.freeze,
     'microservice' => { implementation: AddressBook::Service, label: lambda{ I18n.t('AddressBook microservice') } }.freeze,
+    'performance_tap' => { implementation: AddressBook::PerformanceTap, label: lambda{ I18n.t('AddressBook performance tap') } }.freeze,
     'empty' => { implementation: AddressBook::Empty, label: lambda{ I18n.t('Empty stub (for testing only)') } }.freeze
   }.freeze
   DEFAULT_STRATEGY = 'messageable_user'
@@ -50,7 +51,25 @@ module AddressBook
     end
   end
 
+  def self.decompose_context(context_code)
+    context_code &&
+    context_code =~ ::MessageableUser::Calculator::CONTEXT_RECIPIENT &&
+    Regexp.last_match.to_a[1..-1]
+  end
+
   def self.valid_context?(context_code)
-    context_code =~ ::MessageableUser::Calculator::CONTEXT_RECIPIENT
+    decompose_context(context_code).present?
+  end
+
+  def self.load_context(context_code)
+    context_type, context_id = decompose_context(context_code)
+    return nil unless context_id
+    context_class =
+      case context_type
+      when 'course' then Course
+      when 'section' then CourseSection
+      when 'group' then Group
+      end
+    context_class.find(context_id)
   end
 end

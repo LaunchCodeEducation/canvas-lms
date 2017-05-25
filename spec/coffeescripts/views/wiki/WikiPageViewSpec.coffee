@@ -4,7 +4,7 @@ define [
   'compiled/views/wiki/WikiPageView'
 ], (_, WikiPage, WikiPageView) ->
 
-  module 'WikiPageView'
+  QUnit.module 'WikiPageView'
 
   test 'display_show_all_pages makes it through constructor', ->
     model = new WikiPage
@@ -37,7 +37,7 @@ define [
     equal view.publishButtonView.$el.data('test-data'), 'test-is-good', 'test data preserved (by detach)'
 
 
-  module 'WikiPageView:JSON'
+  QUnit.module 'WikiPageView:JSON'
 
   test 'modules_path', ->
     model = new WikiPage
@@ -77,6 +77,28 @@ define [
       model: model
     ok !!view.toJSON().lock_info?.unlock_at.match('Feb'), 'lock_info.unlock_at reformatted and represented in toJSON'
     clock.restore()
+
+  test 'useAsFrontPage for published wiki_pages_path', ->
+    model = new WikiPage
+      front_page: false
+      published: true
+    view = new WikiPageView
+      model: model
+    stub = @stub(model, 'setFrontPage')
+
+    view.useAsFrontPage()
+    ok stub.calledOnce
+
+  test 'useAsFrontPage should not work on unpublished wiki_pages_path', ->
+    model = new WikiPage
+      front_page: false
+      published: false
+    view = new WikiPageView
+      model: model
+    stub = @stub(model, 'setFrontPage')
+
+    view.useAsFrontPage()
+    notOk stub.calledOnce
 
   testRights = (subject, options) ->
     test "#{subject}", ->

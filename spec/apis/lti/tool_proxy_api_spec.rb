@@ -16,10 +16,13 @@
 # with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
-require File.expand_path(File.dirname(__FILE__) + '/../api_spec_helper')
+require_relative '../api_spec_helper'
+require_relative '../../lti_spec_helper'
+require_dependency "lti/tool_proxy_controller"
 
 module Lti
-  describe ToolProxyController, :include_lti_spec_helpers, type: :request do
+  describe ToolProxyController, type: :request do
+    include LtiSpecHelper
 
     let(:account) { Account.create }
 
@@ -43,6 +46,15 @@ module Lti
           expect(tp.reload.workflow_state).to eq 'active'
         end
 
+        it 'deletes associated assignment subscriptions' do
+          mock_tp_service = instance_double('Lti::ToolProxyService')
+          expect(mock_tp_service).to receive(:delete_subscriptions_for)
+          allow(Lti::ToolProxyService).to receive(:new).and_return(mock_tp_service)
+          course_with_teacher(active_all: true, user: user_with_pseudonym, account: account)
+          tp = create_tool_proxy(context: @course)
+          api_call(:delete, "/api/v1/courses/#{@course.id}/tool_proxies/#{tp.id}",
+                   {controller: 'lti/tool_proxy', action: 'destroy', format: 'json', course_id: @course.id.to_s, tool_proxy_id: tp.id})
+        end
       end
 
       context 'account' do
@@ -63,6 +75,15 @@ module Lti
           expect(tp.reload.workflow_state).to eq 'active'
         end
 
+        it 'deletes associated assignment subscriptions' do
+          mock_tp_service = instance_double('Lti::ToolProxyService')
+          expect(mock_tp_service).to receive(:delete_subscriptions_for)
+          allow(Lti::ToolProxyService).to receive(:new).and_return(mock_tp_service)
+          account_admin_user(account: account)
+          tp = create_tool_proxy(context: account)
+          api_call(:delete, "/api/v1/accounts/#{account.id}/tool_proxies/#{tp.id}",
+                   {controller: 'lti/tool_proxy', action: 'destroy', format: 'json', account_id: account.id.to_s, tool_proxy_id: tp.id})
+        end
       end
 
     end
@@ -85,7 +106,6 @@ module Lti
           assert_status(401)
           expect(tp.reload.workflow_state).to eq 'active'
         end
-
       end
 
       context 'account' do

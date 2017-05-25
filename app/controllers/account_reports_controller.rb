@@ -162,8 +162,8 @@
 #     }
 #
 class AccountReportsController < ApplicationController
-  before_filter :require_user
-  before_filter :get_context
+  before_action :require_user
+  before_action :get_context
 
   include Api::V1::Account
   include Api::V1::AccountReport
@@ -176,7 +176,7 @@ class AccountReportsController < ApplicationController
 # @response_field parameters The parameters will vary for each report
 #
 # @example_request
-#     curl -H 'Authorization: Bearer <token>' \ 
+#     curl -H 'Authorization: Bearer <token>' \
 #          https://<canvas>/api/v1/accounts/<account_id>/reports/
 #
 # @example_response
@@ -206,7 +206,7 @@ class AccountReportsController < ApplicationController
       results = []
 
       available_reports.each do |key, value|
-        last_run = @account.account_reports.where(:report_type => key).order('created_at DESC').first
+        last_run = @account.account_reports.active.where(:report_type => key).order('created_at DESC').first
         last_run = account_report_json(last_run, @current_user, session) if last_run
         report = {
           :title => value.title,
@@ -242,7 +242,8 @@ class AccountReportsController < ApplicationController
     if authorized_action(@context, @current_user, :read_reports)
       available_reports = AccountReport.available_reports.keys
       raise ActiveRecord::RecordNotFound unless available_reports.include? params[:report]
-      report = @account.account_reports.build(:user=>@current_user, :report_type=>params[:report], :parameters=>params[:parameters])
+      parameters = params[:parameters]&.to_hash&.with_indifferent_access
+      report = @account.account_reports.build(:user=>@current_user, :report_type=>params[:report], :parameters=>parameters)
       report.workflow_state = :running
       report.progress = 0
       report.save
@@ -259,7 +260,7 @@ class AccountReportsController < ApplicationController
 # Shows all reports that have been run for the account of a specific type.
 #
 # @example_request
-#     curl -H 'Authorization: Bearer <token>' \ 
+#     curl -H 'Authorization: Bearer <token>' \
 #          https://<canvas>/api/v1/accounts/<account_id>/reports/<report_type>
 #
 # @returns [Report]
@@ -267,7 +268,7 @@ class AccountReportsController < ApplicationController
   def index
     if authorized_action(@context, @current_user, :read_reports)
 
-      reports = Api.paginate(type_scope.order('id DESC'), self, url_for({:action => :index, :controller => :account_reports}))
+      reports = Api.paginate(type_scope.active.order('id DESC'), self, url_for({action: :index, controller: :account_reports}))
 
       render :json => account_reports_json(reports, @current_user, session)
     end
@@ -277,7 +278,7 @@ class AccountReportsController < ApplicationController
 # Returns the status of a report.
 #
 # @example_request
-#     curl -H 'Authorization: Bearer <token>' \ 
+#     curl -H 'Authorization: Bearer <token>' \
 #          https://<canvas>/api/v1/accounts/<account_id>/reports/<report_type>/<report_id>
 #
 # @returns Report
@@ -285,7 +286,7 @@ class AccountReportsController < ApplicationController
   def show
     if authorized_action(@context, @current_user, :read_reports)
 
-      report = type_scope.find(params[:id])
+      report = type_scope.active.find(params[:id])
       render :json => account_report_json(report, @current_user, session)
     end
   end
@@ -294,15 +295,15 @@ class AccountReportsController < ApplicationController
 #
 # Deletes a generated report instance.
 # @example_request
-#     curl -H 'Authorization: Bearer <token>' \ 
-#          -X DELETE \ 
+#     curl -H 'Authorization: Bearer <token>' \
+#          -X DELETE \
 #          https://<canvas>/api/v1/accounts/<account_id>/reports/<report_type>/<id>
 #
 # @returns Report
 #
   def destroy
     if authorized_action(@context, @current_user, :read_reports)
-      report = type_scope.find(params[:id])
+      report = type_scope.active.find(params[:id])
 
       report.destroy
       if report.destroy

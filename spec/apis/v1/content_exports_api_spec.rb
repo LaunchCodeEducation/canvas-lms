@@ -22,7 +22,7 @@ require 'nokogiri'
 
 describe ContentExportsApiController, type: :request do
   let_once(:t_teacher) do
-    user(active_all: true)
+    user_factory(active_all: true)
   end
 
   let_once(:t_course) do
@@ -66,7 +66,7 @@ describe ContentExportsApiController, type: :request do
 
   describe "index" do
     it "should check permissions" do
-      random_user = user active_all: true
+      random_user = user_factory active_all: true
       api_call_as_user(random_user, :get, "/api/v1/courses/#{t_course.id}/content_exports",
         { controller: 'content_exports_api', action: 'index', format: 'json', course_id: t_course.to_param },
         {}, {}, { expected_status: 401 })
@@ -275,7 +275,7 @@ describe ContentExportsApiController, type: :request do
         expect(export.job_progress).to be_completed
         expect(export.attachment).not_to be_nil
 
-        course
+        course_factory
         cm = @course.content_migrations.new
         cm.attachment = export.attachment
         cm.migration_type = "canvas_cartridge_importer"
@@ -315,7 +315,7 @@ describe ContentExportsApiController, type: :request do
         expect(export.job_progress).to be_completed
         expect(export.attachment).not_to be_nil
 
-        course
+        course_factory
         cm = @course.content_migrations.new
         cm.attachment = export.attachment
         cm.migration_type = "canvas_cartridge_importer"
@@ -366,7 +366,7 @@ describe ContentExportsApiController, type: :request do
         run_jobs
 
         export.reload
-        course
+        course_factory
         cm = @course.content_migrations.new
         cm.attachment = export.attachment
         cm.migration_type = "canvas_cartridge_importer"
@@ -425,7 +425,7 @@ describe ContentExportsApiController, type: :request do
         run_jobs
 
         export.reload
-        course
+        course_factory
         cm = @course.content_migrations.new
         cm.attachment = export.attachment
         cm.migration_type = "canvas_cartridge_importer"
@@ -455,7 +455,7 @@ describe ContentExportsApiController, type: :request do
         run_jobs
 
         export.reload
-        course
+        course_factory
         cm = @course.content_migrations.new
         cm.attachment = export.attachment
         cm.migration_type = "canvas_cartridge_importer"
@@ -510,6 +510,86 @@ describe ContentExportsApiController, type: :request do
       expect(json.first["title"]).to eq @quiz.title
       expect(json.first["id"]).to eq @quiz.asset_string
       expect(json.first['linked_resource']['id']).to eq @quiz.assignment.asset_string
+    end
+  end
+
+  describe "quizzes2 exports" do
+    before do
+      t_course.account.enable_feature!(:quizzes2_exporter)
+    end
+
+    context "quiz_id param" do
+      it "should require a quiz_id param" do
+      json = api_call_as_user(t_teacher, :post,
+       "/api/v1/courses/#{t_course.id}/content_exports?export_type=quizzes2",
+       {
+        controller: 'content_exports_api',
+        action: 'create',
+        format: 'json',
+        course_id: t_course.to_param,
+        export_type: 'quizzes2'
+       })
+        expect(json["message"]).to eq "quiz_id required and must be a valid ID"
+        expect(response.status).to eq 400
+      end
+
+      it "verifies quiz_id param is a number" do
+        ce_url = "/api/v1/courses/#{t_course.id}/content_exports"
+        params = {
+          controller: 'content_exports_api',
+          format: 'json',
+          action: 'create',
+          course_id: t_course.to_param,
+          export_type: 'quizzes2',
+          quiz_id: 'lulz'
+        }
+        json = api_call_as_user(t_teacher, :post, ce_url, params)
+        expect(json["message"]).to eq "quiz_id required and must be a valid ID"
+        expect(response.status).to eq 400
+      end
+    end
+
+    context "with invalid quiz" do
+      it "verifies quiz exists in course" do
+        ce_url = "/api/v1/courses/#{t_course.id}/content_exports"
+        params = {
+          controller: 'content_exports_api',
+          format: 'json',
+          action: 'create',
+          course_id: t_course.to_param,
+          export_type: 'quizzes2',
+          quiz_id:'123'
+        }
+        json = api_call_as_user(t_teacher, :post, ce_url, params)
+        expect(json["message"]).to eq "Quiz could not be found"
+        expect(response.status).to eq 400
+      end
+    end
+
+    context "with valid quiz" do
+      before do
+        @quiz = t_course.quizzes.create!(:title => 'valid_quiz')
+      end
+
+      it "should create a quizzes2 export" do
+          ce_url = "/api/v1/courses/#{t_course.id}/content_exports"
+          params = {
+            controller: 'content_exports_api',
+            format: 'json',
+            action: 'create',
+            course_id: t_course.to_param,
+            export_type: 'quizzes2',
+            quiz_id: @quiz.id
+          }
+          json = api_call_as_user(t_teacher, :post, ce_url, params)
+          export = t_course.content_exports.where(id: json['id']).first
+          expect(export).not_to be_nil
+          expect(export.workflow_state).to eql 'created'
+          expect(export.export_type).to eql 'quizzes2'
+          expect(export.user_id).to eql t_teacher.id
+          expect(export.settings['selected_content']).to eql @quiz.id.to_s
+          expect(export.job_progress).to be_queued
+      end
     end
   end
 

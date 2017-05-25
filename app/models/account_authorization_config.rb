@@ -23,8 +23,6 @@ class AccountAuthorizationConfig < ActiveRecord::Base
   include Workflow
   validates :auth_filter, length: {maximum: maximum_text_length, allow_nil: true, allow_blank: true}
 
-  strong_params
-
   workflow do
     state :active
     state :deleted
@@ -32,18 +30,22 @@ class AccountAuthorizationConfig < ActiveRecord::Base
 
   self.inheritance_column = :auth_type
 
-  # unless Rails.version > '5.0'? (https://github.com/rails/rails/pull/19500)
-  def self.new(*args, &block)
-    attrs = args.first
-    attrs.is_a?(Hash) && (subclass_name = attrs.with_indifferent_access[inheritance_column])
-    subclass = subclass_name.present? && find_sti_class(subclass_name)
-    if subclass && subclass != self
-      subclass.new(*args, &block)
-    else
-      super
+  if CANVAS_RAILS4_2
+    def self.new(*args, &block)
+      attrs = args.first
+      attrs.is_a?(Hash) && (subclass_name = attrs.with_indifferent_access[inheritance_column])
+      subclass = subclass_name.present? && find_sti_class(subclass_name)
+      if subclass && subclass != self
+        subclass.new(*args, &block)
+      else
+        super
+      end
     end
   end
-  # end
+
+  def self.subclass_from_attributes?(attrs)
+    false
+  end
 
   # we have a lot of old data that didn't actually use STI,
   # so we shim it
@@ -259,12 +261,12 @@ class AccountAuthorizationConfig < ActiveRecord::Base
     end
     if pseudonym.changed?
       unless pseudonym.save
-        Rails.logger.warning("Unable to save federated pseudonym: #{pseudonym.errors}")
+        Rails.logger.warn("Unable to save federated pseudonym: #{pseudonym.errors}")
       end
     end
     if user.changed?
       unless user.save
-        Rails.logger.warning("Unable to save federated user: #{user.errors}")
+        Rails.logger.warn("Unable to save federated user: #{user.errors}")
       end
     end
   end

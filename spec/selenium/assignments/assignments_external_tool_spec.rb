@@ -23,7 +23,7 @@ describe "external tool assignments" do
     f('.create_assignment').click
     wait_for_ajaximations
 
-    a = @course.assignments(true).last
+    a = @course.assignments.reload.last
     expect(a).to be_present
     expect(a.submission_types).to eq 'external_tool'
   end
@@ -49,15 +49,13 @@ describe "external tool assignments" do
     f('.add_item_button.ui-button').click
 
     expect(f('#assignment_external_tool_tag_attributes_url')).to have_attribute('value', @t2.url)
-    disable_implicit_wait do # this action results in an expected 404, so don't wait
-      f("#edit_assignment_form button[type='submit']").click
-    end
+    f("#edit_assignment_form button[type='submit']").click
 
     keep_trying_until do # timing issues require waiting
-      expect(@course.assignments(true).last).to be_present
+      expect(@course.assignments.reload.last).to be_present
     end
 
-    a = @course.assignments(true).last
+    a = @course.assignments.reload.last
     expect(a).to be_present
     expect(a.submission_types).to eq 'external_tool'
     expect(a.external_tool_tag).to be_present
@@ -78,9 +76,7 @@ describe "external tool assignments" do
     expect(f('#context_external_tools_select input#external_tool_create_url')).to have_attribute('value', @t1.url)
     f('.add_item_button.ui-button').click
     expect(f('#assignment_external_tool_tag_attributes_url')).to have_attribute('value', @t1.url)
-    disable_implicit_wait do # this action results in an expected 404, so don't wait
-      f("#edit_assignment_form button[type='submit']").click
-    end
+    f("#edit_assignment_form button[type='submit']").click
 
     keep_trying_until do # timing issues require waiting
       a.reload

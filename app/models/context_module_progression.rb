@@ -18,7 +18,7 @@
 
 class ContextModuleProgression < ActiveRecord::Base
   include Workflow
-  attr_accessible :context_module, :user
+
   belongs_to :context_module
   belongs_to :user
   before_save :set_completed_at
@@ -27,6 +27,8 @@ class ContextModuleProgression < ActiveRecord::Base
 
   serialize :requirements_met, Array
   serialize :incomplete_requirements, Array
+
+  validates_presence_of :user_id, :context_module_id
 
   def completion_requirements
     context_module.try(:completion_requirements) || []

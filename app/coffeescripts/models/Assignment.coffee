@@ -11,7 +11,12 @@ define [
   'i18n!assignments'
   'jsx/grading/helpers/GradingPeriodsHelper'
   'timezone'
-], ($, _, {Model}, DefaultUrlMixin, TurnitinSettings, VeriCiteSettings, DateGroup, AssignmentOverrideCollection, DateGroupCollection, I18n, GradingPeriodsHelper, tz) ->
+  'jsx/shared/helpers/numberHelper'
+], ($, _, {Model}, DefaultUrlMixin, TurnitinSettings, VeriCiteSettings, DateGroup, AssignmentOverrideCollection,
+    DateGroupCollection, I18n, GradingPeriodsHelper, tz, numberHelper) ->
+
+  isAdmin = () ->
+    _.contains(ENV.current_user_roles, 'admin')
 
   class Assignment extends Model
     @mixin DefaultUrlMixin
@@ -67,6 +72,10 @@ define [
       return @get 'lock_at' unless arguments.length > 0
       @set 'lock_at', date
 
+    dueDateRequired: (newDueDateRequired) =>
+      return @get 'dueDateRequired' unless arguments.length > 0
+      @set 'dueDateRequired', newDueDateRequired
+
     description: (newDescription) =>
       return @get 'description' unless arguments.length > 0
       @set 'description', newDescription
@@ -77,7 +86,12 @@ define [
 
     pointsPossible: (points) =>
       return @get('points_possible') || 0 unless arguments.length > 0
-      @set 'points_possible', points
+      # if the incoming value is valid, set the field to the numeric value
+      # if not, set to the incoming string and let validation handle it later
+      if(numberHelper.validate(points))
+        @set 'points_possible', numberHelper.parse(points)
+      else
+        @set 'points_possible', points
 
     secureParams: =>
       @get('secure_params')
@@ -87,10 +101,13 @@ define [
       @set 'assignment_group_id', assignment_group_id
 
     canFreeze: =>
-      @get('frozen_attributes')? && !@frozen()
+      @get('frozen_attributes')? && !@frozen() && !@isQuizLTIAssignment()
 
     canDelete: =>
-      !@hasDueDateInClosedGradingPeriod() && !@frozen()
+      not @inClosedGradingPeriod() and not @frozen()
+
+    canMove: =>
+      not @inClosedGradingPeriod() and not _.include(@frozenAttributes(), 'assignment_group_id')
 
     freezeOnCopy: =>
       @get('freeze_on_copy')
@@ -101,8 +118,9 @@ define [
     frozenAttributes: =>
       @get('frozen_attributes') || []
 
-    hasDueDateInClosedGradingPeriod: =>
-      !!ENV.MULTIPLE_GRADING_PERIODS_ENABLED && @get('has_due_date_in_closed_grading_period')
+    inClosedGradingPeriod: =>
+      return false if isAdmin()
+      @get('in_closed_grading_period')
 
     gradingType: (gradingType) =>
       return @get('grading_type') || 'points' unless gradingType
@@ -295,6 +313,18 @@ define [
     postToSISEnabled: =>
       return ENV.POST_TO_SIS
 
+    postToSISName: =>
+      return ENV.SIS_NAME
+
+    sisIntegrationSettingsEnabled: =>
+      return ENV.SIS_INTEGRATION_SETTINGS_ENABLED
+
+    maxNameLength: =>
+      return ENV.MAX_NAME_LENGTH
+
+    dueDateRequiredForAccount: =>
+      return ENV.DUE_DATE_REQUIRED_FOR_ACCOUNT
+
     defaultDates: =>
       group = new DateGroup
         due_at:    @get("due_at")
@@ -340,26 +370,35 @@ define [
     is_quiz_assignment: =>
       @get('is_quiz_assignment')
 
+    isQuizLTIAssignment: =>
+      @get('is_quiz_lti_assignment')
+
     toView: =>
       fields = [
-        'name', 'dueAt','description','pointsPossible', 'lockAt', 'unlockAt',
+        'name', 'dueAt', 'description', 'pointsPossible', 'lockAt', 'unlockAt',
         'gradingType', 'notifyOfUpdate', 'peerReviews', 'automaticPeerReviews',
         'peerReviewCount', 'peerReviewsAssignAt', 'anonymousPeerReviews',
-        'acceptsOnlineUpload','acceptsMediaRecording', 'submissionType',
+        'acceptsOnlineUpload', 'acceptsMediaRecording', 'submissionType',
         'acceptsOnlineTextEntries', 'acceptsOnlineURL', 'allowedExtensions',
         'restrictFileExtensions', 'isOnlineSubmission', 'isNotGraded',
         'isExternalTool', 'externalToolUrl', 'externalToolNewTab',
-        'turnitinAvailable','turnitinEnabled', 'vericiteAvailable','vericiteEnabled', 'hasDueDateInClosedGradingPeriod',
-        'gradeGroupStudentsIndividually', 'groupCategoryId', 'frozen',
-        'frozenAttributes', 'freezeOnCopy', 'canFreeze', 'isSimple',
-        'gradingStandardId', 'isLetterGraded', 'isGpaScaled', 'assignmentGroupId', 'iconType',
-        'published', 'htmlUrl', 'htmlEditUrl', 'labelId', 'position', 'postToSIS',
-        'multipleDueDates', 'nonBaseDates', 'allDates', 'hasDueDate', 'hasPointsPossible'
-        'singleSectionDueDate', 'moderatedGrading', 'postToSISEnabled', 'isOnlyVisibleToOverrides',
-        'omitFromFinalGrade', 'is_quiz_assignment', 'secureParams'
+        'turnitinAvailable', 'turnitinEnabled', 'vericiteAvailable',
+        'vericiteEnabled', 'gradeGroupStudentsIndividually', 'groupCategoryId',
+        'frozen', 'frozenAttributes', 'freezeOnCopy', 'canFreeze', 'isSimple',
+        'gradingStandardId', 'isLetterGraded', 'isGpaScaled',
+        'assignmentGroupId', 'iconType', 'published', 'htmlUrl', 'htmlEditUrl',
+        'labelId', 'position', 'postToSIS', 'multipleDueDates', 'nonBaseDates',
+        'allDates', 'hasDueDate', 'hasPointsPossible', 'singleSectionDueDate',
+        'moderatedGrading', 'postToSISEnabled', 'isOnlyVisibleToOverrides',
+        'omitFromFinalGrade', 'is_quiz_assignment', 'isQuizLTIAssignment',
+        'secureParams', 'inClosedGradingPeriod', 'dueDateRequired'
       ]
 
-      hash = id: @get 'id'
+      hash =
+        id: @get('id'),
+        is_master_course_child_content: @get('is_master_course_child_content'),
+        restricted_by_master_course: @get('restricted_by_master_course'),
+        master_course_restrictions: @get('master_course_restrictions')
       for field in fields
         hash[field] = @[field]()
       hash
@@ -458,3 +497,6 @@ define [
     isOnlyVisibleToOverrides: (override_flag) ->
       return @get('only_visible_to_overrides') || false unless arguments.length > 0
       @set 'only_visible_to_overrides', override_flag
+
+    isRestrictedByMasterCourse: ->
+      @get('is_master_course_child_content') && @get('restricted_by_master_course')

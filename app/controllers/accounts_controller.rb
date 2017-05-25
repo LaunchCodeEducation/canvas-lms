@@ -37,6 +37,11 @@ require 'csv'
 #           "example": "Canvas Account",
 #           "type": "string"
 #         },
+#         "uuid": {
+#           "description": "The UUID of the account",
+#           "example": "WvAHhY5FINzq5IyRIJybGeiXyFkG3SqHUPb7jZY5",
+#           "type": "string"
+#         },
 #         "parent_account_id": {
 #           "description": "The account's parent ID, or null if this is the root account",
 #           "example": 1,
@@ -96,26 +101,28 @@ require 'csv'
 #     }
 #
 class AccountsController < ApplicationController
-  before_filter :require_user, :only => [:index]
-  before_filter :reject_student_view_student
-  before_filter :get_context
-  before_filter :rich_content_service_config, only: [:settings]
+  before_action :require_user, :only => [:index]
+  before_action :reject_student_view_student
+  before_action :get_context
+  before_action :rich_content_service_config, only: [:settings]
 
   include Api::V1::Account
   include CustomSidebarLinksHelper
 
   INTEGER_REGEX = /\A[+-]?\d+\z/
+  SIS_ASSINGMENT_NAME_LENGTH_DEFAULT = 255
 
   # @API List accounts
   # List accounts that the current user can view or manage.  Typically,
   # students and even teachers will get an empty list in response, only
   # account admins can view the accounts that they are in.
   #
-  # @argument include[] [String, "lti_guid"|"registration_settings"]
+  # @argument include[] [String, "lti_guid"|"registration_settings"|"services"]
   #   Array of additional information to include.
   #
   #   "lti_guid":: the 'tool_consumer_instance_guid' that will be sent for this account on LTI launches
   #   "registration_settings":: returns info about the privacy policy and terms of use
+  #   "services":: returns services and whether they are enabled (requires account management permissions)
   #
   # @returns [Account]
   def index
@@ -149,7 +156,7 @@ class AccountsController < ApplicationController
       account_ids = Rails.cache.fetch(['admin_enrollment_course_account_ids', @current_user].cache_key) do
         Account.joins(:courses => :enrollments).merge(
           @current_user.enrollments.admin.shard(@current_user).except(:select)
-        ).select("accounts.id").uniq.pluck(:id).map{|id| Shard.global_id_for(id)}
+        ).select("accounts.id").distinct.pluck(:id).map{|id| Shard.global_id_for(id)}
       end
       course_accounts = BookmarkedCollection.wrap(Account::Bookmarker, Account.where(:id => account_ids))
       @accounts = Api.paginate(course_accounts, self, api_v1_accounts_url)
@@ -176,7 +183,10 @@ class AccountsController < ApplicationController
         return redirect_to account_settings_url(@account) if @account.site_admin? || !@account.grants_right?(@current_user, :read_course_list)
         js_env(:ACCOUNT_COURSES_PATH => account_courses_path(@account, :format => :json))
         load_course_right_side
-        @courses = @account.fast_all_courses(:term => @term, :limit => @maximum_courses_im_gonna_show, :hide_enrollmentless_courses => @hide_enrollmentless_courses, :order => sort_order)
+        @courses = @account.fast_all_courses(:term => @term, :limit => @maximum_courses_im_gonna_show,
+          :hide_enrollmentless_courses => @hide_enrollmentless_courses,
+          :only_master_courses => @only_master_courses,
+          :order => sort_order)
 
         ActiveRecord::Associations::Preloader.new.preload(@courses, :enrollment_term)
         build_course_stats
@@ -286,6 +296,14 @@ class AccountsController < ApplicationController
   #   'completed', or their enrollment term may have ended).  If false, exclude
   #   completed courses.  If not present, do not filter on completed status.
   #
+  # @argument blueprint [Boolean]
+  #   If true, include only blueprint courses. If false, exclude them.
+  #   If not present, do not filter on this basis.
+  #
+  # @argument blueprint_associated [Boolean]
+  #   If true, include only courses that inherit content from a blueprint course.
+  #   If false, exclude them. If not present, do not filter on this basis.
+  #
   # @argument by_teachers[] [Integer]
   #   List of User IDs of teachers; if supplied, include only courses taught by
   #   one of the referenced users.
@@ -339,6 +357,18 @@ class AccountsController < ApplicationController
       @courses = @courses.completed
     elsif !params[:completed].nil? && !value_to_boolean(params[:completed])
       @courses = @courses.not_completed
+    end
+
+    if value_to_boolean(params[:blueprint])
+      @courses = @courses.master_courses
+    elsif !params[:blueprint].nil?
+      @courses = @courses.not_master_courses
+    end
+
+    if value_to_boolean(params[:blueprint_associated])
+      @courses = @courses.associated_courses
+    elsif !params[:blueprint_associated].nil?
+      @courses = @courses.not_associated_courses
     end
 
     if params[:by_teachers].is_a?(Array)
@@ -405,14 +435,52 @@ class AccountsController < ApplicationController
   def update_api
     if authorized_action(@account, @current_user, [:manage_account_settings, :manage_storage_quotas])
       account_params = params[:account].present? ? strong_account_params : {}
+      includes = Array(params[:includes]) || []
       unauthorized = false
+
+      if params[:account].key?(:sis_account_id)
+        sis_id = params[:account].delete(:sis_account_id)
+        if @account.root_account.grants_right?(@current_user, session, :manage_sis) && !@account.root_account?
+          @account.sis_source_id = sis_id.presence
+        else
+          if @account.root_account?
+            @account.errors.add(:unauthorized, t('Cannot set sis_account_id on a root_account.'))
+          else
+            @account.errors.add(:unauthorized, t('To change sis_account_id the user must have manage_sis permission.'))
+          end
+          unauthorized = true
+        end
+      end
+
+      if params[:account][:services]
+        if authorized_action(@account, @current_user, :manage_account_settings)
+          params[:account][:services].slice(*Account.services_exposed_to_ui_hash(nil, @current_user, @account).keys).each do |key, value|
+            @account.set_service_availability(key, value_to_boolean(value))
+          end
+          includes << 'services'
+          params[:account].delete :services
+        end
+      end
 
       # account settings (:manage_account_settings)
       account_settings = account_params.select {|k, v| [:name, :default_time_zone, :settings].include?(k.to_sym)}.with_indifferent_access
       unless account_settings.empty?
         if @account.grants_right?(@current_user, session, :manage_account_settings)
           if account_settings[:settings]
-            account_settings[:settings].slice!(:restrict_student_past_view, :restrict_student_future_view, :restrict_student_future_listing)
+            account_settings[:settings].slice!(:restrict_student_past_view,
+                                               :restrict_student_future_view,
+                                               :restrict_student_future_listing,
+                                               :lock_all_announcements,
+                                               :sis_assignment_name_length_input)
+            sis_name_length_setting = account_settings[:settings][:sis_assignment_name_length_input]
+            if sis_name_length_setting
+              value = sis_name_length_setting[:value]
+              if value.to_i.to_s == value.to_s && value.to_i <= SIS_ASSINGMENT_NAME_LENGTH_DEFAULT && value.to_i >= 0
+                sis_name_length_setting[:value] = value
+              else
+                sis_name_length_setting[:value] = SIS_ASSINGMENT_NAME_LENGTH_DEFAULT
+              end
+            end
           end
           @account.errors.add(:name, t(:account_name_required, 'The account name cannot be blank')) if account_params.has_key?(:name) && account_params[:name].blank?
           @account.errors.add(:default_time_zone, t(:unrecognized_time_zone, "'%{timezone}' is not a recognized time zone", :timezone => account_params[:default_time_zone])) if account_params.has_key?(:default_time_zone) && ActiveSupport::TimeZone.new(account_params[:default_time_zone]).nil?
@@ -453,7 +521,7 @@ class AccountsController < ApplicationController
 
         if success
           # Successfully completed
-          render :json => account_json(@account, @current_user, session, params[:includes] || [])
+          render :json => account_json(@account, @current_user, session, includes)
         else
           # Failed (hopefully with errors)
           render :json => @account.errors, :status => :bad_request
@@ -467,6 +535,10 @@ class AccountsController < ApplicationController
   #
   # @argument account[name] [String]
   #   Updates the account name
+  #
+  # @argument account[sis_account_id] [String]
+  #   Updates the account sis_account_id
+  #   Must have manage_sis permission and must not be a root_account.
   #
   # @argument account[default_time_zone] [String]
   #   The default time zone of the account. Allowed time zones are
@@ -494,11 +566,20 @@ class AccountsController < ApplicationController
   # @argument account[settings][restrict_student_future_view][locked] [Boolean]
   #   Lock this setting for sub-accounts and courses
   #
+  # @argument account[settings][lock_all_announcements][value] [Boolean]
+  #   Disable comments on announcements
+  #
+  # @argument account[settings][lock_all_announcements][locked] [Boolean]
+  #   Lock this setting for sub-accounts and courses
+  #
   # @argument account[settings][restrict_student_future_listing][value] [Boolean]
   #   Restrict students from viewing future enrollments in course list
   #
   # @argument account[settings][restrict_student_future_listing][locked] [Boolean]
   #   Lock this setting for sub-accounts and courses
+  #
+  # @argument account[services] [Hash]
+  #   Give this a set of keys and boolean values to enable or disable services matching the keys
   #
   # @example_request
   #   curl https://<canvas>/api/v1/accounts/<account_id> \
@@ -519,7 +600,7 @@ class AccountsController < ApplicationController
         if custom_help_links
           sorted_help_links = custom_help_links.select{|_k, h| h['state'] != 'deleted' && h['state'] != 'new'}.sort_by{|_k, h| _k.to_i}
           @account.settings[:custom_help_links] = sorted_help_links.map do |index_with_hash|
-            hash = index_with_hash[1]
+            hash = index_with_hash[1].to_hash.with_indifferent_access
             hash.delete('state')
             hash.assert_valid_keys ["text", "subtext", "url", "available_to", "type"]
             hash
@@ -570,6 +651,7 @@ class AccountsController < ApplicationController
             :enable_alerts,
             :enable_eportfolios,
             :enable_profiles,
+            :enable_turnitin,
             :show_scheduler,
             :global_includes,
             :gmail_domain
@@ -620,16 +702,18 @@ class AccountsController < ApplicationController
     if authorized_action(@account, @current_user, :read)
       @available_reports = AccountReport.available_reports if @account.grants_right?(@current_user, @session, :read_reports)
       if @available_reports
-        scope = @account.account_reports.where("report_type=name").most_recent
-        @last_complete_reports = AccountReport.from("unnest('{#{@available_reports.keys.join(',')}}'::text[]) report_types (name),
-              LATERAL (#{scope.complete.to_sql}) account_reports ").
-            order("report_types.name").
-            preload(:attachment).
-            index_by(&:report_type)
-        @last_reports = AccountReport.from("unnest('{#{@available_reports.keys.join(',')}}'::text[]) report_types (name),
-              LATERAL (#{scope.to_sql}) account_reports ").
-            order("report_types.name").
-            index_by(&:report_type)
+        @account.shard.activate do
+          scope = @account.account_reports.active.where("report_type=name").most_recent
+          @last_complete_reports = AccountReport.from("unnest('{#{@available_reports.keys.join(',')}}'::text[]) report_types (name),
+                LATERAL (#{scope.complete.to_sql}) account_reports ").
+              order("report_types.name").
+              preload(:attachment).
+              index_by(&:report_type)
+          @last_reports = AccountReport.from("unnest('{#{@available_reports.keys.join(',')}}'::text[]) report_types (name),
+                LATERAL (#{scope.to_sql}) account_reports ").
+              order("report_types.name").
+              index_by(&:report_type)
+        end
       end
       load_course_right_side
       @account_users = @account.account_users
@@ -768,6 +852,7 @@ class AccountsController < ApplicationController
     associated_courses = associated_courses.for_term(@term) if @term
     @associated_courses_count = associated_courses.count
     @hide_enrollmentless_courses = params[:hide_enrollmentless_courses] == "1"
+    @only_master_courses = (params[:only_master_courses] == "1") && master_courses?
     @courses_sort_orders = [
       {
         key: "name_asc",
@@ -883,12 +968,15 @@ class AccountsController < ApplicationController
 
   def courses
     if authorized_action(@context, @current_user, :read)
+      order = sort_order # must be done on master because it persists in user preferences
       Shackles.activate(:slave) do
         load_course_right_side
         @courses = []
         @query = (params[:course] && params[:course][:name]) || params[:term]
         if @context && @context.is_a?(Account) && @query
-          @courses = @context.courses_name_like(@query, :term => @term, :hide_enrollmentless_courses => @hide_enrollmentless_courses)
+          @courses = @context.courses_name_like(@query, :order => order, :term => @term,
+            :hide_enrollmentless_courses => @hide_enrollmentless_courses,
+            :only_master_courses => @only_master_courses)
         end
       end
       respond_to do |format|
@@ -908,14 +996,25 @@ class AccountsController < ApplicationController
   end
 
   def build_course_stats
-    teachers = TeacherEnrollment.for_courses_with_user_name(@courses).admin.active
-    course_to_student_counts = StudentEnrollment.student_in_claimed_or_available.where(:course_id => @courses).group(:course_id).distinct.count(:user_id)
+    courses_to_fetch_users_for = @courses
+
+    if master_courses?
+      templates = MasterCourses::MasterTemplate.active.for_full_course.where(:course_id => @courses).to_a
+      if templates.any?
+        MasterCourses::MasterTemplate.preload_index_data(templates)
+        @master_template_index = templates.index_by(&:course_id)
+        courses_to_fetch_users_for = courses_to_fetch_users_for.reject{|c| @master_template_index[c.id]} # don't fetch the counts for the master/blueprint courses
+      end
+    end
+
+    teachers = TeacherEnrollment.for_courses_with_user_name(courses_to_fetch_users_for).admin.active
+    course_to_student_counts = StudentEnrollment.student_in_claimed_or_available.where(:course_id => courses_to_fetch_users_for).group(:course_id).distinct.count(:user_id)
     courses_to_teachers = teachers.inject({}) do |result, teacher|
       result[teacher.course_id] ||= []
       result[teacher.course_id] << teacher
       result
     end
-    @courses.each do |course|
+    courses_to_fetch_users_for.each do |course|
       course.student_count = course_to_student_counts[course.id] || 0
       course_teachers = courses_to_teachers[course.id] || []
       course.teacher_names = course_teachers.uniq(&:user_id).map(&:user_name)
@@ -1044,16 +1143,23 @@ class AccountsController < ApplicationController
   end
 
   def strong_account_params
-    # i'm doing this instead of normal strong_params because we do too much hackery to the weak params, especially in plugins
+    # i'm doing this instead of normal params because we do too much hackery to the weak params, especially in plugins
     # and it breaks when we enforce inherited weak parameters (because we're not actually editing request.parameters anymore)
-    ActionController::Parameters.new(params).require(:account).permit(*permitted_account_attributes)
+    params.require(:account).permit(*permitted_account_attributes)
   end
 
   def sort_order
     load_course_right_side unless @courses_sort_orders.present?
-    order = @courses_sort_orders.find do |ord|
-      ord[:key] == params[:courses_sort_order]
+
+    if !params[:courses_sort_order].nil?
+      @current_user.preferences[:course_sort] = params[:courses_sort_order]
+      @current_user.save!
     end
+
+    order = @courses_sort_orders.find do |ord|
+      ord[:key] == @current_user.preferences[:course_sort]
+    end
+
 
     order && "#{order[:col]} #{order[:direction]}"
   end

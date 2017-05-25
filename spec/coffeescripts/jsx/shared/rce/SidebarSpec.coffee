@@ -6,7 +6,7 @@ define [
   'helpers/editorUtils'
 ], (Sidebar, RCELoader, wikiSidebar, fakeENV, editorUtils) ->
 
-  module 'Sidebar - init',
+  QUnit.module 'Sidebar - init',
     setup: ->
       # in case other specs left it not fresh
       editorUtils.resetRCE()
@@ -27,10 +27,10 @@ define [
   test 'loads remote sidebar when feature flag on', ->
     ENV.RICH_CONTENT_SERVICE_ENABLED = true
     remoteSidebar = {is_a: 'remote_sidebar'}
-    sinon.stub(RCELoader, "loadSidebarOnTarget").callsArgWith(1, remoteSidebar)
+    @stub(RCELoader, "loadSidebarOnTarget").callsArgWith(1, remoteSidebar)
+    Sidebar.pendingShow = false
     Sidebar.init()
     equal Sidebar.instance, remoteSidebar
-    RCELoader.loadSidebarOnTarget.restore()
 
   test 'repeated calls only init instance once', ->
     ENV.RICH_CONTENT_SERVICE_ENABLED = false
@@ -41,7 +41,7 @@ define [
     ok wikiSidebar.init.calledOnce
     wikiSidebar.init.restore()
 
-  module 'Sidebar - show',
+  QUnit.module 'Sidebar - show',
     setup: ->
       fakeENV.setup()
       ENV.RICH_CONTENT_SERVICE_ENABLED = false
@@ -78,7 +78,7 @@ define [
     ok cb1.notCalled
     ok cb2.called
 
-  module 'Sidebar - hide',
+  QUnit.module 'Sidebar - hide',
     setup: ->
       fakeENV.setup()
       ENV.RICH_CONTENT_SERVICE_ENABLED = false

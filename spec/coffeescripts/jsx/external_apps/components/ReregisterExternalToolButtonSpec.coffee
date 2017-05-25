@@ -13,7 +13,8 @@ define [
 
   createElement = (data) ->
     React.createElement(ReregisterExternalToolButton, {
-      tool: data.tool
+      tool: data.tool,
+      canAddEdit: true
     })
 
   renderComponent = (data) ->
@@ -24,7 +25,7 @@ define [
     btnTriggerReregister = component.refs.reregisterExternalToolButton?.getDOMNode()
     [component, btnTriggerReregister]
 
-  module 'ExternalApps.ReregisterExternalToolButton',
+  QUnit.module 'ExternalApps.ReregisterExternalToolButton',
     setup: ->
       @tools = [
         {
