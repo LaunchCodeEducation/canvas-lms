@@ -82,13 +82,13 @@ oo: !ruby/object:OpenObject
 --- !ruby/object:ActionController::Base
 real_format:
 YAML
-    expect { YAML.load yaml }.to raise_error
+    expect { YAML.load yaml }.to raise_error("Unknown YAML tag '!ruby/object:ActionController::Base'")
     result = YAML.unsafe_load yaml
     expect(result.class).to eq ActionController::Base
   end
 
   it "doesn't allow deserialization of arbitrary classes" do
-    expect { YAML.load(YAML.dump(ActionController::Base)) }.to raise_error
+    expect { YAML.load(YAML.dump(ActionController::Base)) }.to raise_error("YAML deserialization of constant not allowed: ActionController::Base")
   end
 
   it "allows deserialization of arbitrary classes when unsafe_loading" do
@@ -190,6 +190,11 @@ YAML
   it "should be able to dump and load Canvas:Plugin classes" do
     plugin = Canvas::Plugin.find('canvas_cartridge_importer')
     expect(YAML.unsafe_load(YAML.dump(plugin))).to eq plugin
+  end
+
+  it "should be able to dump and load BigDecimals" do
+    hash = {blah: BigDecimal.new("1.2")}
+    expect(YAML.load(YAML.dump(hash))).to eq hash
   end
 
   it "should be able to dump and load these strings in stuff" do

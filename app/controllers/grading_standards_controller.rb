@@ -20,9 +20,9 @@ class GradingStandardsController < ApplicationController
   JSON_METHODS =
     [:display_name, :context_code, :assessed_assignment?, :context_name].freeze
 
-  before_filter :require_context
+  before_action :require_context
   add_crumb(proc { t '#crumbs.grading_standards', "Grading" }) { |c| c.send :named_context_url, c.instance_variable_get("@context"), :context_grading_standards_url }
-  before_filter { |c| c.active_tab = "grading_standards" }
+  before_action { |c| c.active_tab = "grading_standards" }
 
   def index
     if authorized_action(@context, @current_user, :manage_grades)
@@ -30,7 +30,7 @@ class GradingStandardsController < ApplicationController
         GRADING_STANDARDS_URL: context_url(@context, :context_grading_standards_url),
         GRADING_PERIOD_SETS_URL: api_v1_account_grading_period_sets_url(@context),
         ENROLLMENT_TERMS_URL: api_v1_enrollment_terms_url(@context),
-        MULTIPLE_GRADING_PERIODS: multiple_grading_periods?,
+        HAS_GRADING_PERIODS: grading_periods?,
         DEFAULT_GRADING_STANDARD_DATA: GradingStandard.default_grading_standard,
         CONTEXT_SETTINGS_URL: context_url(@context, :context_settings_url)
       }
@@ -44,7 +44,8 @@ class GradingStandardsController < ApplicationController
         view_path = 'account_index'
       else
         client_env[:GRADING_PERIODS_URL] = api_v1_course_grading_periods_url(@context)
-        view_path = 'index'
+        client_env[:GRADING_PERIODS_WEIGHTED] = @context.weighted_grading_periods?
+        view_path = 'course_index'
       end
 
       js_env(client_env)
@@ -59,7 +60,7 @@ class GradingStandardsController < ApplicationController
 
   def create
     if authorized_action(@context, @current_user, :manage_grades)
-      @standard = @context.grading_standards.build(params[:grading_standard])
+      @standard = @context.grading_standards.build(grading_standard_params)
       if @standard.read_attribute(:data).blank?
         @standard.data = GradingStandard.default_grading_standard
       end
@@ -79,7 +80,7 @@ class GradingStandardsController < ApplicationController
     if authorized_action(@standard, @current_user, :manage)
       @standard.user = @current_user
       respond_to do |format|
-        if @standard.update_attributes(params[:grading_standard])
+        if @standard.update_attributes(grading_standard_params)
           format.json { render json: standard_as_json(@standard) }
         else
           format.json { render json: @standard.errors, status: :bad_request }
@@ -109,5 +110,10 @@ class GradingStandardsController < ApplicationController
 
   def standard_as_json(standard)
     standard.as_json(methods: JSON_METHODS, permissions: { user: @current_user })
+  end
+
+  def grading_standard_params
+    return {} unless params[:grading_standard]
+    params[:grading_standard].permit(:title, :standard_data => strong_anything, :data => strong_anything)
   end
 end

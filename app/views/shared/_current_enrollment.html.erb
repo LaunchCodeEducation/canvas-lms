@@ -10,7 +10,7 @@
     </div>
   </div>
 <% else %>
-  <% show_link = current_enrollment.course.grants_right?(@current_user, session, :read) %>
+  <% show_link = [:active, :invited, :accepted, :completed].include?(current_enrollment.state_based_on_date) %>
       <% if @show_star_column %>
       <td class="course-list-star-column">
       <% favorite_course = @favorite_course_ids.include?(current_enrollment.course_id) %>
@@ -66,20 +66,7 @@
       </td>
 
       <td class="course-list-no-left-border course-list-enrolled-as-column">
-        <%
-           message = t('enrolled_as_student', "Student")
-           case current_enrollment.type
-           when 'TeacherEnrollment'
-             message = t('enrolled_as_teacher', "Teacher")
-           when 'TaEnrollment'
-             message = t('enrolled_as_ta', "TA")
-           when 'ObserverEnrollment'
-             message = t('enrolled_as_observer', "Observer")
-           when 'DesignerEnrollment'
-             message = t('enrolled_as_designer', "Designer")
-           end
-        %>
-        <%= message %>
+        <%= current_enrollment.readable_role_name %>
       </td>
 
       <td class="course-list-no-left-border course-list-published-column ">

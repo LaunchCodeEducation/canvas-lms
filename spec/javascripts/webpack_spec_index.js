@@ -1,16 +1,36 @@
-require('./support/sinon/sinon-1.17.2');
-require('./support/sinon/sinon-qunit-amd-1.0.0');
+import 'vendor/ie11-polyfill.js'
+import ApplyTheme from 'instructure-ui/lib/components/ApplyTheme'
+import 'instructure-ui/lib/themes/canvas'
+import './support/sinon/sinon-qunit-1.0.0'
 
-var fixturesDiv = document.createElement('div');
-fixturesDiv.id = 'fixtures';
-document.body.appendChild(fixturesDiv);
+const fixturesDiv = document.createElement('div')
+fixturesDiv.id = 'fixtures'
+document.body.appendChild(fixturesDiv)
 
-if(!window.ENV) window.ENV = {};
-require("react_files/mockFilesENV")
+if (!window.ENV) window.ENV = {}
 
-function requireAll(requireContext) {
+// setup the inst-ui default theme
+if (ENV.use_high_contrast) {
+  ApplyTheme.setDefaultTheme('canvas-a11y')
+} else {
+  const brandvars = window.CANVAS_ACTIVE_BRAND_VARIABLES || {}
+  ApplyTheme.setDefaultTheme('canvas', brandvars)
+}
+
+function requireAll (requireContext) {
   return requireContext.keys().map(requireContext);
 }
 
-requireAll(require.context(__dirname + "/../coffeescripts", true, /Spec$/));
-requireAll(require.context(__dirname + "/jsx", true, /Spec$/));
+if (__SPEC_FILE) {
+  require(__SPEC_FILE)
+} else if (__SPEC_DIR) {
+  requireAll(require.context(__SPEC_DIR, true, /Spec$/))
+} else {
+
+  // run specs for ember screenreader gradebook
+  requireAll(require.context('../../app/coffeescripts', true, /\.spec.coffee$/))
+
+  // run all the specs for the rest of canvas
+  requireAll(require.context('../coffeescripts', true, /Spec.coffee$/))
+  requireAll(require.context('./jsx', true, /Spec$/))
+}

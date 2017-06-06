@@ -22,10 +22,10 @@
 #
 # NOTE: Placements not documented here should be considered beta features and are not officially supported.
 class ExternalToolsController < ApplicationController
-  before_filter :require_context
-  before_filter :require_access_to_context, except: [:index, :sessionless_launch]
-  before_filter :require_user, only: [:generate_sessionless_launch]
-  before_filter :get_context, :only => [:retrieve, :show, :resource_selection]
+  before_action :require_context
+  before_action :require_access_to_context, except: [:index, :sessionless_launch]
+  before_action :require_user, only: [:generate_sessionless_launch]
+  before_action :get_context, :only => [:retrieve, :show, :resource_selection]
   include Api::V1::ExternalTools
 
   REDIS_PREFIX = 'external_tool:sessionless_launch:'
@@ -39,6 +39,9 @@ class ExternalToolsController < ApplicationController
   #
   # @argument selectable [Boolean]
   #   If true, then only tools that are meant to be selectable are returned
+  #
+  # @argument include_parents [Boolean]
+  #   If true, then include tools installed in all accounts above the current context
   #
   # @example_response
   #     [
@@ -559,10 +562,10 @@ class ExternalToolsController < ApplicationController
       else
         basic_lti_launch_request(tool, selection_type, opts)
     end
-  rescue Lti::UnauthorizedError
+  rescue Lti::Errors::UnauthorizedError
     render_unauthorized_action
     nil
-  rescue Lti::UnsupportedExportTypeError, Lti::InvalidMediaTypeError
+  rescue Lti::Errors::UnsupportedExportTypeError, Lti::Errors::InvalidMediaTypeError
     respond_to do |format|
       err = t('There was an error generating the tool launch')
       format.html do
@@ -631,7 +634,7 @@ class ExternalToolsController < ApplicationController
       lti_launch.resource_url,
       tool.consumer_key,
       tool.shared_secret,
-      @context.root_account.feature_enabled?(:disable_lti_post_only)
+      @context.root_account.feature_enabled?(:disable_lti_post_only) || tool.extension_setting(:oauth_compliant)
     )
     lti_launch.link_text = tool.label_for(placement.to_sym)
     lti_launch.analytics_id = tool.tool_id
@@ -718,7 +721,7 @@ class ExternalToolsController < ApplicationController
       lti_launch.resource_url,
       tool.consumer_key,
       tool.shared_secret,
-      @context.root_account.feature_enabled?(:disable_lti_post_only)
+      @context.root_account.feature_enabled?(:disable_lti_post_only) || tool.extension_setting(:oauth_compliant)
     )
     lti_launch.link_text = tool.label_for(placement.to_sym, I18n.locale)
     lti_launch.analytics_id = tool.tool_id
@@ -919,10 +922,14 @@ class ExternalToolsController < ApplicationController
   #   Default: false, if set to true the tool won't show up in the external tool
   #   selection UI in modules and assignments
   #
+  # @argument oauth_compliant [Boolean]
+  #   Default: false, if set to true LTI query params will not be copied to the
+  #   post body.
+  #
   # @example_request
   #
   #   This would create a tool on this course with two custom fields and a course navigation tab
-  #   curl 'https://<canvas>/api/v1/courses/<course_id>/external_tools' \
+  #   curl -X POST 'https://<canvas>/api/v1/courses/<course_id>/external_tools' \
   #        -H "Authorization: Bearer <token>" \
   #        -F 'name=LTI Example' \
   #        -F 'consumer_key=asdfg' \
@@ -938,7 +945,7 @@ class ExternalToolsController < ApplicationController
   # @example_request
   #
   #   This would create a tool on the account with navigation for the user profile page
-  #   curl 'https://<canvas>/api/v1/accounts/<account_id>/external_tools' \
+  #   curl -X POST 'https://<canvas>/api/v1/accounts/<account_id>/external_tools' \
   #        -H "Authorization: Bearer <token>" \
   #        -F 'name=LTI Example' \
   #        -F 'consumer_key=asdfg' \
@@ -952,7 +959,7 @@ class ExternalToolsController < ApplicationController
   # @example_request
   #
   #   This would create a tool on the account with configuration pulled from an external URL
-  #   curl 'https://<canvas>/api/v1/accounts/<account_id>/external_tools' \
+  #   curl -X POST 'https://<canvas>/api/v1/accounts/<account_id>/external_tools' \
   #        -H "Authorization: Bearer <token>" \
   #        -F 'name=LTI Example' \
   #        -F 'consumer_key=asdfg' \
@@ -961,24 +968,22 @@ class ExternalToolsController < ApplicationController
   #        -F 'config_url=https://example.com/ims/lti/tool_config.xml'
   def create
     if authorized_action(@context, @current_user, :create_tool_manually)
-      external_tool_params = params[:external_tool] || params
+      external_tool_params = (params[:external_tool] || params).to_hash.with_indifferent_access
       @tool = @context.context_external_tools.new
       if request.content_type == 'application/x-www-form-urlencoded'
         custom_fields = Lti::AppUtil.custom_params(request.raw_post)
         external_tool_params[:custom_fields] = custom_fields if custom_fields.present?
       end
       set_tool_attributes(@tool, external_tool_params)
-      respond_to do |format|
-        if @tool.save
-          invalidate_nav_tabs_cache(@tool)
-          if api_request?
-            format.json { render :json => external_tool_json(@tool, @context, @current_user, session) }
-          else
-            format.json { render :json => @tool.as_json(:methods => [:readable_state, :custom_fields_string, :vendor_help_link], :include_root => false) }
-          end
+      if @tool.save
+        invalidate_nav_tabs_cache(@tool)
+        if api_request?
+          render :json => external_tool_json(@tool, @context, @current_user, session)
         else
-          format.json { render :json => @tool.errors, :status => :bad_request }
+          render :json => @tool.as_json(:methods => [:readable_state, :custom_fields_string, :vendor_help_link], :include_root => false)
         end
+      else
+        render :json => @tool.errors, :status => :bad_request
       end
     end
   end
@@ -1011,7 +1016,7 @@ class ExternalToolsController < ApplicationController
         :config_settings
       ]
 
-      external_tool_params = params.select{|k, _| required_params.include?(k.to_sym)}
+      external_tool_params = params.to_hash.with_indifferent_access.select{|k, _| required_params.include?(k.to_sym)}
 
       external_tool_params[:config_url] = app_api.get_app_config_url(params[:app_center_id], params[:config_settings])
       external_tool_params[:config_type] = 'by_url'
@@ -1042,7 +1047,7 @@ class ExternalToolsController < ApplicationController
   def update
     @tool = @context.context_external_tools.active.find(params[:id] || params[:external_tool_id])
     if authorized_action(@tool, @current_user, :update_manually)
-      external_tool_params = params[:external_tool] || params
+      external_tool_params = (params[:external_tool] || params).to_hash.with_indifferent_access
       if request.content_type == 'application/x-www-form-urlencoded'
         custom_fields = Lti::AppUtil.custom_params(request.raw_post)
         external_tool_params[:custom_fields] = custom_fields if custom_fields.present?
@@ -1108,7 +1113,8 @@ class ExternalToolsController < ApplicationController
   def set_tool_attributes(tool, params)
     attrs = Lti::ResourcePlacement::PLACEMENTS
     attrs += [:name, :description, :url, :icon_url, :canvas_icon_class, :domain, :privacy_level, :consumer_key, :shared_secret,
-              :custom_fields, :custom_fields_string, :text, :config_type, :config_url, :config_xml, :not_selectable, :app_center_id]
+              :custom_fields, :custom_fields_string, :text, :config_type, :config_url, :config_xml, :not_selectable, :app_center_id,
+              :oauth_compliant]
     attrs.each do |prop|
       tool.send("#{prop}=", params[prop]) if params.has_key?(prop)
     end

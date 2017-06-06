@@ -1,6 +1,4 @@
 class EnrollmentState < ActiveRecord::Base
-  strong_params
-
   belongs_to :enrollment
 
   attr_accessor :skip_touch_user, :user_needs_touch, :is_direct_recalculation
@@ -20,11 +18,6 @@ class EnrollmentState < ActiveRecord::Base
     Shackles.activate(:master) do
       retry_count = 0
       begin
-        if self.lock_version == 0 || self.lock_version.nil?
-          # needed to prevent stale object errors for pre-existing enrollment state objects (it casts the null value to 0)
-          EnrollmentState.where(:enrollment_id => self, :lock_version => nil).update_all(:lock_version => 0)
-        end
-
         self.recalculate_state if self.state_needs_recalculation? || retry_count > 0 # force double-checking on lock conflict
         self.recalculate_access if !self.access_is_current? || retry_count > 0
         self.save! if self.changed?

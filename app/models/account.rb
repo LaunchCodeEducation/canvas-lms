@@ -20,7 +20,6 @@ require 'atom'
 
 class Account < ActiveRecord::Base
   include Context
-  strong_params
 
   INSTANCE_GUID_SUFFIX = 'canvas-lms'
 
@@ -31,9 +30,9 @@ class Account < ActiveRecord::Base
   authenticates_many :pseudonym_sessions
   has_many :courses
   has_many :all_courses, :class_name => 'Course', :foreign_key => 'root_account_id'
-  has_many :group_categories, -> { where(deleted_at: nil) }, as: :context
-  has_many :all_group_categories, :class_name => 'GroupCategory', :as => :context
-  has_many :groups, :as => :context
+  has_many :group_categories, -> { where(deleted_at: nil) }, as: :context, inverse_of: :context
+  has_many :all_group_categories, :class_name => 'GroupCategory', :as => :context, :inverse_of => :context
+  has_many :groups, :as => :context, :inverse_of => :context
   has_many :all_groups, :class_name => 'Group', :foreign_key => 'root_account_id'
   has_many :all_group_memberships, source: 'group_memberships', through: :all_groups
   has_many :enrollment_terms, :foreign_key => 'root_account_id'
@@ -51,13 +50,13 @@ class Account < ActiveRecord::Base
   has_many :root_abstract_courses, :class_name => 'AbstractCourse', :foreign_key => 'root_account_id'
   has_many :users, :through => :account_users
   has_many :pseudonyms, -> { preload(:user) }, inverse_of: :account
-  has_many :role_overrides, :as => :context
+  has_many :role_overrides, :as => :context, :inverse_of => :context
   has_many :course_account_associations
   has_many :child_courses, -> { where(course_account_associations: { depth: 0 }) }, through: :course_account_associations, source: :course
-  has_many :attachments, :as => :context, :dependent => :destroy
-  has_many :active_assignments, -> { where("assignments.workflow_state<>'deleted'") }, as: :context, class_name: 'Assignment'
-  has_many :folders, -> { order('folders.name') }, as: :context, dependent: :destroy
-  has_many :active_folders, -> { where("folder.workflow_state<>'deleted'").order('folders.name') }, class_name: 'Folder', as: :context
+  has_many :attachments, :as => :context, :inverse_of => :context, :dependent => :destroy
+  has_many :active_assignments, -> { where("assignments.workflow_state<>'deleted'") }, as: :context, inverse_of: :context, class_name: 'Assignment'
+  has_many :folders, -> { order('folders.name') }, as: :context, inverse_of: :context, dependent: :destroy
+  has_many :active_folders, -> { where("folder.workflow_state<>'deleted'").order('folders.name') }, class_name: 'Folder', as: :context, inverse_of: :context
   has_many :developer_keys
   has_many :authentication_providers,
            -> { order(:position) },
@@ -65,13 +64,13 @@ class Account < ActiveRecord::Base
            class_name: "AccountAuthorizationConfig"
 
   has_many :account_reports
-  has_many :grading_standards, -> { where("workflow_state<>'deleted'") }, as: :context
+  has_many :grading_standards, -> { where("workflow_state<>'deleted'") }, as: :context, inverse_of: :context
   has_many :assessment_questions, :through => :assessment_question_banks
-  has_many :assessment_question_banks, -> { preload(:assessment_questions, :assessment_question_bank_users) }, as: :context
+  has_many :assessment_question_banks, -> { preload(:assessment_questions, :assessment_question_bank_users) }, as: :context, inverse_of: :context
   has_many :roles
   has_many :all_roles, :class_name => 'Role', :foreign_key => 'root_account_id'
-  has_many :progresses, :as => :context
-  has_many :content_migrations, :as => :context
+  has_many :progresses, :as => :context, :inverse_of => :context
+  has_many :content_migrations, :as => :context, :inverse_of => :context
 
   def inherited_assessment_question_banks(include_self = false, *additional_contexts)
     sql = []
@@ -89,13 +88,13 @@ class Account < ActiveRecord::Base
   include LearningOutcomeContext
   include RubricContext
 
-  has_many :context_external_tools, -> { order(:name) }, as: :context, dependent: :destroy
+  has_many :context_external_tools, -> { order(:name) }, as: :context, inverse_of: :context, dependent: :destroy
   has_many :error_reports
   has_many :announcements, :class_name => 'AccountNotification'
-  has_many :alerts, -> { preload(:criteria) }, as: :context
+  has_many :alerts, -> { preload(:criteria) }, as: :context, inverse_of: :context
   has_many :user_account_associations
   has_many :report_snapshots
-  has_many :external_integration_keys, :as => :context, :dependent => :destroy
+  has_many :external_integration_keys, :as => :context, :inverse_of => :context, :dependent => :destroy
   has_many :shared_brand_configs
   belongs_to :brand_config, foreign_key: "brand_config_md5"
 
@@ -107,8 +106,7 @@ class Account < ActiveRecord::Base
   after_save :invalidate_caches_if_changed
   after_update :clear_special_account_cache_if_special
 
-  after_create :default_enrollment_term
-  after_create :enable_canvas_authentication
+  after_create :create_default_objects
 
   serialize :settings, Hash
   include TimeZoneHelper
@@ -151,12 +149,15 @@ class Account < ActiveRecord::Base
   # the account settings page
   add_setting :sis_app_token, :root_only => true
   add_setting :sis_app_url, :root_only => true
+  add_setting :sis_name, :root_only => true
   add_setting :sis_syncing, :boolean => true, :default => false, :inheritable => true
   add_setting :sis_default_grade_export, :boolean => true, :default => false, :inheritable => true
+  add_setting :sis_require_assignment_due_date, :boolean => true, :default => false, :inheritable => true
+  add_setting :sis_assignment_name_length, :boolean => true, :default => false, :inheritable => true
+  add_setting :sis_assignment_name_length_input, :inheritable => true
 
   add_setting :global_includes, :root_only => true, :boolean => true, :default => false
   add_setting :sub_account_includes, :boolean => true, :default => false
-  add_setting :error_reporting, :hash => true, :values => [:action, :email, :url, :subject_param, :body_param], :root_only => true
 
   # Help link settings
   add_setting :custom_help_links, :root_only => true
@@ -189,6 +190,7 @@ class Account < ActiveRecord::Base
   add_setting :open_registration, :boolean => true, :root_only => true
   add_setting :show_scheduler, :boolean => true, :root_only => true, :default => false
   add_setting :enable_profiles, :boolean => true, :root_only => true, :default => false
+  add_setting :enable_turnitin, :boolean => true, :default => false
   add_setting :mfa_settings, :root_only => true
   add_setting :admins_can_change_passwords, :boolean => true, :root_only => true, :default => false
   add_setting :admins_can_view_notifications, :boolean => true, :root_only => true, :default => false
@@ -214,11 +216,13 @@ class Account < ActiveRecord::Base
   add_setting :include_students_in_global_survey, boolean: true, root_only: true, default: false
   add_setting :trusted_referers, root_only: true
   add_setting :app_center_access_token
+  add_setting :enable_offline_web_export, boolean: true, default: false, inheritable: true
 
   add_setting :strict_sis_check, :boolean => true, :root_only => true, :default => false
+  add_setting :lock_all_announcements, default: false, boolean: true, inheritable: true
 
   def settings=(hash)
-    if hash.is_a?(Hash)
+    if hash.is_a?(Hash) || hash.is_a?(ActionController::Parameters)
       hash.each do |key, val|
         if account_settings_options && account_settings_options[key.to_sym]
           opts = account_settings_options[key.to_sym]
@@ -226,7 +230,7 @@ class Account < ActiveRecord::Base
             settings.delete key.to_sym
           elsif opts[:hash]
             new_hash = {}
-            if val.is_a?(Hash)
+            if val.is_a?(Hash) || val.is_a?(ActionController::Parameters)
               val.each do |inner_key, inner_val|
                 inner_key = inner_key.to_sym
                 if opts[:values].include?(inner_key)
@@ -264,7 +268,6 @@ class Account < ActiveRecord::Base
     end
   end
 
-
   def mfa_settings
     settings[:mfa_settings].try(:to_sym) || :disabled
   end
@@ -287,6 +290,10 @@ class Account < ActiveRecord::Base
     return unless AccountAuthorizationConfig::Canvas.columns_hash.key?('workflow_state')
     return if authentication_providers.active.where(auth_type: 'canvas').exists?
     authentication_providers.create!(auth_type: 'canvas')
+  end
+
+  def enable_offline_web_export?
+    enable_offline_web_export[:value]
   end
 
   def open_registration?
@@ -365,6 +372,7 @@ class Account < ActiveRecord::Base
 
     if self.root_account?
       self.errors.add(:sis_source_id, t('#account.root_account_cant_have_sis_id', "SIS IDs cannot be set on root accounts"))
+      throw :abort unless CANVAS_RAILS4_2
       return false
     end
 
@@ -374,6 +382,7 @@ class Account < ActiveRecord::Base
     return true unless scope.exists?
 
     self.errors.add(:sis_source_id, t('#account.sis_id_in_use', "SIS ID \"%{sis_id}\" is already in use", :sis_id => self.sis_source_id))
+    throw :abort unless CANVAS_RAILS4_2
     false
   end
 
@@ -416,11 +425,10 @@ class Account < ActiveRecord::Base
     !self.root_account_id
   end
 
-  def root_account_with_self
-    return self if self.root_account?
-    root_account_without_self
+  def root_account
+    return self if root_account?
+    super
   end
-  alias_method_chain :root_account, :self
 
   def sub_accounts_as_options(indent = 0, preloaded_accounts = nil)
     unless preloaded_accounts
@@ -466,6 +474,7 @@ class Account < ActiveRecord::Base
     columns = "courses.id, courses.name, courses.workflow_state, courses.course_code, courses.sis_source_id, courses.enrollment_term_id"
     associated_courses = self.associated_courses.active.order(opts[:order])
     associated_courses = associated_courses.with_enrollments if opts[:hide_enrollmentless_courses]
+    associated_courses = associated_courses.master_courses if opts[:only_master_courses]
     associated_courses = associated_courses.for_term(opts[:term]) if opts[:term].present?
     associated_courses = yield associated_courses if block_given?
     associated_courses.limit(opts[:limit]).active_first.select(columns).to_a
@@ -969,13 +978,13 @@ class Account < ActiveRecord::Base
   set_policy do
     enrollment_types = RoleOverride.enrollment_type_labels.map { |role| role[:name] }
     RoleOverride.permissions.each do |permission, details|
-      given { |user| self.account_users_for(user).any? { |au| au.has_permission_to?(self, permission) && (!details[:if] || send(details[:if])) } }
+      given { |user| self.account_users_for(user).any? { |au| au.has_permission_to?(self, permission) } }
       can permission
       can :create_courses if permission == :manage_courses
     end
 
     given { |user| !self.account_users_for(user).empty? }
-    can :read and can :manage and can :update and can :delete and can :read_outcomes
+    can :read and can :read_as_admin and can :manage and can :update and can :delete and can :read_outcomes
 
     given { |user|
       result = false
@@ -1030,7 +1039,7 @@ class Account < ActiveRecord::Base
   def default_enrollment_term
     return @default_enrollment_term if @default_enrollment_term
     if self.root_account?
-      @default_enrollment_term = self.enrollment_terms.active.where(name: EnrollmentTerm::DEFAULT_TERM_NAME).first_or_create
+      @default_enrollment_term = Shackles.activate(:master) { self.enrollment_terms.active.where(name: EnrollmentTerm::DEFAULT_TERM_NAME).first_or_create }
     end
   end
 
@@ -1274,7 +1283,10 @@ class Account < ActiveRecord::Base
   def turnitin_settings
     return @turnitin_settings if defined?(@turnitin_settings)
     if self.turnitin_account_id.present? && self.turnitin_shared_secret.present?
-      @turnitin_settings = [self.turnitin_account_id, self.turnitin_shared_secret, self.turnitin_host]
+      if settings[:enable_turnitin]
+        @turnitin_settings = [self.turnitin_account_id, self.turnitin_shared_secret,
+                              self.turnitin_host]
+      end
     else
       @turnitin_settings = self.parent_account.try(:turnitin_settings)
     end
@@ -1522,8 +1534,6 @@ class Account < ActiveRecord::Base
     end
   end
 
-  def self.serialization_excludes; [:uuid]; end
-
   def find_child(child_id)
     return all_accounts.find(child_id) if root_account?
 
@@ -1628,5 +1638,12 @@ class Account < ActiveRecord::Base
   def to_param
     return 'site_admin' if site_admin?
     super
+  end
+
+  def create_default_objects
+    self.class.connection.after_transaction_commit do
+      default_enrollment_term
+      enable_canvas_authentication
+    end
   end
 end

@@ -68,6 +68,15 @@ describe Api::V1::User do
       )
     end
 
+    it 'only loads pseudonyms for the user once, even if there are multiple enrollments' do
+      sis_stub = SisPseudonym.for(@student, @course, true)
+      SisPseudonym.expects(:for).once.returns(sis_stub)
+      ta_enrollment = ta_in_course(user: @student, course: @course)
+      teacher_enrollment = teacher_in_course(user: @student, course: @course)
+      @test_api.current_user = @admin
+      @test_api.user_json(@student, @admin, {}, [], @course, [ta_enrollment, teacher_enrollment])
+    end
+
     it 'should support optionally including group_ids' do
       @group = @course.groups.create!(:name => "My Group")
       @group.add_user(@student, 'accepted', true)
@@ -118,10 +127,10 @@ describe Api::V1::User do
       student = User.create!(:name => 'User')
       student.pseudonyms.create!(:unique_id => 'xyz', :account => Account.default) { |p| p.sis_user_id = 'xyz' }
 
-      teacher = user
-      course1 = course(:active_all => true)
+      teacher = user_factory
+      course1 = course_factory(active_all: true)
       course1.enroll_user(teacher, "TeacherEnrollment").accept!
-      course2 = course(:active_all => true)
+      course2 = course_factory(active_all: true)
       course2.enroll_user(teacher, "StudentEnrollment").accept!
 
       expect(@test_api.user_json(student, teacher, {}, [], course1)).to eq({
@@ -148,10 +157,10 @@ describe Api::V1::User do
       student = User.create!(:name => 'User')
       student.pseudonyms.create!(:unique_id => 'xyz', :account => Account.default) { |p| p.sis_user_id = 'xyz' }
 
-      teacher = user
-      course1 = course(:active_all => true)
+      teacher = user_factory
+      course1 = course_factory(active_all: true)
       course1.enroll_user(teacher, "TeacherEnrollment").accept!
-      course2 = course(:active_all => true)
+      course2 = course_factory(active_all: true)
       course2.enroll_user(teacher, "StudentEnrollment").accept!
       group1 = course1.groups.create!(:name => 'Group 1')
       group2 = course2.groups.create!(:name => 'Group 2')
@@ -236,14 +245,14 @@ describe Api::V1::User do
 
     context "computed scores" do
       before :once do
-        @enrollment.computed_current_score = 95.0;
-        @enrollment.computed_final_score = 85.0;
+        @enrollment.scores.create!(current_score: 95.0, final_score: 85.0)
         @student1_enrollment = @enrollment
         @student2 = course_with_student(:course => @course).user
       end
 
       before :each do
-        def @course.grading_standard_enabled?; true; end
+        @course.grading_standard_enabled = true
+        @course.save!
       end
 
       it "should return scores as admin" do
@@ -829,7 +838,7 @@ describe "Users API", type: :request do
 
     context "as a non-administrator" do
       before :once do
-        user(active_all: true)
+        user_factory(active_all: true)
       end
 
       it "should not let you create a user if self_registration is off" do
@@ -945,7 +954,7 @@ describe "Users API", type: :request do
 
     context "as an anonymous user" do
       before :each do
-        user(active_all: true)
+        user_factory(active_all: true)
         @user = nil
       end
 
@@ -995,53 +1004,53 @@ describe "Users API", type: :request do
                        )
         expect(json['name']).to eq 'Test User'
       end
-    end
 
-    it "should return a 400 error if the request doesn't include a unique id" do
-      @admin.account.canvas_authentication_provider.update_attribute(:self_registration, true)
-      raw_api_call(:post, "/api/v1/accounts/#{@admin.account.id}/self_registration",
-                   { :controller => 'users',
-                     :action => 'create_self_registered_user',
-                     :format => 'json',
-                     :account_id => @admin.account.id.to_s
-                   },
-                   {
-                       :user      => { :name => "Test User", :terms_of_use => "1"  },
-                       :pseudonym => { :password => "password123" }
-                   }
-                  )
-      assert_status(400)
-      errors = JSON.parse(response.body)['errors']
-      expect(errors['pseudonym']).to be_present
-      expect(errors['pseudonym']['unique_id']).to be_present
-    end
+      it "should return a 400 error if the request doesn't include a unique id" do
+        @admin.account.canvas_authentication_provider.update_attribute(:self_registration, true)
+        raw_api_call(:post, "/api/v1/accounts/#{@admin.account.id}/self_registration",
+                     { :controller => 'users',
+                       :action => 'create_self_registered_user',
+                       :format => 'json',
+                       :account_id => @admin.account.id.to_s
+                     },
+                     {
+                         :user      => { :name => "Test User", :terms_of_use => "1"  },
+                         :pseudonym => { :password => "password123" }
+                     }
+                    )
+        assert_status(400)
+        errors = JSON.parse(response.body)['errors']
+        expect(errors['pseudonym']).to be_present
+        expect(errors['pseudonym']['unique_id']).to be_present
+      end
 
-    it "should set user's email address via communication_channel[address]" do
-      @admin.account.canvas_authentication_provider.update_attribute(:self_registration, true)
-      api_call(:post, "/api/v1/accounts/#{@admin.account.id}/self_registration",
-               { :controller => 'users',
-                 :action => 'create_self_registered_user',
-                 :format => 'json',
-                 :account_id => @admin.account.id.to_s
-               },
-               {
-                   :user      => { :name => "Test User", :terms_of_use => "1" },
-                   :pseudonym => {
-                       :unique_id         => "test@test.com",
-                       :password          => "password123"
-                   },
-                   :communication_channel => {
-                       :address           => "test@example.com"
-                   }
-               }
-              )
-      expect(response).to be_success
-      users = User.where(name: "Test User").to_a
-      expect(users.size).to eq 1
-      expect(users.first.pseudonyms.first.unique_id).to eq "test@test.com"
-      email = users.first.communication_channels.email.first
-      expect(email.path).to eq "test@example.com"
-      expect(email.path_type).to eq 'email'
+      it "should set user's email address via communication_channel[address]" do
+        @admin.account.canvas_authentication_provider.update_attribute(:self_registration, true)
+        api_call(:post, "/api/v1/accounts/#{@admin.account.id}/self_registration",
+                 { :controller => 'users',
+                   :action => 'create_self_registered_user',
+                   :format => 'json',
+                   :account_id => @admin.account.id.to_s
+                 },
+                 {
+                     :user      => { :name => "Test User", :terms_of_use => "1" },
+                     :pseudonym => {
+                         :unique_id         => "test@test.com",
+                         :password          => "password123"
+                     },
+                     :communication_channel => {
+                         :address           => "test@example.com"
+                     }
+                 }
+                )
+        expect(response).to be_success
+        users = User.where(name: "Test User").to_a
+        expect(users.size).to eq 1
+        expect(users.first.pseudonyms.first.unique_id).to eq "test@test.com"
+        email = users.first.communication_channels.email.first
+        expect(email.path).to eq "test@example.com"
+        expect(email.path_type).to eq 'email'
+      end
     end
   end
 
@@ -1069,7 +1078,8 @@ describe "Users API", type: :request do
             :sortable_name => 'Funke, Tobias',
             :time_zone => 'Tijuana',
             :birthdate => birthday.iso8601,
-            :locale => 'en'
+            :locale => 'en',
+            :email => "somenewemail@example.com"
           }
         })
         user = User.find(json['id'])
@@ -1083,12 +1093,13 @@ describe "Users API", type: :request do
           'short_name' => 'Tobias',
           'integration_id' => nil,
           'login_id' => 'student@example.com',
-          'email' => 'student@example.com',
+          'email' => 'somenewemail@example.com',
           'sis_login_id' => 'student@example.com',
           'locale' => 'en',
           'time_zone' => "Tijuana"
         })
-        expect(user.birthdate.to_date).to eq birthday.to_date
+
+        expect(user.birthdate.to_date).to eq birthday.getutc.to_date
         expect(user.time_zone.name).to eql 'Tijuana'
       end
 
@@ -1217,7 +1228,7 @@ describe "Users API", type: :request do
 
     context "an unauthorized user" do
       it "should receive a 401" do
-        user
+        user_factory
         raw_api_call(:put, @path, @path_options, {
           :user => { :name => 'Gob Bluth' }
         })
@@ -1272,7 +1283,7 @@ describe "Users API", type: :request do
       end
 
       it "should receive 401 if updating another user's settings" do
-        @course.enroll_student(user).accept!
+        @course.enroll_student(user_factory).accept!
         raw_api_call(:put, path, path_options, manual_mark_as_read: true)
         expect(response.code).to eq '401'
       end
@@ -1409,7 +1420,7 @@ describe "Users API", type: :request do
 
     context 'an unauthorized user' do
       it "should receive a 401" do
-        user
+        user_factory
         raw_api_call(:delete, @path, @path_options)
         expect(response.code).to eql '401'
       end
@@ -1534,7 +1545,7 @@ describe "Users API", type: :request do
   describe 'Custom Colors' do
     before :each do
       @a = Account.default
-      @u = user(:active_all => true)
+      @u = user_factory(active_all: true)
       @a.account_users.create!(user: @u)
     end
 
@@ -1664,10 +1675,219 @@ describe "Users API", type: :request do
     end
   end
 
+  describe "dashboard positions" do
+    before :each do
+      @a = Account.default
+      @u = user_factory(active_all: true)
+      @a.account_users.create!(user: @u)
+    end
+
+    describe "GET dashboard positions" do
+      before :each do
+        @user.preferences[:dashboard_positions] = {
+          "course_1" => 3,
+          "course_2" => 1,
+          "course_3" => 2
+        }
+        @user.save!
+      end
+
+      it "should return dashboard postions for a user" do
+        json = api_call(
+          :get,
+          "/api/v1/users/#{@user.id}/dashboard_positions",
+          { controller: "users", action: "get_dashboard_positions", format: "json",
+            id: @user.to_param
+          },
+          {:expected_status => 200}
+        )
+        expect(json["dashboard_positions"].size).to eq 3
+      end
+
+      it "should return an empty if the user has no ordering set" do
+        @user.preferences.delete(:dashboard_positions)
+        @user.save!
+
+        json = api_call(
+          :get,
+          "/api/v1/users/#{@user.id}/dashboard_positions",
+          { controller: "users", action: "get_dashboard_positions", format: "json",
+            id: @user.to_param
+          },
+          {:expected_status => 200}
+        )
+        expect(json["dashboard_positions"].size).to eq 0
+      end
+    end
+
+    describe "PUT dashboard positions" do
+      it "should allow setting dashboard positions" do
+        course1 = course_factory(active_all: true)
+        course2 = course_factory(active_all: true)
+        json = api_call(
+          :put,
+          "/api/v1/users/#{@user.id}/dashboard_positions",
+          { controller: "users", action: "set_dashboard_positions", format: "json",
+            id: @user.to_param
+          },
+          {
+            dashboard_positions: {
+              "course_#{course1.id}" => 3,
+              "course_#{course2.id}" => 1,
+            }
+          },
+          {},
+          {:expected_status => 200}
+        )
+        expected = {
+          "course_#{course1.id}" => "3",
+          "course_#{course2.id}" => "1",
+        }
+        expect(json["dashboard_positions"]).to eq expected
+      end
+
+      it "should not allow creating entries for entities that do not exist" do
+        course1 = course_factory(active_all: true)
+        course1.enroll_user(@user, "TeacherEnrollment").accept!
+        api_call(
+          :put,
+          "/api/v1/users/#{@user.id}/dashboard_positions",
+          { controller: "users", action: "set_dashboard_positions", format: "json",
+            id: @user.to_param
+          },
+          {
+            dashboard_positions: {
+              "course_#{course1.id}" => 3,
+              "course_100001" => 1,
+            }
+          },
+          {},
+          {:expected_status => 404}
+        )
+      end
+
+      it "should not allow creating entries for entities that the user doesn't have read access to" do
+        course_with_student(:active_all => true)
+        course1 = @course
+        course2 = course_factory
+
+        api_call(
+          :put,
+          "/api/v1/users/#{@user.id}/dashboard_positions",
+          { controller: "users", action: "set_dashboard_positions", format: "json",
+            id: @user.to_param
+          },
+          {
+            dashboard_positions: {
+              "course_#{course1.id}" => 3,
+              "course_#{course2.id}" => 1,
+            }
+          },
+          {},
+          {:expected_status => 401}
+        )
+      end
+
+      it "should not allow setting positions to strings" do
+        course1 = course_factory(active_all: true)
+        course2 = course_factory(active_all: true)
+
+        api_call(
+          :put,
+          "/api/v1/users/#{@user.id}/dashboard_positions",
+          { controller: "users", action: "set_dashboard_positions", format: "json",
+            id: @user.to_param
+          },
+          {
+            dashboard_positions: {
+              "course_#{course1.id}" => "top",
+              "course_#{course2.id}" => 1,
+            }
+          },
+          {},
+          {:expected_status => 400}
+        )
+      end
+
+    end
+  end
+
+  describe "New User Tutorial Collapsed Status" do
+    before :once do
+      @a = Account.default
+      @u = user_factory(active_all: true)
+      @a.account_users.create!(user: @u)
+    end
+
+    describe "GET new user tutorial statuses" do
+      before :once do
+        @user.preferences[:new_user_tutorial_statuses] = {
+          "home" => true,
+          "modules" => false,
+        }
+        @user.save!
+      end
+
+      it "should return new user tutorial collapsed statuses for a user" do
+        json = api_call(
+          :get,
+          "/api/v1/users/#{@user.id}/new_user_tutorial_statuses",
+          { controller: "users", action: "get_new_user_tutorial_statuses", format: "json",
+            id: @user.to_param }
+        )
+        expect(json).to eq({"new_user_tutorial_statuses" => {"collapsed" => {"home" => true, "modules" => false}}})
+      end
+
+      it "should return empty if the user has no preference set" do
+        @user.preferences.delete(:new_user_tutorial_statuses)
+        @user.save!
+
+        json = api_call(
+          :get,
+          "/api/v1/users/#{@user.id}/new_user_tutorial_statuses",
+          { controller: "users", action: "get_new_user_tutorial_statuses", format: "json",
+            id: @user.to_param }
+        )
+        expect(json).to eq({"new_user_tutorial_statuses" => {"collapsed" => {}}})
+      end
+    end
+
+    describe "PUT new user tutorial status" do
+      it "should allow setting new user tutorial status" do
+        page_name = "modules"
+        json = api_call(
+          :put,
+          "/api/v1/users/#{@user.id}/new_user_tutorial_statuses/#{page_name}",
+          { controller: "users", action: "set_new_user_tutorial_status", format: "json",
+            id: @user.to_param, page_name: page_name },
+          {
+            collapsed: true
+          },
+          {}
+        )
+        expect(json["new_user_tutorial_statuses"]["collapsed"]["modules"]).to eq true
+      end
+
+      it "should reject setting status for pages that are not whitelisted" do
+        page_name = "some_random_page"
+        api_call(
+          :put,
+          "/api/v1/users/#{@user.id}/new_user_tutorial_statuses/#{page_name}",
+          { controller: "users", action: "set_new_user_tutorial_status", format: "json",
+            id: @user.to_param, page_name: page_name },
+          {},
+          {},
+          {:expected_status => 400}
+        )
+      end
+
+    end
+  end
+
   describe 'missing submissions' do
     before :once do
       course_with_student(active_all: true)
-      @observer = user(active_all: true, active_state: 'active')
+      @observer = user_factory(active_all: true, active_state: 'active')
       @observer.user_observees.create do |uo|
         uo.user_id = @student.id
       end
@@ -1691,7 +1911,7 @@ describe "Users API", type: :request do
     end
 
     it "should not return assignments that don't expect a submission" do
-      ungraded = @course.assignments.create! due_at: 2.days.ago, workflow_state: 'published', submission_types: 'not_graded'
+      ungraded = @course.assignments.create! due_at: 2.days.from_now, workflow_state: 'published', submission_types: 'not_graded'
       json = api_call(:get, @path, @params)
       expect(json.map { |a| a['id'] }).not_to include ungraded.id
     end

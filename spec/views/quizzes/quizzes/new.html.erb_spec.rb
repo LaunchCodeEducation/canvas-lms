@@ -34,18 +34,18 @@ describe "/quizzes/quizzes/new" do
   it "should render" do
     course_with_student
     view_context
-    assigns[:quiz] = @course.quizzes.create!
-    assigns[:js_env] = {quiz_max_combination_count: 200}
+    assign(:quiz, @course.quizzes.create!)
+    assign(:js_env, {quiz_max_combination_count: 200})
     render "quizzes/quizzes/new"
     expect(response).not_to be_nil
   end
 
   context "with course and quiz" do
     before :each do
-      course_with_teacher_logged_in(:active_all => true)
+      course_with_teacher(:active_all => true)
       @quiz = course_quiz
-      assigns[:quiz] = @quiz
-      assigns[:js_env] = {quiz_max_combination_count: 200}
+      assign(:quiz, @quiz)
+      assign(:js_env, {quiz_max_combination_count: 200})
       view_context
     end
     it "should not display 'NOTE:' message when questions within limit" do

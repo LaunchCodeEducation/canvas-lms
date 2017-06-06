@@ -133,12 +133,6 @@ describe Api::V1::GradebookHistory do
     it 'returns a grader hash for that day' do
       expect(@day_hash.map{|g| g[:id] }.sort).to eq [@grader1.id, @grader2.id].sort
     end
-
-    it 'includes assignment data' do
-      assignment_hash = @day_hash.find{|g| g[:id] == @grader1.id}[:assignments].first
-      expect(assignment_hash['id']).to eq @assignment.id
-      expect(assignment_hash['name']).to eq @assignment.title
-    end
   end
 
   describe '#submissions_for' do
@@ -148,6 +142,7 @@ describe Api::V1::GradebookHistory do
       @course.enroll_student(student1)
       @grader1 = User.create!(:name => 'grader 1')
       @grader2 = User.create!(:name => 'grader 2')
+      @course.enroll_teacher(@grader2)
       @assignment = @course.assignments.create!(:title => "some assignment")
       @submission = @assignment.submit_homework(student1)
       @submission.update_attributes(graded_at: now, grader_id: @grader1.id)

@@ -9,6 +9,7 @@ describe "discussions" do
   let(:teacher) { teacher_in_course(course: course, name: 'teacher', active_all: true).user }
   let(:somebody) { student_in_course(course: course, name: 'somebody', active_all: true).user }
   let(:somebody_topic) { course.discussion_topics.create!(user: somebody, title: 'somebody topic title', message: 'somebody topic message') }
+  let(:group_topic) { group_discussion_assignment }
   let(:assignment_group) { course.assignment_groups.create!(name: 'assignment group') }
   let(:entry) { topic.discussion_entries.create!(user: teacher, message: 'teacher entry') }
 
@@ -107,6 +108,12 @@ describe "discussions" do
         expect(f('.total-items').text).to eq '1'
       end
 
+      it "hides unread count for group discussions" do
+        group_topic
+        get url
+        expect(f(".discussion-unread-status").text).to eq ''
+      end
+
       describe 'filtering' do
         before(:each) do
           @graded_unread_topic = topic_for_filtering(read: false, graded: true)
@@ -152,23 +159,6 @@ describe "discussions" do
         end
       end
 
-      it "should have working unread button", priority: "1", test_id: 150506 do
-        disc1 = @course.discussion_topics.create!(user: teacher, title: 'Philip', message: 'teacher topic message')
-        disc2 = @course.discussion_topics.create!(user: teacher, title: 'Fry', message: 'teacher topic message')
-        disc1.discussion_entries.create(message: "first entry", user: @user)
-        get url
-
-        # verify that both discussions are present as well as the other 2 empty sections
-        expect(ffj('.discussion:visible').size).to eq 3
-
-        # going to this page once will let it be filtered as unread
-        get "/courses/#{course.id}/discussion_topics/#{disc2.id}"
-        get url
-
-        fj('label.ui-button.ui-widget.ui-state-default.ui-button-text-only.ui-corner-left').click
-        expect(ffj('.discussion:visible').size).to eq 2
-      end
-
       it "should have working unread button", priority: "1", test_id: 150505 do
         @course.discussion_topics.create!(user: teacher, title: 'Philip J. Fry', message: 'teacher topic message')
         assignment = @course.assignments.create(title: "discussion assignment", points_possible: 20)
@@ -177,7 +167,6 @@ describe "discussions" do
 
         # verify that both discussions are present as well as the other empty section
         expect(ffj('.discussion:visible').size).to eq 3
-
         fj('label.ui-button.ui-widget.ui-state-default.ui-button-text-only.ui-corner-right:').click
         expect(ffj('.discussion:visible').size).to eq 2
       end

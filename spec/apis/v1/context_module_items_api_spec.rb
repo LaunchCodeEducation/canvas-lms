@@ -19,7 +19,7 @@ require File.expand_path(File.dirname(__FILE__) + '/../api_spec_helper')
 
 describe "Module Items API", type: :request do
   before :once do
-    course.offer!
+    course_factory.offer!
 
     @module1 = @course.context_modules.create!(:name => "module1")
     @assignment = @course.assignments.create!(:name => "pls submit", :submission_types => ["online_text_entry"], :points_possible => 20)
@@ -135,10 +135,11 @@ describe "Module Items API", type: :request do
               "indent" => 1,
               "completion_requirement" => { "type" => "must_view" },
               "published" => true,
-              "module_id" => @module1.id
+              "module_id" => @module1.id,
+              "new_tab" => nil
           }
       ]
-      compare_json(json, expected)
+      expect(json).to eq expected
     end
 
     context 'index with content details' do
@@ -498,6 +499,15 @@ describe "Module Items API", type: :request do
         expect(@assignment_tag.title).to eq new_title
         expect(@assignment.reload.title).to eq new_title
         expect(@assignment_tag.indent).to eq new_indent
+      end
+
+      it "should update the user for a wiki page sync" do
+        expect(@wiki_page.user).to be_nil
+        json = api_call(:put, "/api/v1/courses/#{@course.id}/modules/#{@module2.id}/items/#{@wiki_page_tag.id}",
+          {:controller => "context_module_items_api", :action => "update", :format => "json",
+            :course_id => "#{@course.id}", :module_id => "#{@module2.id}", :id => "#{@wiki_page_tag.id}"},
+          {:module_item => {:title => 'New title'}})
+        expect(@wiki_page.reload.user).to eq(@user)
       end
 
       it "should update new_tab" do
@@ -990,6 +1000,14 @@ describe "Module Items API", type: :request do
           json = call_select_mastery_path @assignment_tag, 100, @student.id
           expect(json['assignments'].map {|a| a['id']}).to eq assignment_ids.reverse
           expect(json['items']).to eq []
+        end
+
+        it 'should return only published assignments' do
+          assignment_ids = create_assignments([@course.id], 5)
+          Assignment.find(assignment_ids.last).unpublish!
+          cyoe_returns assignment_ids
+          json = call_select_mastery_path @assignment_tag, 100, @student.id
+          expect(json['assignments'].map {|a| a['id']}).to eq assignment_ids[0..-2]
         end
       end
     end
@@ -1508,7 +1526,7 @@ describe "Module Items API", type: :request do
 
   context "unauthorized user" do
     before :once do
-      user
+      user_factory
     end
 
     it "should check permissions" do

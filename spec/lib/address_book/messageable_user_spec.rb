@@ -15,7 +15,7 @@ describe AddressBook::MessageableUser do
     it "includes only known users" do
       teacher = teacher_in_course(active_all: true).user
       student1 = student_in_course(active_all: true).user
-      student2 = student_in_course(course: course(), active_all: true).user
+      student2 = student_in_course(course: course_factory(), active_all: true).user
       address_book = AddressBook::MessageableUser.new(teacher)
       known_users = address_book.known_users([student1, student2])
       expect(known_users.map(&:id)).to include(student1.id)
@@ -32,7 +32,7 @@ describe AddressBook::MessageableUser do
 
     it "caches the failure for unknown users" do
       teacher = teacher_in_course(active_all: true).user
-      student = student_in_course(course: course(), active_all: true).user
+      student = student_in_course(course: course_factory(), active_all: true).user
       address_book = AddressBook::MessageableUser.new(teacher)
       expect(address_book.known_users([student])).to be_empty
       expect(address_book.cached?(student)).to be_truthy
@@ -45,66 +45,78 @@ describe AddressBook::MessageableUser do
       student3 = student_in_course(active_all: true).user
       address_book = AddressBook::MessageableUser.new(teacher)
       address_book.known_users([student1, student2])
-      teacher.expects(:load_messageable_users).
+      expect(teacher).to receive(:load_messageable_users).
         with([student3], anything).
-        returns(MessageableUser.where(id: student3).to_a)
+        and_return(MessageableUser.where(id: student3).to_a)
       known_users = address_book.known_users([student2, student3])
       expect(known_users.map(&:id)).to include(student2.id)
       expect(known_users.map(&:id)).to include(student3.id)
     end
 
-    describe "with optional :include_context" do
+    describe "with optional :context" do
       before :each do
-        @admin = account_admin_user()
-        @student = student_in_course(active_all: true).user
-        @address_book = AddressBook::MessageableUser.new(@admin)
+        @recipient = user_model(workflow_state: 'registered')
+        @sender = user_model(workflow_state: 'registered')
+        @address_book = AddressBook::MessageableUser.new(@sender)
+
+        # recipient participates in three courses
+        @course1 = course_model(workflow_state: 'available')
+        @course2 = course_model(workflow_state: 'available')
+        @course3 = course_model(workflow_state: 'available')
+        student_in_course(user: @recipient, course: @course1, active_all: true)
+        student_in_course(user: @recipient, course: @course2, active_all: true)
+        student_in_course(user: @recipient, course: @course3, active_all: true)
+
+        # but only two are shared with sender (visible with the sender)
+        teacher_in_course(user: @sender, course: @course1, active_all: true)
+        teacher_in_course(user: @sender, course: @course2, active_all: true)
       end
 
-      it "skips course roles in unshared courses when absent" do
-        course = @student.enrollments.first.course
-        known_users = @address_book.known_users([@student])
-        expect(known_users.map(&:id)).to include(@student.id)
-        expect(@address_book.common_courses(@student)).not_to include(course.id)
+      it "includes all known contexts when absent" do
+        expect(@address_book.known_users([@recipient])).not_to be_empty
+        expect(@address_book.common_courses(@recipient)).to include(@course1.id)
+        expect(@address_book.common_courses(@recipient)).to include(@course2.id)
       end
 
-      it "skips group memberships in unshared groups when absent" do
-        group = group()
-        group.add_user(@student, 'accepted')
-        known_users = @address_book.known_users([@student])
-        expect(known_users.map(&:id)).to include(@student.id)
-        expect(@address_book.common_groups(@student)).not_to include(group.id)
+      it "excludes unknown contexts when absent, even if admin" do
+        account_admin_user(user: @sender, account: @course3.account)
+        expect(@address_book.known_users([@recipient])).not_to be_empty
+        expect(@address_book.common_courses(@recipient)).not_to include(@course3.id)
       end
 
-      it "includes otherwise skipped course role in common courses when course specified" do
-        course = @student.enrollments.first.course
-        @address_book.known_users([@student], include_context: course)
-        expect(@address_book.common_courses(@student)).to include(course.id)
+      it "excludes other known contexts when specified" do
+        expect(@address_book.known_users([@recipient], context: @course1)).not_to be_empty
+        expect(@address_book.common_courses(@recipient)).to include(@course1.id)
+        expect(@address_book.common_courses(@recipient)).not_to include(@course2.id)
       end
 
-      it "includes otherwise skipped groups memberships in common groups when group specified" do
-        group = group()
-        group.add_user(@student, 'accepted')
-        @address_book.known_users([@student], include_context: group)
-        expect(@address_book.common_groups(@student)).to include(group.id)
+      it "excludes specified unknown context when sender is non-admin" do
+        expect(@address_book.known_users([@recipient], context: @course3)).to be_empty
+        expect(@address_book.common_courses(@recipient)).not_to include(@course3.id)
       end
 
-      it "no effect if no role in the course exists" do
-        course = course(active_all: true)
-        @address_book.known_users([@student], include_context: course)
-        expect(@address_book.common_courses(@student)).not_to include(course.id)
+      it "excludes specified unknown course when sender is a participant admin" do
+        # i.e. the sender does partipate in the course, at a level that
+        # nominally gives them read_as_admin (e.g. teacher, usually), but still
+        # doesn't know of recipient's participation, likely because of section
+        # limited enrollment.
+        section = @course3.course_sections.create!
+        teacher_in_course(user: @sender, course: @course3, active_all: true, section: section, limit_privileges_to_course_section: true)
+        expect(@address_book.known_users([@recipient], context: @course3)).to be_empty
+        expect(@address_book.common_courses(@recipient)).not_to include(@course3.id)
       end
 
-      it "no effect if no membership in the group exists" do
-        group = group()
-        @address_book.known_users([@student], include_context: group)
-        expect(@address_book.common_courses(@student)).not_to include(group.id)
+      it "includes specified unknown context when sender is non-participant admin" do
+        account_admin_user(user: @sender, account: @course3.account)
+        expect(@address_book.known_users([@recipient], context: @course3)).not_to be_empty
+        expect(@address_book.common_courses(@recipient)).to include(@course3.id)
       end
     end
 
     describe "with optional :conversation_id" do
       it "treats unknown users in that conversation as known" do
-        course1 = course(active_all: true)
-        course2 = course(active_all: true)
+        course1 = course_factory(active_all: true)
+        course2 = course_factory(active_all: true)
         teacher = teacher_in_course(course: course1, active_all: true).user
         student = student_in_course(course: course2, active_all: true).user
         conversation = Conversation.initiate([teacher, student], true)
@@ -114,8 +126,8 @@ describe AddressBook::MessageableUser do
       end
 
       it "ignores if sender is not a participant in the conversation" do
-        course1 = course(active_all: true)
-        course2 = course(active_all: true)
+        course1 = course_factory(active_all: true)
+        course2 = course_factory(active_all: true)
         teacher = teacher_in_course(course: course1, active_all: true).user
         student1 = student_in_course(course: course2, active_all: true).user
         student2 = student_in_course(course: course2, active_all: true).user
@@ -133,7 +145,7 @@ describe AddressBook::MessageableUser do
         enrollment = @shard1.activate{ teacher_in_course(active_all: true) }
         teacher = enrollment.user
         course = enrollment.course
-        student = @shard2.activate{ user(active_all: true) }
+        student = @shard2.activate{ user_factory(active_all: true) }
         student_in_course(course: course, user: student, active_all: true)
         address_book = AddressBook::MessageableUser.new(teacher)
         known_users = address_book.known_users([student])
@@ -153,7 +165,7 @@ describe AddressBook::MessageableUser do
 
     it "returns nil if not known" do
       teacher = teacher_in_course(active_all: true).user
-      other = user(active_all: true)
+      other = user_factory(active_all: true)
       address_book = AddressBook::MessageableUser.new(teacher)
       known_user = address_book.known_user(other)
       expect(known_user).to be_nil
@@ -174,8 +186,8 @@ describe AddressBook::MessageableUser do
 
   describe "common_groups" do
     it "pulls the corresponding MessageableUser's common_groups" do
-      sender = user(active_all: true)
-      recipient = user(active_all: true)
+      sender = user_factory(active_all: true)
+      recipient = user_factory(active_all: true)
       group = group()
       group.add_user(sender, 'accepted')
       group.add_user(recipient, 'accepted')
@@ -187,8 +199,8 @@ describe AddressBook::MessageableUser do
 
   describe "known_in_context" do
     it "limits to users in context" do
-      course1 = course(active_all: true)
-      course2 = course(active_all: true)
+      course1 = course_factory(active_all: true)
+      course2 = course_factory(active_all: true)
       teacher = teacher_in_course(course: course1, active_all: true).user
       teacher_in_course(user: teacher, course: course2, active_all: true)
       student1 = student_in_course(course: course1, active_all: true).user
@@ -197,26 +209,6 @@ describe AddressBook::MessageableUser do
       known_users = address_book.known_in_context(course1.asset_string)
       expect(known_users.map(&:id)).to include(student1.id)
       expect(known_users.map(&:id)).not_to include(student2.id)
-    end
-
-    describe ":is_admin flag" do
-      before :each do
-        admin = account_admin_user(active_all: true)
-        enrollment = student_in_course(active_all: true)
-        @student = enrollment.user
-        @course = enrollment.course
-        @address_book = AddressBook::MessageableUser.new(admin)
-      end
-
-      it "ignores unassociated courses without is_admin flag" do
-        known_users = @address_book.known_in_context(@course.asset_string)
-        expect(known_users.map(&:id)).not_to include(@student.id)
-      end
-
-      it "finds user in an unassociated course with is_admin flag" do
-        known_users = @address_book.known_in_context(@course.asset_string, is_admin: true)
-        expect(known_users.map(&:id)).to include(@student.id)
-      end
     end
 
     it "caches the results for known users" do
@@ -233,7 +225,7 @@ describe AddressBook::MessageableUser do
       enrollment = teacher_in_course(active_all: true)
       teacher = enrollment.user
       course1 = enrollment.course
-      student = student_in_course(course: course(), active_all: true).user
+      student = student_in_course(course: course_factory(), active_all: true).user
       address_book = AddressBook::MessageableUser.new(teacher)
       address_book.known_in_context(course1.asset_string)
       expect(address_book.cached?(student)).to be_falsey
@@ -246,7 +238,7 @@ describe AddressBook::MessageableUser do
         enrollment = @shard1.activate{ teacher_in_course(active_all: true) }
         @teacher = enrollment.user
         @course = enrollment.course
-        @student = @shard2.activate{ user(active_all: true) }
+        @student = @shard2.activate{ user_factory(active_all: true) }
         student_in_course(course: @course, user: @student, active_all: true)
       end
 
@@ -309,8 +301,8 @@ describe AddressBook::MessageableUser do
     end
 
     it "restricts to matching known users in optional :context" do
-      course1 = course(active_all: true)
-      course2 = course(active_all: true)
+      course1 = course_factory(active_all: true)
+      course2 = course_factory(active_all: true)
       teacher = teacher_in_course(course: course1, active_all: true).user
       teacher_in_course(user: teacher, course: course2, active_all: true)
       student1 = student_in_course(course: course1, active_all: true, name: 'Bob').user
@@ -321,14 +313,26 @@ describe AddressBook::MessageableUser do
       expect(known_users.map(&:id)).not_to include(student2.id)
     end
 
-    it "finds users in an unassociated :context when :is_admin" do
+    it "finds users in an unassociated :context when an admin" do
       admin = account_admin_user(active_all: true)
       enrollment = student_in_course(active_all: true, name: 'Bob')
       student = enrollment.user
       course = enrollment.course
       address_book = AddressBook::MessageableUser.new(admin)
-      known_users = address_book.search_users(search: 'Bob', context: course.asset_string, is_admin: true).paginate(per_page: 10)
+      known_users = address_book.search_users(search: 'Bob', context: course.asset_string).paginate(per_page: 10)
       expect(known_users.map(&:id)).to include(student.id)
+    end
+
+    it "excludes users in an admined :context when also participating" do
+      admin = account_admin_user(active_all: true)
+      enrollment = student_in_course(active_all: true, name: 'Bob')
+      student = enrollment.user
+      course = enrollment.course
+      section = course.course_sections.create!
+      teacher_in_course(user: admin, course: course, active_all: true, section: section, limit_privileges_to_course_section: true)
+      address_book = AddressBook::MessageableUser.new(admin)
+      known_users = address_book.search_users(search: 'Bob', context: course.asset_string).paginate(per_page: 10)
+      expect(known_users.map(&:id)).not_to include(student.id)
     end
 
     it "excludes 'weak' users without :weak_checks" do

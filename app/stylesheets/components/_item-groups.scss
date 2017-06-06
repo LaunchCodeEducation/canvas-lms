@@ -338,9 +338,17 @@
   align-items: center;
   background-color: $ic-font-color--subdued;
   color: $ic-color-light;
-
+  &::before {
+    font-size: 1rem;
+  }
   .ig-published:not(.student-view) & {
     background-color: $ic-color-success;
+  }
+  & i[class*=icon-],
+  & i[class^=icon-], {
+    &::before {
+      top: 0;
+    }
   }
 }
 
@@ -388,7 +396,7 @@
   padding-left: $ic-sp;
   @include breakpoint(desktop) { padding-left: 0; }
 
-  .publish-icon {
+  .publish-icon, .lock-icon {
     margin-right: $ic-sp/2;
     i[class*=icon-]:before,
     i[class^=icon-]:before { @include fontSize(18px); }

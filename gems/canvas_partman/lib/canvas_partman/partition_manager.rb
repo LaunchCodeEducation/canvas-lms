@@ -21,7 +21,7 @@ See CanvasPartman::Concerns::Partitioned.
     # Create partitions to hold existing data in a non-partitioned
     # table, and n future partitions
     #
-    # @param [Fixnum] advance
+    # @param [Integer] advance
     #   The number of partitions to create in advance
     def create_initial_partitions(_advance = 1)
       raise NotImplementedError
@@ -29,7 +29,7 @@ See CanvasPartman::Concerns::Partitioned.
 
     # Ensure the current partition, and n future partitions exist
     #
-    # @param [Fixnum] advance
+    # @param [Integer] advance
     #   The number of partitions to create in advance
     def ensure_partitions(_advance = 1)
       raise NotImplementedError
@@ -37,14 +37,14 @@ See CanvasPartman::Concerns::Partitioned.
 
     # Prune old partitions
     #
-    # @param [Fixnum] number_to_keep
+    # @param [Integer] number_to_keep
     #   The number of partitions to keep (excluding the current partition)
     def prune_partitions(_number_to_keep = 6)
     end
 
     # Create a new partition table.
     #
-    # @param [Boolean] graceful
+    # @param [Integer] graceful
     #   Do nothing if the partition table already exists.
     #
     # @return [String]
@@ -65,6 +65,11 @@ See CanvasPartman::Concerns::Partitioned.
       ) INHERITS (#{base_class.quoted_table_name})
 SQL
 
+      # copy foreign keys, since INCLUDING ALL won't bring them along
+      base_class.connection.foreign_keys(base_class.table_name).each do |foreign_key|
+        base_class.connection.add_foreign_key partition_table, foreign_key.to_table, foreign_key.options.except(:name)
+      end
+
       partition_table
     end
 
@@ -73,7 +78,10 @@ SQL
     end
 
     def partition_exists?(table_name)
-      base_class.connection.table_exists?(table_name)
+      # CANVAS_RAILS5_0 - don't silence this deprecation in 5.1
+      ActiveSupport::Deprecation.silence do
+        base_class.connection.table_exists?(table_name)
+      end
     end
 
     def drop_partition(value)

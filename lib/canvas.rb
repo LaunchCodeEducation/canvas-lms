@@ -57,15 +57,7 @@ module Canvas
       # Config
       require_dependency 'lib/config_file'
       @cache_stores = {}
-      configs = ConfigFile.load('cache_store', nil) || {}
-
-      # sanity check the file
-      unless configs.is_a?(Hash)
-        raise <<-EOS
-          Invalid config/cache_store.yml: Root is not a hash. See comments in
-          config/cache_store.yml.example
-        EOS
-      end
+      configs = ConfigFile.load('cache_store', false) || {}
 
       non_hashes = configs.keys.select { |k| !configs[k].is_a?(Hash) }
       non_hashes.reject! { |k| configs[k].is_a?(String) && configs[configs[k]].is_a?(Hash) }
@@ -78,19 +70,8 @@ module Canvas
       end
 
       configs.each do |env, config|
-        if config.is_a?(String)
-          # switchman will treat strings as a link to another database server
-          @cache_stores[env] = config
-          next
-        end
-        config = {'cache_store' => 'mem_cache_store'}.merge(config)
+        config = {'cache_store' => 'nil_store'}.merge(config)
         case config.delete('cache_store')
-        when 'mem_cache_store'
-          config['namespace'] ||= config['key']
-          servers = config['servers'] || (ConfigFile.load('memcache', env))
-          if servers
-            @cache_stores[env] = :mem_cache_store, servers, config
-          end
         when 'redis_store'
           Bundler.require 'redis'
           require_dependency 'canvas/redis'
@@ -169,6 +150,35 @@ module Canvas
     end
   end
 
+  DEFAULT_RETRY_CALLBACK = -> (ex, tries) {
+      Rails.logger.debug do
+        {
+          error_class: ex.class,
+          error_message: ex.message,
+          error_backtrace: ex.backtrace,
+          tries: tries,
+          message: "Retrying service call!"
+        }.to_json
+      end
+    }
+
+  DEFAULT_RETRIABLE_OPTIONS = {
+    interval: -> (attempts) { 0.5 + 4 ** (attempts - 1) }, # Sleeps: 0.5, 4.5, 16.5
+    on_retry: DEFAULT_RETRY_CALLBACK,
+    tries: 3,
+  }.freeze
+  def self.retriable(opts = {}, &block)
+    if opts[:on_retry]
+      original_callback = opts[:on_retry]
+      opts[:on_retry] = -> (ex, tries) {
+        original_callback.call(ex, tries)
+        DEFAULT_RETRY_CALLBACK.call(ex, tries)
+      }
+    end
+    options = DEFAULT_RETRIABLE_OPTIONS.merge(opts)
+    Retriable.retriable(options, &block)
+  end
+
   def self.installation_uuid
     installation_uuid = Setting.get("installation_uuid", "")
     if installation_uuid == ""
@@ -179,7 +189,12 @@ module Canvas
   end
 
   def self.timeout_protection_error_ttl(service_name)
-    (Setting.get("service_#{service_name}_error_ttl", nil) || Setting.get("service_generic_error_ttl", 1.minute.to_s)).to_i
+    (Setting.get("service_#{service_name}_error_ttl", nil) ||
+     Setting.get("service_generic_error_ttl", 1.minute.to_s)).to_i
+  end
+
+  def self.timeout_protection_method(service_name)
+    Setting.get("service_#{service_name}_timeout_protection_method", nil)
   end
 
   # protection against calling external services that could timeout or misbehave.
@@ -196,10 +211,11 @@ module Canvas
     timeout = (Setting.get("service_#{service_name}_timeout", nil) || options[:fallback_timeout_length] || Setting.get("service_generic_timeout", 15.seconds.to_s)).to_f
 
     if Canvas.redis_enabled?
-      redis_key = "service:timeouts:#{service_name}"
-      cutoff = (Setting.get("service_#{service_name}_cutoff", nil) || Setting.get("service_generic_cutoff", 3.to_s)).to_i
-      error_ttl = timeout_protection_error_ttl(service_name)
-      short_circuit_timeout(Canvas.redis, redis_key, timeout, cutoff, error_ttl, &block)
+      if timeout_protection_method(service_name) == "percentage"
+        percent_short_circuit_timeout(Canvas.redis, service_name, timeout, &block)
+      else
+        short_circuit_timeout(Canvas.redis, service_name, timeout, &block)
+      end
     else
       Timeout.timeout(timeout, &block)
     end
@@ -214,7 +230,15 @@ module Canvas
     return nil
   end
 
-  def self.short_circuit_timeout(redis, redis_key, timeout, cutoff, error_ttl, &block)
+  def self.timeout_protection_cutoff(service_name)
+    (Setting.get("service_#{service_name}_cutoff", nil) ||
+     Setting.get("service_generic_cutoff", 3.to_s)).to_i
+  end
+
+  def self.short_circuit_timeout(redis, service_name, timeout, &block)
+    redis_key = "service:timeouts:#{service_name}:error_count"
+    cutoff = timeout_protection_cutoff(service_name)
+
     error_count = redis.get(redis_key)
     if error_count.to_i >= cutoff
       raise TimeoutCutoff.new(error_count)
@@ -223,8 +247,58 @@ module Canvas
     begin
       Timeout.timeout(timeout, &block)
     rescue Timeout::Error => e
+      error_ttl = timeout_protection_error_ttl(service_name)
       redis.incrby(redis_key, 1)
       redis.expire(redis_key, error_ttl)
+      raise
+    end
+  end
+
+  def self.timeout_protection_failure_rate_cutoff(service_name)
+    (Setting.get("service_#{service_name}_failure_rate_cutoff", nil) ||
+     Setting.get("service_generic_failure_rate_cutoff", ".2")).to_f
+  end
+
+  def self.timeout_protection_failure_counter_window(service_name)
+    (Setting.get("service_#{service_name}_counter_window", nil) ||
+     Setting.get("service_generic_counter_window", 60.to_s)).to_i
+  end
+
+  def self.timeout_protection_failure_min_samples(service_name)
+    (Setting.get("service_#{service_name}_min_samples", nil) ||
+     Setting.get("service_generic_min_samples", 100.to_s)).to_i
+  end
+
+  def self.percent_short_circuit_timeout(redis, service_name, timeout, &block)
+    redis_key = "service:timeouts:#{service_name}:percent_counter"
+    cutoff = timeout_protection_failure_rate_cutoff(service_name)
+
+    protection_activated_key = "#{redis_key}:protection_activated"
+    protection_activated = redis.get(protection_activated_key)
+    raise TimeoutCutoff.new(cutoff) if protection_activated
+
+    counter_window = timeout_protection_failure_counter_window(service_name)
+    min_samples = timeout_protection_failure_min_samples(service_name)
+    counter = FailurePercentCounter.new(redis, redis_key, counter_window, min_samples)
+
+    failure_rate = counter.failure_rate
+    if failure_rate >= cutoff
+      # We add the key for timeout protection here, instead of in the
+      # error block below, because in a previous run, we could go over
+      # the minimum number of samples with a non-timedout call.  This
+      # has the added benefit of making the error block below much
+      # smaller.
+      error_ttl = timeout_protection_error_ttl(service_name)
+      redis.set(protection_activated_key, "true")
+      redis.expire(protection_activated_key, error_ttl)
+      raise TimeoutCutoff.new(failure_rate)
+    end
+
+    begin
+      counter.increment_count
+      Timeout.timeout(timeout, &block)
+    rescue Timeout::Error
+      counter.increment_failure
       raise
     end
   end

@@ -49,7 +49,7 @@ define [
 
     app.render()
 
-  module 'assignmentIndex',
+  QUnit.module 'assignmentIndex',
     setup: ->
       fakeENV.setup(PERMISSIONS: {manage: true})
       @enable_spy = @spy(IndexView.prototype, 'enableSearch')
@@ -102,8 +102,22 @@ define [
     ok view.$("#assignment_1 .modules").text().match(/One\s+Two/)
     ok view.$("#assignment_2 .modules").text().match(/Three Module/)
 
+  test "should show 'Add Quiz/Test' button if quiz lti is enabled", ->
+    ENV.PERMISSIONS.manage_course = true
+    ENV.QUIZ_LTI_ENABLED = true
+    view = assignmentIndex()
+    $button = view.$('.new_quiz_lti')
+    equal $button.length, 1
+    ok /\?quiz_lti$/.test $button.attr('href')
 
-  module 'student index view',
+  test "should not show 'Add Quiz/Test' button if quiz lti is not enabled", ->
+    ENV.PERMISSIONS.manage_course = true
+    ENV.QUIZ_LTI_ENABLED = false
+    view = assignmentIndex()
+    equal $('.new_quiz_lti').length, 0
+
+
+  QUnit.module 'student index view',
     setup: ->
       fakeENV.setup(PERMISSIONS: {manage: false})
 

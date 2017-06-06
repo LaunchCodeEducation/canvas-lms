@@ -17,7 +17,7 @@
 #
 
 class CrocodocSessionsController < ApplicationController
-  before_filter :require_user
+  before_action :require_user
   include HmacHelper
 
   def show
@@ -46,13 +46,13 @@ class CrocodocSessionsController < ApplicationController
 
       redirect_to url
     else
-      render :text => "Not found", :status => :not_found
+      render :plain => "Not found", :status => :not_found
     end
 
   rescue HmacHelper::Error
-    render :text => 'unauthorized', :status => :unauthorized
+    render :plain => 'unauthorized', :status => :unauthorized
   rescue Timeout::Error
-    render :text => "Service is currently unavailable. Try again later.",
+    render :plain => "Service is currently unavailable. Try again later.",
            :status => :service_unavailable
   end
 end

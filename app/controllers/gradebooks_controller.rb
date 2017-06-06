@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 - 2014 Instructure, Inc.
+# Copyright (C) 2011 - 2017 Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -25,18 +25,18 @@ class GradebooksController < ApplicationController
   include Api::V1::CustomGradebookColumn
   include Api::V1::Section
 
-  before_filter :require_context
-  before_filter :require_user, only: [:speed_grader, :speed_grader_settings, :grade_summary]
+  before_action :require_context
+  before_action :require_user, only: [:speed_grader, :speed_grader_settings, :grade_summary]
 
   batch_jobs_in_actions :only => :update_submission, :batch => { :priority => Delayed::LOW_PRIORITY }
 
   add_crumb(proc { t '#crumbs.grades', "Grades" }) { |c| c.send :named_context_url, c.instance_variable_get("@context"), :context_grades_url }
-  before_filter { |c| c.active_tab = "grades" }
+  before_action { |c| c.active_tab = "grades" }
 
   MAX_POST_GRADES_TOOLS = 10
 
   def grade_summary
-    set_current_grading_period if multiple_grading_periods?
+    set_current_grading_period if grading_periods?
     @presenter = grade_summary_presenter
     # do this as the very first thing, if the current user is a
     # teacher in the course and they are not trying to view another
@@ -59,18 +59,18 @@ class GradebooksController < ApplicationController
     add_crumb(@presenter.student_name, named_context_url(@context, :context_student_grades_url,
                                                          @presenter.student_id))
     gp_id = nil
-    if multiple_grading_periods?
+    if grading_periods?
       @grading_periods = active_grading_periods_json
       gp_id = @current_grading_period_id unless view_all_grading_periods?
+      effective_due_dates = EffectiveDueDates.new(@context).to_hash
     end
 
     @exclude_total = exclude_total?(@context)
+
     Shackles.activate(:slave) do
       # run these queries on the slave database for speed
       @presenter.assignments
-      @presenter.groups_assignments = groups_as_assignments(@presenter.groups,
-                                                            :out_of_final => true,
-                                                            :exclude_total => @exclude_total)
+      aggregate_assignments
       @presenter.submissions
       @presenter.submission_counts
       @presenter.assignment_stats
@@ -89,7 +89,6 @@ class GradebooksController < ApplicationController
 
     grading_period = @grading_periods && @grading_periods.find { |period| period[:id] == gp_id }
 
-
     ags_json = light_weight_ags_json(@presenter.groups, {student: @presenter.student})
 
     grading_scheme = @context.grading_standard.try(:data) ||
@@ -100,7 +99,10 @@ class GradebooksController < ApplicationController
            group_weighting_scheme: @context.group_weighting_scheme,
            show_total_grade_as_points: @context.settings[:show_total_grade_as_points],
            grading_scheme: grading_scheme,
+           grading_period_set: grading_period_group_json,
            grading_period: grading_period,
+           grading_periods: @grading_periods,
+           effective_due_dates: effective_due_dates,
            exclude_total: @exclude_total,
            student_outcome_gradebook_enabled: @context.feature_enabled?(:student_outcome_gradebook),
            student_id: @presenter.student_id)
@@ -116,16 +118,19 @@ class GradebooksController < ApplicationController
       @current_user.preferences[:course_grades_assignment_order] ||= {}
       @current_user.preferences[:course_grades_assignment_order][@context.id] = assignment_order
       @current_user.save!
-      redirect_to :back
+      if CANVAS_RAILS4_2
+        redirect_to :back
+      else
+        redirect_back(fallback_location: course_grades_url(@context))
+      end
     end
   end
 
   def light_weight_ags_json(assignment_groups, opts={})
     assignment_groups.map do |ag|
-      visible_assignments = ag.visible_assignments(opts[:student] || @current_user)
-                              .reject(&:muted?)
+      visible_assignments = ag.visible_assignments(opts[:student] || @current_user).to_a
 
-      if multiple_grading_periods? && @current_grading_period_id && !view_all_grading_periods?
+      if grading_periods? && @current_grading_period_id && !view_all_grading_periods?
         current_period = GradingPeriod.for(@context).find_by(id: @current_grading_period_id)
         visible_assignments = current_period.assignments_for_student(visible_assignments, opts[:student])
       end
@@ -136,7 +141,8 @@ class GradebooksController < ApplicationController
           submission_types: a.submission_types_array,
           points_possible: a.points_possible,
           due_at: a.due_at,
-          omit_from_final_grade: a.omit_from_final_grade?
+          omit_from_final_grade: a.omit_from_final_grade?,
+          muted: a.muted?
         }
       end
 
@@ -193,24 +199,34 @@ class GradebooksController < ApplicationController
   def show
     if authorized_action(@context, @current_user, [:manage_grades, :view_all_grades])
       @last_exported_gradebook_csv = GradebookCsv.last_successful_export(course: @context, user: @current_user)
-      set_current_grading_period if multiple_grading_periods?
+      set_current_grading_period if grading_periods?
       set_js_env
+      set_tutorial_js_env
       @course_is_concluded = @context.completed?
       @post_grades_tools = post_grades_tools
 
-      case @current_user.preferred_gradebook_version
-      when "2"
-        render :gradebook2
-        return
-      when "srgb"
-        render :screenreader
-        return
+      version = @current_user.preferred_gradebook_version
+      if @context.root_account.feature_enabled?(:gradezilla)
+        # params[:version] is a temporary gradezilla feature to help devs flip back and forth
+        # between gradebook versions. This param should never be used in the UI.
+        case params[:version]
+        when 'srgb'
+          render :screenreader and return
+        when '2'
+          render :gradebook and return
+        when 'gradezilla-individual'
+          render 'gradebooks/gradezilla/individual' and return
+        when 'gradezilla-gradebook'
+          render 'gradebooks/gradezilla/gradebook' and return
+        else # fallback to the current user's preferences hash
+          render 'gradebooks/gradezilla/individual' and return if version == 'individual'
+          render 'gradebooks/gradezilla/gradebook' and return
+        end
+      else
+        render :screenreader and return if version == 'srgb'
+        render :gradebook and return
       end
     end
-  end
-
-  def gradebook2
-    redirect_to action: :show
   end
 
   def post_grades_tools
@@ -219,15 +235,17 @@ class GradebooksController < ApplicationController
 
     tools = external_tools[0...tool_limit]
     tools.push(type: :post_grades) if @context.feature_enabled?(:post_grades)
-    tools.push(type: :ellip) if external_tools.length > tool_limit
     tools
   end
 
   def external_tool_detail(tool)
+    post_grades_placement = tool[:placements][:post_grades]
     {
-      data_url: tool[:placements][:post_grades][:canvas_launch_url],
+      data_url: post_grades_placement[:canvas_launch_url],
       name: tool[:name],
-      type: :lti
+      type: :lti,
+      data_width: post_grades_placement[:launch_width],
+      data_height: post_grades_placement[:launch_height]
     }
   end
 
@@ -278,104 +296,123 @@ class GradebooksController < ApplicationController
     @current_grading_period_id == 0
   end
 
+  def grading_period_group
+    return @grading_period_group if defined? @grading_period_group
+
+    @grading_period_group = active_grading_periods.first&.grading_period_group
+  end
+
   def active_grading_periods
     @active_grading_periods ||= GradingPeriod.for(@context).sort_by(&:start_date)
+  end
+
+  def grading_period_group_json
+    return @grading_period_group_json if defined? @grading_period_group_json
+    return @grading_period_group_json = nil unless grading_period_group.present?
+
+    @grading_period_group_json = grading_period_group
+      .as_json
+      .fetch(:grading_period_group)
+      .merge(grading_periods: active_grading_periods_json)
   end
 
   def active_grading_periods_json
     @agp_json ||= GradingPeriod.periods_json(active_grading_periods, @current_user)
   end
 
-  def latest_end_date_of_admin_created_grading_periods_in_the_past
-    periods = active_grading_periods.select do |period|
-      admin_created = period.account_group?
-      admin_created && period.end_date.past?
-    end
-    periods.map(&:end_date).compact.sort.last
-  end
-  private :latest_end_date_of_admin_created_grading_periods_in_the_past
-
   def set_js_env
     @gradebook_is_editable = @context.grants_right?(@current_user, session, :manage_grades)
     per_page = Setting.get('api_max_per_page', '50').to_i
-    teacher_notes = @context.custom_gradebook_columns.not_deleted.where(:teacher_notes=> true).first
-    ag_includes = [:assignments, :assignment_visibility, 'overrides']
+    teacher_notes = @context.custom_gradebook_columns.not_deleted.where(teacher_notes: true).first
+    ag_includes = [:assignments, :assignment_visibility]
     chunk_size = if @context.assignments.published.count < Setting.get('gradebook2.assignments_threshold', '20').to_i
-      Setting.get('gradebook2.submissions_chunk_size', '35').to_i
-    else
-      Setting.get('gradebook2.many_submissions_chunk_size', '10').to_i
-    end
-    js_env  :GRADEBOOK_OPTIONS => {
-      :chunk_size => chunk_size,
-      :assignment_groups_url => api_v1_course_assignment_groups_url(
+                   Setting.get('gradebook2.submissions_chunk_size', '35').to_i
+                 else
+                   Setting.get('gradebook2.many_submissions_chunk_size', '10').to_i
+                 end
+    js_env STUDENT_CONTEXT_CARDS_ENABLED: @domain_root_account.feature_enabled?(:student_context_cards)
+    js_env GRADEBOOK_OPTIONS: {
+      gradezilla: @context.root_account.feature_enabled?(:gradezilla),
+      chunk_size: chunk_size,
+      assignment_groups_url: api_v1_course_assignment_groups_url(
         @context,
         include: ag_includes,
         override_assignment_dates: "false",
         exclude_assignment_submission_types: ['wiki_page']
       ),
-      :sections_url => api_v1_course_sections_url(@context),
-      :course_url => api_v1_course_url(@context),
-      :enrollments_url => custom_course_enrollments_api_url(per_page: per_page),
-      :enrollments_with_concluded_url =>
+      sections_url: api_v1_course_sections_url(@context),
+      course_url: api_v1_course_url(@context),
+      effective_due_dates_url: api_v1_course_effective_due_dates_url(@context),
+      enrollments_url: custom_course_enrollments_api_url(per_page: per_page),
+      enrollments_with_concluded_url:
         custom_course_enrollments_api_url(include_concluded: true, per_page: per_page),
-      :enrollments_with_inactive_url =>
+      enrollments_with_inactive_url:
         custom_course_enrollments_api_url(include_inactive: true, per_page: per_page),
-      :enrollments_with_concluded_and_inactive_url =>
+      enrollments_with_concluded_and_inactive_url:
         custom_course_enrollments_api_url(include_concluded: true, include_inactive: true, per_page: per_page),
-      :students_url => custom_course_users_api_url(per_page: per_page),
-      :students_with_concluded_enrollments_url =>
+      students_url: custom_course_users_api_url(per_page: per_page),
+      students_with_concluded_enrollments_url:
         custom_course_users_api_url(include_concluded: true, per_page: per_page),
-      :students_with_inactive_enrollments_url =>
+      students_with_inactive_enrollments_url:
         custom_course_users_api_url(include_inactive: true, per_page: per_page),
-      :students_with_concluded_and_inactive_enrollments_url =>
+      students_with_concluded_and_inactive_enrollments_url:
         custom_course_users_api_url(include_concluded: true, include_inactive: true, per_page: per_page),
-      :submissions_url => api_v1_course_student_submissions_url(@context, :grouped => '1'),
-      :outcome_links_url => api_v1_course_outcome_group_links_url(@context, :outcome_style => :full),
-      :outcome_rollups_url => api_v1_course_outcome_rollups_url(@context, :per_page => 100),
-      :change_grade_url => api_v1_course_assignment_submission_url(@context, ":assignment", ":submission", :include =>[:visibility]),
-      :context_url => named_context_url(@context, :context_url),
-      :download_assignment_submissions_url => named_context_url(@context, :context_assignment_submissions_url, "{{ assignment_id }}", :zip => 1),
-      :re_upload_submissions_url => named_context_url(@context, :submissions_upload_context_gradebook_url, "{{ assignment_id }}"),
-      :context_id => @context.id,
-      :context_code => @context.asset_string,
-      :context_sis_id => @context.sis_source_id,
-      :group_weighting_scheme => @context.group_weighting_scheme,
-      :grading_standard =>  @context.grading_standard_enabled? && (@context.grading_standard.try(:data) || GradingStandard.default_grading_standard),
-      :course_is_concluded => @context.completed?,
-      :course_name => @context.name,
-      :gradebook_is_editable => @gradebook_is_editable,
-      :setting_update_url => api_v1_course_settings_url(@context),
-      :show_total_grade_as_points => @context.settings[:show_total_grade_as_points],
-      :publish_to_sis_enabled => @context.allows_grade_publishing_by(@current_user) && @gradebook_is_editable,
-      :publish_to_sis_url => context_url(@context, :context_details_url, :anchor => 'tab-grade-publishing'),
-      :speed_grader_enabled => @context.allows_speed_grader?,
-      :multiple_grading_periods_enabled => multiple_grading_periods?,
-      :active_grading_periods => active_grading_periods_json,
-      :latest_end_date_of_admin_created_grading_periods_in_the_past => latest_end_date_of_admin_created_grading_periods_in_the_past,
-      :current_grading_period_id => @current_grading_period_id,
-      :outcome_gradebook_enabled => @context.feature_enabled?(:outcome_gradebook),
-      :custom_columns_url => api_v1_course_custom_gradebook_columns_url(@context),
-      :custom_column_url => api_v1_course_custom_gradebook_column_url(@context, ":id"),
-      :custom_column_data_url => api_v1_course_custom_gradebook_column_data_url(@context, ":id", per_page: per_page),
-      :custom_column_datum_url => api_v1_course_custom_gradebook_column_datum_url(@context, ":id", ":user_id"),
-      :reorder_custom_columns_url => api_v1_custom_gradebook_columns_reorder_url(@context),
-      :teacher_notes => teacher_notes && custom_gradebook_column_json(teacher_notes, @current_user, session),
-      :change_gradebook_version_url => context_url(@context, :change_gradebook_version_context_gradebook_url, :version => 2),
-      :export_gradebook_csv_url => course_gradebook_csv_url,
-      :gradebook_csv_progress => @last_exported_gradebook_csv.try(:progress),
-      :attachment_url => @last_exported_gradebook_csv.try(:attachment).try(:download_url),
-      :attachment => @last_exported_gradebook_csv.try(:attachment),
-      :sis_app_url => Setting.get('sis_app_url', nil),
-      :sis_app_token => Setting.get('sis_app_token', nil),
-      :list_students_by_sortable_name_enabled => @context.list_students_by_sortable_name?,
-      :gradebook_column_size_settings => @current_user.preferences[:gradebook_column_size],
-      :gradebook_column_size_settings_url => change_gradebook_column_size_course_gradebook_url,
-      :gradebook_column_order_settings => @current_user.preferences[:gradebook_column_order].try(:[], @context.id),
-      :gradebook_column_order_settings_url => save_gradebook_column_order_course_gradebook_url,
-      :all_grading_periods_totals => @context.feature_enabled?(:all_grading_periods_totals),
-      :sections => sections_json(@context.active_course_sections, @current_user, session),
-      :settings_update_url => api_v1_course_gradebook_settings_update_url(@context),
-      :settings => @current_user.preferences.fetch(:gradebook_settings, {}).fetch(@context.id, {}),
+      submissions_url: api_v1_course_student_submissions_url(@context, grouped: '1'),
+      outcome_links_url: api_v1_course_outcome_group_links_url(@context, outcome_style: :full),
+      outcome_rollups_url: api_v1_course_outcome_rollups_url(@context, per_page: 100),
+      change_grade_url:
+        api_v1_course_assignment_submission_url(@context, ":assignment", ":submission", include: [:visibility]),
+      context_url: named_context_url(@context, :context_url),
+      download_assignment_submissions_url:
+        named_context_url(@context, :context_assignment_submissions_url, "{{ assignment_id }}", zip: 1),
+      re_upload_submissions_url:
+        named_context_url(@context, :submissions_upload_context_gradebook_url, "{{ assignment_id }}"),
+      context_id: @context.id.to_s,
+      context_code: @context.asset_string,
+      context_sis_id: @context.sis_source_id,
+      group_weighting_scheme: @context.group_weighting_scheme,
+      grading_standard: (
+        @context.grading_standard_enabled? &&
+        (@context.grading_standard.try(:data) || GradingStandard.default_grading_standard)
+      ),
+      course_is_concluded: @context.completed?,
+      course_name: @context.name,
+      gradebook_is_editable: @gradebook_is_editable,
+      context_allows_gradebook_uploads: @context.allows_gradebook_uploads?,
+      gradebook_import_url: new_course_gradebook_upload_path(@context),
+      setting_update_url: api_v1_course_settings_url(@context),
+      show_total_grade_as_points: @context.settings[:show_total_grade_as_points],
+      publish_to_sis_enabled: @context.allows_grade_publishing_by(@current_user) && @gradebook_is_editable,
+      publish_to_sis_url: context_url(@context, :context_details_url, anchor: 'tab-grade-publishing'),
+      speed_grader_enabled: @context.allows_speed_grader?,
+      active_grading_periods: active_grading_periods_json,
+      grading_period_set: grading_period_group_json,
+      current_grading_period_id: @current_grading_period_id,
+      outcome_gradebook_enabled: @context.feature_enabled?(:outcome_gradebook),
+      custom_columns_url: api_v1_course_custom_gradebook_columns_url(@context),
+      custom_column_url: api_v1_course_custom_gradebook_column_url(@context, ":id"),
+      custom_column_data_url: api_v1_course_custom_gradebook_column_data_url(@context, ":id", per_page: per_page),
+      custom_column_datum_url: api_v1_course_custom_gradebook_column_datum_url(@context, ":id", ":user_id"),
+      reorder_custom_columns_url: api_v1_custom_gradebook_columns_reorder_url(@context),
+      teacher_notes: teacher_notes && custom_gradebook_column_json(teacher_notes, @current_user, session),
+      change_gradebook_version_url: context_url(@context, :change_gradebook_version_context_gradebook_url, version: 2),
+      export_gradebook_csv_url: course_gradebook_csv_url,
+      gradebook_csv_progress: @last_exported_gradebook_csv.try(:progress),
+      attachment_url: @last_exported_gradebook_csv.try(:attachment).try(:download_url),
+      attachment: @last_exported_gradebook_csv.try(:attachment),
+      sis_app_url: Setting.get('sis_app_url', nil),
+      sis_app_token: Setting.get('sis_app_token', nil),
+      list_students_by_sortable_name_enabled: @context.list_students_by_sortable_name?,
+      gradebook_column_size_settings: @current_user.preferences[:gradebook_column_size],
+      gradebook_column_size_settings_url: change_gradebook_column_size_course_gradebook_url,
+      gradebook_column_order_settings: @current_user.preferences[:gradebook_column_order].try(:[], @context.id),
+      gradebook_column_order_settings_url: save_gradebook_column_order_course_gradebook_url,
+      sections: sections_json(@context.active_course_sections, @current_user, session),
+      settings_update_url: api_v1_course_gradebook_settings_update_url(@context),
+      settings: @current_user.preferences.fetch(:gradebook_settings, {}).fetch(@context.id, {}),
+      login_handle_name: @context.root_account.settings[:login_handle_name],
+      sis_name: @context.root_account.settings[:sis_name],
+      version: params.fetch(:version, nil)
     }
   end
 
@@ -409,7 +446,7 @@ class GradebooksController < ApplicationController
       end
 
       submissions = if params[:submissions]
-                      params[:submissions].values
+                      params[:submissions].values.map { |s| ActionController::Parameters.new(s) }
                     else
                       [params[:submission]]
                     end
@@ -421,17 +458,22 @@ class GradebooksController < ApplicationController
         s[:assignment_id]
       }).index_by(&:id)
 
+      request_error_status = nil
       @submissions = []
       submissions.compact.each do |submission|
         @assignment = assignments[submission[:assignment_id].to_i]
         @user = users[submission[:user_id].to_i]
+
+        submission = submission.permit(:grade, :score, :excuse, :excused,
+          :graded_anonymously, :provisional, :final,
+          :comment, :media_comment_id)
+
         submission[:grader] = @current_user
-        submission.delete :comment_attachments
         submission.delete(:provisional) unless @assignment.moderated_grading?
         if params[:attachments]
           attachments = []
           params[:attachments].keys.each do |idx|
-            attachment = strong_params[:attachments][idx].permit(Attachment.permitted_attributes)
+            attachment = params[:attachments][idx].permit(Attachment.permitted_attributes)
             attachment[:user] = @current_user
             attachments << @assignment.attachments.create(attachment)
           end
@@ -459,6 +501,7 @@ class GradebooksController < ApplicationController
           if [:comment, :media_comment_id, :comment_attachments].any? { |k| submission.key? k }
             submission[:commenter] = @current_user
             submission[:hidden] = @assignment.muted?
+
             subs = @assignment.update_submission(@user, submission)
             if submission[:provisional]
               subs.each do |sub|
@@ -469,6 +512,7 @@ class GradebooksController < ApplicationController
           end
         rescue Assignment::GradeError => e
           logger.info "GRADES: grade_student failed because '#{e.message}'"
+          request_error_status = e.status_code
           @error_message = e.to_s
         end
       end
@@ -488,9 +532,11 @@ class GradebooksController < ApplicationController
           }
         else
           flash[:error] = t('errors.submission_failed', "Submission was unsuccessful: %{error}", :error => @error_message || t('errors.submission_failed_default', 'Submission Failed'))
+          request_error_status ||= :bad_request
+
           format.html { render :show, course_id: @assignment.context.id }
-          format.json { render :json => {:errors => {:base => @error_message}}, :status => :bad_request }
-          format.text { render :json => {:errors => {:base => @error_message}}, :status => :bad_request }
+          format.json { render json: { errors: { base: @error_message } }, status: request_error_status }
+          format.text { render json: { errors: { base: @error_message } }, status: request_error_status }
         end
       end
     end
@@ -563,7 +609,10 @@ class GradebooksController < ApplicationController
           :settings_url => speed_grader_settings_course_gradebook_path,
           :force_anonymous_grading => force_anonymous_grading?(@assignment),
           :grading_role => grading_role,
-          :lti_retrieve_url => retrieve_course_external_tools_url(@context.id, assignment_id: @assignment.id, display: 'borderless'),
+          :grading_type => @assignment.grading_type,
+          :lti_retrieve_url => retrieve_course_external_tools_url(
+            @context.id, assignment_id: @assignment.id, display: 'borderless'
+          ),
           :course_id => @context.id,
           :assignment_id => @assignment.id,
         }
@@ -600,7 +649,7 @@ class GradebooksController < ApplicationController
     grade_by_question = value_to_boolean(params[:enable_speedgrader_grade_by_question])
     @current_user.preferences[:enable_speedgrader_grade_by_question] = grade_by_question
     @current_user.save!
-    render nothing: true
+    head :ok
   end
 
   def blank_submission
@@ -625,7 +674,7 @@ class GradebooksController < ApplicationController
         @current_user.preferences[:gradebook_column_order] = {}
       end
 
-      @current_user.preferences[:gradebook_column_order][@context.id] = params[:column_order]
+      @current_user.preferences[:gradebook_column_order][@context.id] = params[:column_order].to_hash.with_indifferent_access
       @current_user.save!
       render json: nil
     end
@@ -635,48 +684,6 @@ class GradebooksController < ApplicationController
     @current_user.preferences[:gradebook_version] = params[:version]
     @current_user.save!
     redirect_to polymorphic_url([@context, 'gradebook'])
-  end
-
-  def groups_as_assignments(groups=nil, options = {})
-    groups ||= @context.assignment_groups.active
-
-    percentage = lambda do |weight|
-      # find the smallest precision necessary to capture up to two digits of
-      # significant decimals, but to avoid unnecessary zeros on the end. (so we
-      # can have 100%, but still have 33.33%, for example)
-      precision = sprintf('%.2f', weight % 1).sub(/^(?:0|1)\.(\d?[1-9])?0*$/, '\1').length
-      number_to_percentage(weight, :precision => precision)
-    end
-
-    points_possible =
-      (@context.group_weighting_scheme == "percent") ?
-        (options[:out_of_final] ?
-          lambda{ |group| t(:out_of_final, "%{weight} of Final", :weight => percentage[group.group_weight]) } :
-          lambda{ |group| percentage[group.group_weight] }) :
-        lambda{ |group| nil }
-
-    groups = groups.map { |group|
-      OpenObject.build('assignment',
-        :id => 'group-' + group.id.to_s,
-        :rules => group.rules,
-        :title => group.name,
-        :points_possible => points_possible[group],
-        :hard_coded => true,
-        :special_class => 'group_total',
-        :assignment_group_id => group.id,
-        :group_weight => group.group_weight,
-        :asset_string => "group_total_#{group.id}")
-    }
-
-    groups << OpenObject.build('assignment',
-        :id => 'final-grade',
-        :title => t('titles.total', 'Total'),
-        :points_possible => (options[:out_of_final] ? '' : percentage[100]),
-        :hard_coded => true,
-        :special_class => 'final_grade',
-        :asset_string => "final_grade_column") unless options[:exclude_total]
-    groups = [] if options[:exclude_total] && groups.length == 1
-    groups
   end
 
   def set_gradebook_warnings(groups, assignments)
@@ -717,16 +724,90 @@ class GradebooksController < ApplicationController
   end
   private :set_gradebook_warnings
 
+  private
 
-  def assignment_groups_json(opts={})
-    @context.assignment_groups.active.preload(:published_assignments).map { |g|
-      assignment_group_json(g, @current_user, session, ['assignments'], {
-        stringify_json_ids: opts[:stringify_json_ids] || stringify_json_ids?
-      })
-    }
+  def percentage(weight)
+    I18n.n(weight, percentage: true)
   end
 
-  private
+  def points_possible(weight, options)
+    return unless options[:weighting]
+    return t("%{weight} of Final", weight: percentage(weight)) if options[:out_of_final]
+    percentage(weight)
+  end
+
+  def aggregate_by_grading_period?
+    view_all_grading_periods? && @context.weighted_grading_periods?
+  end
+
+  def aggregate_assignments
+    if aggregate_by_grading_period?
+      @presenter.periods_assignments = periods_as_assignments(@presenter.grading_periods,
+                                                              out_of_final: true,
+                                                              exclude_total: @exclude_total)
+    else
+      @presenter.groups_assignments = groups_as_assignments(@presenter.groups,
+                                                            out_of_final: true,
+                                                            exclude_total: @exclude_total)
+    end
+  end
+
+  def groups_as_assignments(groups=nil, options = {})
+    as_assignments(
+      groups || @context.assignment_groups.active,
+      options.merge!(weighting: @context.group_weighting_scheme == 'percent')
+    ) { |group| group_as_assignment(group, options) }
+  end
+
+  def periods_as_assignments(periods=nil, options = {})
+    as_assignments(
+      periods || @context.grading_periods.active,
+      options.merge!(weighting: @context.weighted_grading_periods?)
+    ) { |period| period_as_assignment(period, options) }
+  end
+
+  def as_assignments(objects=nil, options={})
+    fakes = []
+    fakes.concat(objects.map { |object| yield(object) }) if objects && block_given?
+    fakes << total_as_assignment(options) unless options[:exclude_total]
+    fakes
+  end
+
+  def group_as_assignment(group, options)
+    OpenObject.build('assignment',
+                     id: "group-#{group.id}",
+                     rules: group.rules,
+                     title: group.name,
+                     points_possible: points_possible(group.group_weight, options),
+                     hard_coded: true,
+                     special_class: 'group_total',
+                     assignment_group_id: group.id,
+                     group_weight: group.group_weight,
+                     asset_string: "group_total_#{group.id}")
+  end
+
+  def period_as_assignment(period, options)
+    OpenObject.build('assignment',
+                     id: "period-#{period.id}",
+                     rules: [],
+                     title: period.title,
+                     points_possible: points_possible(period.weight, options),
+                     hard_coded: true,
+                     special_class: 'group_total',
+                     assignment_group_id: period.id,
+                     group_weight: period.weight,
+                     asset_string: "period_total_#{period.id}")
+  end
+
+  def total_as_assignment(options = {})
+    OpenObject.build('assignment',
+                     id: 'final-grade',
+                     title: t('Total'),
+                     points_possible: (options[:out_of_final] ? '' : percentage(100)),
+                     hard_coded: true,
+                     special_class: 'final_grade',
+                     asset_string: "final_grade_column")
+  end
 
   def moderated_grading_enabled_and_no_grades_published
     @assignment.moderated_grading? && !@assignment.grades_published?
@@ -734,11 +815,9 @@ class GradebooksController < ApplicationController
 
   def exclude_total?(context)
     return true if context.hide_final_grades
+    return false unless grading_periods? && view_all_grading_periods?
 
-    all_grading_periods_selected =
-      multiple_grading_periods? && view_all_grading_periods?
-    hide_all_grading_periods_totals = !context.feature_enabled?(:all_grading_periods_totals)
-    all_grading_periods_selected && hide_all_grading_periods_totals
+    grading_period_group.present? && !grading_period_group.display_totals_for_all_grading_periods?
   end
 
   def submisions_attachment_crocodocable_in_firefox?(submissions)
@@ -771,7 +850,7 @@ class GradebooksController < ApplicationController
     options = {}
     return options unless @context.present?
 
-    if @current_grading_period_id.present? && !view_all_grading_periods? && multiple_grading_periods?
+    if @current_grading_period_id.present? && !view_all_grading_periods? && grading_periods?
       options[:grading_period_id] = @current_grading_period_id
     end
 

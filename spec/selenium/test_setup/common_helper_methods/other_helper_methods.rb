@@ -1,48 +1,5 @@
 module OtherHelperMethods
 
-  #this is needed for using the before_label function in I18nUtilities
-  def t(*a, &b)
-    I18n.t(*a, &b)
-  end
-
-  # usage
-  # require_exec 'compiled/util/foo', 'bar', <<-CS
-  #   foo('something')
-  #   # optionally I should be able to do
-  #   bar 'something else', ->
-  #     "stuff"
-  #     callback('i made it')
-  #
-  # CS
-  #
-  # simple usage
-  # require_exec 'i18n!messages', 'i18n.t("foobar")'
-  def require_exec(*args)
-    code = args.last
-    things_to_require = {}
-    args[0...-1].each do |file_path|
-      things_to_require[file_path] = file_path.split('/').last.split('!').first
-    end
-
-    # make sure the code you pass is at least as intented as it should be
-    code = code.gsub(/^/, '          ')
-    coffee_source = <<-CS
-      _callback = arguments[arguments.length - 1];
-      cancelCallback = false
-      callback = ->
-        _callback.apply(this, arguments)
-        cancelCallback = true
-      require #{things_to_require.keys.to_json}, (#{things_to_require.values.join(', ')}) ->
-        res = do ->
-#{code}
-        _callback(res) unless cancelCallback
-    CS
-    # make it `bare` because selenium already wraps it in a function and we need to get
-    # the arguments for our callback
-    js = CoffeeScript.compile(coffee_source, :bare => true)
-    driver.execute_async_script(js)
-  end
-
   def stub_kaltura
     # trick kaltura into being activated
     CanvasKaltura::ClientV3.stubs(:config).returns({
@@ -119,29 +76,25 @@ module OtherHelperMethods
     @file.close
     fullpath = @file.path
     filename = File.basename(@file.path)
-    if $selenium_config[:host_and_port]
-      driver.file_detector = proc do |args|
-        args.first if File.exist?(args.first.to_s)
-      end
-    end
     [filename, fullpath, data, @file]
   end
 
-  unless EncryptedCookieStore.respond_to?(:test_secret)
-    EncryptedCookieStore.class_eval do
-      cattr_accessor :test_secret
+  module EncryptedCookieStoreTestSecret
+    cattr_accessor :test_secret
 
-      def call_with_test_secret(env)
-        if self.class.test_secret.present?
-          @secret = self.class.test_secret
-          @encryption_key = unhex(@secret)
-        end
-        call_without_test_secret(env)
+    def self.prepended(klass)
+      klass.cattr_accessor(:test_secret)
+    end
+
+    def call(env)
+      if self.class.test_secret.present?
+        @secret = self.class.test_secret
+        @encryption_key = unhex(@secret[0...(@data_cipher.key_len * 2)]).freeze
       end
-
-      alias_method_chain :call, :test_secret
+      super
     end
   end
+  EncryptedCookieStore.prepend(EncryptedCookieStoreTestSecret)
 
   def clear_timers!
     # we don't want any AJAX requests getting kicked off after a test ends.
@@ -161,5 +114,9 @@ module OtherHelperMethods
         clearInterval(i);
       }
     JS
+  end
+
+  def clear_local_storage
+    driver.execute_script 'localStorage.clear();'
   end
 end

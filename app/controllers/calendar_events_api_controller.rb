@@ -152,6 +152,11 @@ require 'atom'
 #           "example": false,
 #           "type": "boolean"
 #         },
+#         "participant_type": {
+#           "description": "The type of participant to sign up for a slot: 'User' or 'Group'",
+#           "example": "User",
+#           "type": "string"
+#         },
 #         "participants_per_appointment": {
 #           "description": "If the event is a time slot, this is the participant limit",
 #           "type": "integer"
@@ -261,10 +266,10 @@ require 'atom'
 class CalendarEventsApiController < ApplicationController
   include Api::V1::CalendarEvent
 
-  before_filter :require_user, :except => %w(public_feed index)
-  before_filter :get_calendar_context, :only => :create
-  before_filter :require_user_or_observer, :only => [:user_index]
-  before_filter :require_authorization, :only => %w(index user_index)
+  before_action :require_user, :except => %w(public_feed index)
+  before_action :get_calendar_context, :only => :create
+  before_action :require_user_or_observer, :only => [:user_index]
+  before_action :require_authorization, :only => %w(index user_index)
 
   # @API List calendar events
   #
@@ -351,7 +356,7 @@ class CalendarEventsApiController < ApplicationController
       Shard.partition_by_shard(events) do |shard_events|
         having_submission = Submission.having_submission.
             where(assignment_id: shard_events).
-            uniq.
+            distinct.
             pluck(:assignment_id).to_set
         shard_events.each do |event|
           event.has_submitted_submissions = having_submission.include?(event.id)
@@ -360,7 +365,7 @@ class CalendarEventsApiController < ApplicationController
         having_student_submission = Submission.having_submission.
             where(assignment_id: shard_events).
             where.not(user_id: nil).
-            uniq.
+            distinct.
             pluck(:assignment_id).to_set
         shard_events.each do |event|
           event.has_student_submissions = having_student_submission.include?(event.id)
@@ -431,11 +436,12 @@ class CalendarEventsApiController < ApplicationController
   #        -F 'calendar_event[end_at]=2012-07-19T22:00:00Z' \
   #        -H "Authorization: Bearer <token>"
   def create
-    if params[:calendar_event][:description].present?
-      params[:calendar_event][:description] = process_incoming_html_content(params[:calendar_event][:description])
+    params_for_create = calendar_event_params
+    if params_for_create[:description].present?
+      params_for_create[:description] = process_incoming_html_content(params_for_create[:description])
     end
 
-    @event = @context.calendar_events.build(params[:calendar_event])
+    @event = @context.calendar_events.build(params_for_create)
     @event.updating_user = @current_user
     @event.validate_context! if @context.is_a?(AppointmentGroup)
 
@@ -577,10 +583,11 @@ class CalendarEventsApiController < ApplicationController
   def update
     get_event(true)
     if authorized_action(@event, @current_user, :update)
-      assignment_params = nil
+      params_for_update = nil
       if @event.is_a?(Assignment)
-        assignment_params = {:due_at => params[:calendar_event][:start_at]}
+        params_for_update = {:due_at => params[:calendar_event][:start_at]}
       else
+        params_for_update = calendar_event_params
         @event.validate_context! if @event.context.is_a?(AppointmentGroup)
         @event.updating_user = @current_user
       end
@@ -599,10 +606,10 @@ class CalendarEventsApiController < ApplicationController
         end
         return unless authorized_action(@event, @current_user, :create)
       end
-      if params[:calendar_event][:description].present?
-        params[:calendar_event][:description] = process_incoming_html_content(params[:calendar_event][:description])
+      if params_for_update[:description].present?
+        params_for_update[:description] = process_incoming_html_content(params_for_update[:description])
       end
-      if @event.update_attributes(assignment_params || params[:calendar_event])
+      if @event.update_attributes(params_for_update)
         render :json => event_json(@event, @current_user, session)
       else
         render :json => @event.errors, :status => :bad_request
@@ -710,7 +717,7 @@ class CalendarEventsApiController < ApplicationController
           calendar.add_event(ics_event) if ics_event
         end
 
-        render :text => calendar.to_ical
+        render plain: calendar.to_ical
       end
       format.atom do
         feed = Atom::Feed.new do |f|
@@ -722,7 +729,7 @@ class CalendarEventsApiController < ApplicationController
         @events.each do |e|
           feed.entries << e.to_atom
         end
-        render :text => feed.to_xml
+        render :plain => feed.to_xml
       end
     end
   end
@@ -804,7 +811,7 @@ class CalendarEventsApiController < ApplicationController
   def set_course_timetable
     get_context
     if authorized_action(@context, @current_user, :manage_calendar)
-      timetable_data = params[:timetables]
+      timetable_data = params[:timetables].to_hash.with_indifferent_access
 
       builders = {}
       updated_section_ids = []
@@ -892,7 +899,7 @@ class CalendarEventsApiController < ApplicationController
       section = api_find(@context.active_course_sections, params[:course_section_id]) if params[:course_section_id]
       builder = Courses::TimetableEventBuilder.new(course: @context, course_section: section)
 
-      event_hashes = params[:events]
+      event_hashes = params[:events].map{|h| h.to_hash.with_indifferent_access}
       event_hashes.each do |hash|
         [:start_at, :end_at].each do |key|
           hash[key] = CanvasTime.try_parse(hash[key])
@@ -1176,7 +1183,7 @@ class CalendarEventsApiController < ApplicationController
     end
 
     options[:iterator] ||= 0
-    event_attributes = set_duplicate_params(params[:calendar_event], options)
+    event_attributes = set_duplicate_params(calendar_event_params, options)
     event = @context.calendar_events.build(event_attributes)
     event.validate_context! if @context.is_a?(AppointmentGroup)
     event.updating_user = @current_user
@@ -1225,7 +1232,7 @@ class CalendarEventsApiController < ApplicationController
 
     if options[:child_event_data].present?
       event_attributes[:child_event_data] = options[:child_event_data].map do |child_event|
-        new_child_event = child_event.dup
+        new_child_event = child_event.permit(:start_at, :end_at, :context_code)
         new_child_event[:start_at] = Time.zone.parse(child_event[:start_at]) + offset unless child_event[:start_at].blank?
         new_child_event[:end_at] = Time.zone.parse(child_event[:end_at]) + offset unless child_event[:end_at].blank?
         new_child_event
@@ -1265,5 +1272,10 @@ class CalendarEventsApiController < ApplicationController
         redirect_to_login
       end
     end
+  end
+
+  def calendar_event_params
+    params.require(:calendar_event).
+      permit(CalendarEvent.permitted_attributes + [:child_event_data => strong_anything])
   end
 end

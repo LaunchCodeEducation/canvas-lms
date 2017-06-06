@@ -3,6 +3,7 @@ define [
   'i18n!assignments'
   'jquery'
   'underscore'
+  'jsx/shared/helpers/numberHelper'
   'compiled/models/AssignmentGroup'
   'compiled/collections/NeverDropCollection'
   'compiled/views/assignments/NeverDropCollectionView'
@@ -10,7 +11,7 @@ define [
   'jst/assignments/CreateGroup'
   'jst/EmptyDialogFormWrapper'
   'compiled/jquery.rails_flash_notifications'
-], (round, I18n, $, _, AssignmentGroup, NeverDropCollection, NeverDropCollectionView, DialogFormView, template, wrapper) ->
+], (round, I18n, $, _, numberHelper, AssignmentGroup, NeverDropCollection, NeverDropCollectionView, DialogFormView, template, wrapper) ->
 
   SHORT_HEIGHT = 250
 
@@ -36,11 +37,11 @@ define [
     @optionProperty 'userIsAdmin'
 
     messages:
-      non_number: I18n.t('non_number', 'You must use a number')
-      positive_number: I18n.t('positive_number', 'You must use a positive number')
-      max_number: I18n.t('higher_than_max', 'You cannot use a number greater than the number of assignments')
-      no_name_error: I18n.t('no_name_error', 'A name is required')
-      name_too_long_error: I18n.t('name_too_long_error', 'Name is too long')
+      non_number: I18n.t('You must use a number')
+      positive_number: I18n.t('You must use a positive number')
+      max_number: I18n.t('You cannot use a number greater than the number of assignments')
+      no_name_error: I18n.t('A name is required')
+      name_too_long_error: I18n.t('Name is too long')
 
     initialize: ->
       super
@@ -72,6 +73,7 @@ define [
         delete data.rules.drop_lowest if _.contains(["", "0"], data.rules.drop_lowest)
         delete data.rules.drop_highest if _.contains(["", "0"], data.rules.drop_highest)
         delete data.rules.never_drop if data.rules.never_drop?.length == 0
+      data.group_weight = round(numberHelper.parse(data.group_weight), 2)
       data
 
     validateFormData: (data) ->
@@ -84,10 +86,12 @@ define [
         errors["name"] = [{type: 'name_too_long_error', message: @messages.name_too_long_error}]
       if data.name == ""
         errors["name"] = [{type: 'no_name_error', message: @messages.no_name_error}]
+      if (data.group_weight && isNaN(numberHelper.parse(data.group_weight)))
+        errors["group_weight"] = [{type: 'number', message: @messages.non_number}]
       _.each data.rules, (value, name) =>
         # don't want to validate the never_drop field
         return if name is 'never_drop'
-        val = parseInt(value)
+        val = Math.floor(numberHelper.parse(value))
         field = "rules[#{name}]"
         if isNaN(val)
           errors[field] = [{type: 'number', message: @messages.non_number}]
@@ -102,7 +106,7 @@ define [
       course?.get('apply_assignment_group_weights')
 
     canChangeWeighting: ->
-      @userIsAdmin or !@model.hasAssignmentDueInClosedGradingPeriod()
+      @userIsAdmin or not @model.anyAssignmentInClosedGradingPeriod()
 
     checkGroupWeight: ->
       if @showWeight() and @canChangeWeighting()
@@ -128,8 +132,11 @@ define [
 
     roundWeight: (e) ->
       value = $(e.target).val()
-      rounded_value = round(parseFloat(value), 2)
-      $(e.target).val(rounded_value)
+      rounded_value = round(numberHelper.parse(value), 2)
+      if isNaN(rounded_value)
+        return
+      else
+        $(e.target).val(I18n.n(rounded_value))
 
     toJSON: ->
       data = @model.toJSON()

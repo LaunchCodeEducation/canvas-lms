@@ -18,9 +18,7 @@
 
 class LearningOutcome < ActiveRecord::Base
   include Workflow
-  attr_accessible :context, :description, :short_description, :title, :display_name
-  attr_accessible :rubric_criterion, :vendor_guid, :calculation_method, :calculation_int
-
+  include OutcomeAttributes
   belongs_to :context, polymorphic: [:account, :course]
   has_many :learning_outcome_results
   has_many :alignments, -> { where("content_tags.tag_type='learning_outcome' AND content_tags.workflow_state<>'deleted'") }, class_name: 'ContentTag'
@@ -47,10 +45,10 @@ class LearningOutcome < ActiveRecord::Base
   validates :short_description, length: { maximum: maximum_string_length }
   validates :display_name, length: { maximum: maximum_string_length, allow_nil: true, allow_blank: true }
   validates :calculation_method, inclusion: { in: CALCULATION_METHODS.keys,
-    message: t(
+    message: -> { t(
       "calculation_method must be one of the following: %{calc_methods}",
       :calc_methods => CALCULATION_METHODS.keys.to_s
-    )
+    ) }
   }
   validates :short_description, :workflow_state, presence: true
   sanitize_field :description, CanvasSanitize::SANITIZE

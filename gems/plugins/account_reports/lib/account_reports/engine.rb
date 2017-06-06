@@ -110,7 +110,7 @@ module AccountReports
         },
         'provisioning_csv' => {
           :title => proc { I18n.t(:provisioning_title, 'Provisioning') },
-          :parameters_partial => 'sis_export_csv_parameters',
+          :parameters_partial => 'provisioning_csv_parameters',
           :description_partial => true,
           :parameters => {
             :enrollment_term_id => {
@@ -138,11 +138,17 @@ module AccountReports
             :groups => {
               :description => 'Get the Provisioning file for groups'
             },
+            :group_categories => {
+              :description => 'Get the Provisioning file for group_categories'
+            },
             :group_membership => {
               :description => 'Get the Provisioning file for group_membership'
             },
             :xlist => {
               :description => 'Get the Provisioning file for cross listed courses'
+            },
+            :user_observers => {
+              :description => 'Get the Provisioning file for user_observers'
             },
             :created_by_sis => {
               :description => 'Only include objects that were created by sis'
@@ -198,6 +204,9 @@ module AccountReports
             },
             :xlist => {
               :description => 'Get the SIS file for cross listed courses'
+            },
+            :user_observers => {
+              :description => 'Get the SIS file for user_observers'
             },
             :created_by_sis => {
               :description => 'Only include objects that were created by sis'
@@ -319,12 +328,24 @@ module AccountReports
         'user_access_tokens_csv' => {
           :title => proc { I18n.t(:user_access_tokens_title, 'User Access Tokens') },
           :description_partial => true,
+          :parameters_partial => 'include_only_deleted_parameter',
           :parameters => {
+            :include_deleted => {
+              :required => false,
+              :description => 'Include deleted objects'
+            }
           }
         },
         'lti_report_csv' => {
           :title => proc { I18n.t('LTI Report') },
-          :description_partial => true
+          :description_partial => true,
+          :parameters_partial => 'include_only_deleted_parameter',
+          :parameters => {
+            :include_deleted => {
+              :required => false,
+              :description => 'Include deleted objects'
+            }
+          }
         }
       }
     end

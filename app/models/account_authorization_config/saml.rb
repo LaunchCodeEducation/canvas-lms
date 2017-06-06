@@ -62,18 +62,16 @@ class AccountAuthorizationConfig::SAML < AccountAuthorizationConfig::Delegated
 
   before_validation :set_saml_defaults
   before_validation :download_metadata
-  validates_presence_of :entity_id
 
   def auth_provider_filter
     [nil, self]
   end
 
   def entity_id
-    super || saml_default_entity_id
+    self.class.saml_default_entity_id_for_account(self.account)
   end
 
   def set_saml_defaults
-    self.entity_id ||= saml_default_entity_id
     self.requested_authn_context = nil if self.requested_authn_context.blank?
   end
 
@@ -120,11 +118,11 @@ class AccountAuthorizationConfig::SAML < AccountAuthorizationConfig::Delegated
   end
 
   def self.saml_default_entity_id_for_account(account)
-    "http://#{HostUrl.context_host(account)}/saml2"
-  end
-
-  def saml_default_entity_id
-    self.class.saml_default_entity_id_for_account(self.account)
+    if !account.settings[:saml_entity_id]
+      account.settings[:saml_entity_id] = "http://#{HostUrl.context_host(account)}/saml2"
+      account.save!
+    end
+    account.settings[:saml_entity_id]
   end
 
   def login_attribute
@@ -195,8 +193,7 @@ class AccountAuthorizationConfig::SAML < AccountAuthorizationConfig::Delegated
     settings.tech_contact_name = app_config[:tech_contact_name] || 'Webmaster'
     settings.tech_contact_email = app_config[:tech_contact_email] || ''
 
-    settings.issuer = account.authentication_providers.active.where(auth_type: 'saml').first.try(:entity_id)
-    settings.issuer ||= saml_default_entity_id_for_account(account)
+    settings.issuer = saml_default_entity_id_for_account(account)
 
     encryption = app_config[:encryption]
     if encryption.is_a?(Hash)

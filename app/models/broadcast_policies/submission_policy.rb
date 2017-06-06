@@ -74,20 +74,16 @@ module BroadcastPolicies
     end
 
     def just_submitted?
-      (submission.just_created && submission.submitted?) || submission.changed_state_to(:submitted)
+      submission.changed_state_to(:submitted)
     end
 
     def just_submitted_late?
-      (just_submitted? || prior.try(:submitted_at) != submission.submitted_at)
-    end
-
-    def prior
-      submission.prior_version
+      (just_submitted? || submission.submitted_at_changed?)
     end
 
     def is_a_resubmission?
-      prior.submitted_at &&
-      prior.submitted_at != submission.submitted_at
+      submission.submitted_at_was &&
+      submission.submitted_at_changed?
     end
 
     def grade_updated?

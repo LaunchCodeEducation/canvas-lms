@@ -1,13 +1,14 @@
 define [
+  'jquery'
   'react'
   'react-dom'
   'react-addons-test-utils'
   'underscore'
   'jsx/due_dates/DueDateCalendars'
   'helpers/fakeENV'
-], (React, ReactDOM, {Simulate, SimulateNative}, _, DueDateCalendars, fakeENV) ->
+], ($, React, ReactDOM, {Simulate, SimulateNative}, _, DueDateCalendars, fakeENV) ->
 
-  module 'DueDateCalendars',
+  QUnit.module 'DueDateCalendars',
     setup: ->
       fakeENV.setup()
       ENV.context_asset_string = "course_1"

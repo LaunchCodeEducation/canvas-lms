@@ -27,9 +27,7 @@ describe Turnitin::Client do
   end
 
   def turnitin_submission
-    expects_job_with_tag('Submission#submit_to_turnitin') do
-      @submission = @assignment.submit_homework(@user, :submission_type => 'online_upload', :attachments => [attachment_model(:context => @user, :content_type => 'text/plain')])
-    end
+    @submission = @assignment.submit_homework(@user, :submission_type => 'online_upload', :attachments => [attachment_model(:context => @user, :content_type => 'text/plain')])
     @submission.reload
   end
 
@@ -135,7 +133,7 @@ describe Turnitin::Client do
         :error => {
           :error_code => 123,
           :error_message => 'You cannot create this assignment right now',
-          :public_error_message => 'There was an error submitting to turnitin. Please try resubmitting the file before contacting support.'
+          :public_error_message => 'There was an error submitting to the similarity detection service. Please try resubmitting the file before contacting support.'
         }
       })
     end
@@ -343,7 +341,7 @@ describe Turnitin::Client do
 
   describe '#email' do
     it "uses turnitin_id for courses" do
-      course
+      course_factory
       t = Turnitin::Client.new('blah', 'blah')
       expect(@course.turnitin_id).to be_nil
       expect(t.email(@course)).to eq "course_#{@course.global_id}@null.instructure.example.com"

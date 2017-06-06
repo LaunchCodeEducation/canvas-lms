@@ -28,6 +28,14 @@ describe CanvasPartman::PartitionManager do
           expect(SchemaHelper.table_exists?('partman_animals_2014_12')).to be true
         end
       end
+
+      it "brings along foreign keys" do
+        subject.create_partition(Time.new(2014, 11))
+        parent_foreign_key = Animal.connection.foreign_keys("partman_animals")[0]
+        foreign_key = Animal.connection.foreign_keys("partman_animals_2014_11")[0]
+        expect(foreign_key.to_table).to eq("partman_zoos")
+        expect(foreign_key.options.except(:name)).to eq(parent_foreign_key.options.except(:name))
+      end
     end
 
     describe "#ensure_partitions" do
@@ -75,16 +83,24 @@ describe CanvasPartman::PartitionManager do
         expect(SchemaHelper.table_exists?('partman_trails_0')).to be true
         expect(SchemaHelper.table_exists?('partman_trails_1')).to be true
       end
+
+      it "brings along foreign keys" do
+        subject.create_partition(0)
+        parent_foreign_key = Trail.connection.foreign_keys("partman_trails")[0]
+        foreign_key = Trail.connection.foreign_keys("partman_trails_0")[0]
+        expect(foreign_key.to_table).to eq("partman_zoos")
+        expect(foreign_key.options.except(:name)).to eq(parent_foreign_key.options.except(:name))
+      end
     end
 
     describe "#create_initial_partitions" do
       it "creates sufficient partitions" do
         expect(subject.base_class).to receive(:maximum).and_return(13)
-        expect(subject).to receive(:create_partition).with(0)
-        expect(subject).to receive(:create_partition).with(5)
-        expect(subject).to receive(:create_partition).with(10)
-        expect(subject).to receive(:create_partition).with(15)
-        expect(subject).to receive(:create_partition).with(20)
+        expect(subject).to receive(:create_partition).with(0, graceful: true)
+        expect(subject).to receive(:create_partition).with(5, graceful: true)
+        expect(subject).to receive(:create_partition).with(10, graceful: true)
+        expect(subject).to receive(:create_partition).with(15, graceful: true)
+        expect(subject).to receive(:create_partition).with(20, graceful: true)
 
         subject.create_initial_partitions(2)
       end

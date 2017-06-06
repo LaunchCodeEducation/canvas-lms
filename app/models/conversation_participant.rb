@@ -37,7 +37,7 @@ class ConversationParticipant < ActiveRecord::Base
   scope :sent, -> { where("visible_last_authored_at IS NOT NULL").order("visible_last_authored_at DESC, conversation_id DESC") }
   scope :for_masquerading_user, lambda { |user|
     # site admins can see everything
-    return all if user.account_users.map(&:account_id).include?(Account.site_admin.id)
+    next all if user.account_users.map(&:account_id).include?(Account.site_admin.id)
 
     # we need to ensure that the user can access *all* of each conversation's
     # accounts (and that each conversation has at least one account). so given
@@ -147,7 +147,7 @@ class ConversationParticipant < ActiveRecord::Base
           conversation_ids = ConversationParticipant.where(shard_conditions).pluck(:conversation_id).map do |id|
             Shard.relative_id_for(id, Shard.current, scope_shard)
           end
-          [sanitize_sql(:conversation_id => conversation_ids)]
+          ["conversation_id IN (#{conversation_ids.join(',')})"]
         end
       end
     end
@@ -184,8 +184,6 @@ class ConversationParticipant < ActiveRecord::Base
 
   before_update :update_unread_count_for_update
   before_destroy :update_unread_count_for_destroy
-
-  attr_accessible :subscribed, :starred, :workflow_state, :user
 
   validates_presence_of :conversation_id, :user_id, :workflow_state
   validates_inclusion_of :label, :in => ['starred'], :allow_nil => true
@@ -483,14 +481,14 @@ class ConversationParticipant < ActiveRecord::Base
     conversation.shard.activate do
       self.class.unscoped do
         old_shard = self.user.shard
-        conversation.conversation_messages.where(:author_id => user_id).update_all(:author_id => new_user)
+        conversation.conversation_messages.where(:author_id => user_id).update_all(:author_id => new_user.id)
         if existing = conversation.conversation_participants.where(user_id: new_user).first
           existing.update_attribute(:workflow_state, workflow_state) if unread? || existing.archived?
           destroy
         else
           ConversationMessageParticipant.joins(:conversation_message).
               where(:conversation_messages => { :conversation_id => self.conversation_id }, :user_id => self.user_id).
-              update_all(:user_id => new_user)
+              update_all(:user_id => new_user.id)
           update_attribute :user, new_user
           existing = self
         end
@@ -525,7 +523,8 @@ class ConversationParticipant < ActiveRecord::Base
   end
 
   def self.conversation_ids
-    raise "conversation_ids needs to be scoped to a user" unless all.where_values.any? do |v|
+    where_predicates = CANVAS_RAILS4_2 ? all.where_values : all.where_clause.instance_variable_get(:@predicates)
+    raise "conversation_ids needs to be scoped to a user" unless where_predicates.any? do |v|
       if v.is_a?(Arel::Nodes::Binary) && v.left.is_a?(Arel::Attributes::Attribute)
         v.left.name == 'user_id'
       else

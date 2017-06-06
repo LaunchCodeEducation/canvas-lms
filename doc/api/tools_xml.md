@@ -64,6 +64,27 @@ found below.
 </cartridge_basiclti_link>
 ```
 
+### Minimal configuration preferring SIS emails
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p0"
+    xmlns:blti = "http://www.imsglobal.org/xsd/imsbasiclti_v1p0"
+    xmlns:lticm ="http://www.imsglobal.org/xsd/imslticm_v1p0"
+    xmlns:lticp ="http://www.imsglobal.org/xsd/imslticp_v1p0"
+    xmlns:xsi = "http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation = "http://www.imsglobal.org/xsd/imslticc_v1p0 http://www.imsglobal.org/xsd/lti/ltiv1p0/imslticc_v1p0.xsd
+    http://www.imsglobal.org/xsd/imsbasiclti_v1p0 http://www.imsglobal.org/xsd/lti/ltiv1p0/imsbasiclti_v1p0.xsd
+    http://www.imsglobal.org/xsd/imslticm_v1p0 http://www.imsglobal.org/xsd/lti/ltiv1p0/imslticm_v1p0.xsd
+    http://www.imsglobal.org/xsd/imslticp_v1p0 http://www.imsglobal.org/xsd/lti/ltiv1p0/imslticp_v1p0.xsd">
+    <blti:launch_url>https://example.com/attendance</blti:launch_url>
+    <blti:title>Attendance</blti:title>
+    <blti:description>Provides an interactive seating chart and attendance tool</blti:description>
+    <blti:extensions platform="canvas.instructure.com">
+      <lticm:property name="prefer_sis_email">true</lticm:property>
+    </blti:extensions>
+</cartridge_basiclti_link>
+```
+
 ## Course Navigation External Tool Examples
 
 ### Minimal configuration
@@ -145,7 +166,7 @@ found below.
 </cartridge_basiclti_link>
 ```
 
-### Teacher/Admin-only navigation
+### Admin/Teacher/TA/Designer-only navigation
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -614,6 +635,35 @@ by the service should be scoped to the matching domain.
 </cartridge_basiclti_link>
 ```
 
+## Launch URL's containing query parameters
+By default, Canvas handles LTI launch URLs with query parameters by including the query parameters
+in the URL and the post body. This can result in a signature mismatch if not accounted for. The
+`oauth_compliant` parameter allows an external tool provider to specify how it wants Canvas to
+handle launch URLs with query parameters: if set to `true` LTI query parameters will not be copied
+to the POST body.
+
+### Do not move LTI query params to POST body
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p0"
+    xmlns:blti = "http://www.imsglobal.org/xsd/imsbasiclti_v1p0"
+    xmlns:lticm ="http://www.imsglobal.org/xsd/imslticm_v1p0"
+    xmlns:lticp ="http://www.imsglobal.org/xsd/imslticp_v1p0"
+    xmlns:xsi = "http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation = "http://www.imsglobal.org/xsd/imslticc_v1p0 http://www.imsglobal.org/xsd/lti/ltiv1p0/imslticc_v1p0.xsd
+    http://www.imsglobal.org/xsd/imsbasiclti_v1p0 http://www.imsglobal.org/xsd/lti/ltiv1p0/imsbasiclti_v1p0.xsd
+    http://www.imsglobal.org/xsd/imslticm_v1p0 http://www.imsglobal.org/xsd/lti/ltiv1p0/imslticm_v1p0.xsd
+    http://www.imsglobal.org/xsd/imslticp_v1p0 http://www.imsglobal.org/xsd/lti/ltiv1p0/imslticp_v1p0.xsd">
+    <blti:title>Protractor Tool</blti:title>
+    <blti:description>This tool provides an online, interactive protractor for students to use</blti:description>
+    <blti:launch_url>https://example.com/tool_redirect?query_param=some_value</blti:launch_url>
+    <blti:extensions platform="canvas.instructure.com">
+      <lticm:property name="oauth_compliant">true</lticm:property>
+      <lticm:property name="privacy_level">public</lticm:property>
+    </blti:extensions>
+</cartridge_basiclti_link>
+```
+
 ## Content Migrations support
 <h3 class='beta'>BETA: The following configurations and APIs are not finalized
 and may be subject to breaking changes before final release.</h3>
@@ -682,5 +732,46 @@ display to the user.
 {"status":"completed"}
 ```
 
+#### Exporting a Subset of Course Content
+If the user has chosen to migrate a subset of the source course's content an
+this will be indicated to the tool by inclusion of an additional field in the
+post body called `custom_exported_assets`. This will be an array of asset
+identifiers in the form of `<asset type key>_<asset_id>` (e.g. `assignment_42`)
+these use the same mappings as exported identifiers below. In the event that a
+tool provider has no content to export for a subset export either return an
+empty JSON object in the response or a status code outside the 200 range.
+
+#### Exported Data Including Canvas Record IDs.
+If in the process of importing your tool needs to receive record identifers for
+newly created items in Canavs the source IDs may be included in the export data
+with keys matching the pattern `/^\$canvas_(\w+)_id$/`. Example export data
+including an assignment ID with the orignial being assignment #42 and the newly
+created one for import being #84.
+
+Exported data:
+```
+{
+  assignments: [{"id":afd24c, "$canvas_assignment_id":42}]
+}
+```
+
+Data returned on import:
+```
+{
+  assignments: [{"id":afd24c, "$canvas_assignment_id":84}]
+}
+```
+
+Additional expansions are available, for the most up to date list see
+`[Canvas::Migration::ExternalContent::Translator::TYPES_TO_CLASSES](https://github.com/instructure/canvas-lms/blob/stable/lib/canvas/migration/external_content/translator.rb#L40)`
+
 ### Import process
-TODO
+To start the import process your application will receive a `POST` request to
+the specified `import_start_url`. The request body will contain
+`tool_consumer_instance_guid`, `context_id`, any variable expansions requested
+(excluding user info and URLs), and the content to be imported will be included
+in the `data` field of the posted form. Authentication will be handled in the
+same way as the export process.
+
+The JSON response must include a `status_url` field which is used in the same
+manner as the same field in the export start response.

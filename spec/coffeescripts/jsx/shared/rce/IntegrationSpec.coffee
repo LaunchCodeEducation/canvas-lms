@@ -6,7 +6,7 @@ define [
   'helpers/editorUtils'
 ], (RichContentEditor, RCELoader, $, fakeENV, editorUtils) ->
 
-  module 'Rce Abstraction - integration',
+  QUnit.module 'Rce Abstraction - integration',
     setup: ->
       fakeENV.setup()
       ENV.RICH_CONTENT_CDN_HOST = "fakeCDN.com"
@@ -22,15 +22,13 @@ define [
            $(renderingTarget).append("<div id='fake-editor'>" + propsForRCE.toString() + "</div>")
            renderCallback()
       }
-      sinon.stub($, "getScript", ((url, callback)=>
-        window.RceModule = @fakeRceModule
-        callback()
-      ));
+      @stub(RCELoader, "loadRCE").callsFake((callback) =>
+        callback(@fakeRceModule)
+      )
 
     teardown: ->
       fakeENV.teardown()
       $('#fixtures').empty()
-      $.getScript.restore()
       editorUtils.resetRCE()
 
   test "instatiating a remote editor", ->
@@ -38,7 +36,6 @@ define [
     RichContentEditor.preloadRemoteModule()
     target = $("#big_rce_text")
     RichContentEditor.loadNewEditor(target, { manageParent: true })
-    equal(window.RceModule, @fakeRceModule)
     equal(target.parent().attr("id"), "tinymce-parent-of-big_rce_text")
     equal(target.parent().find("#fake-editor").length, 1)
 

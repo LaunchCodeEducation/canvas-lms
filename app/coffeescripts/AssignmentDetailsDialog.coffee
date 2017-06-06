@@ -8,7 +8,13 @@ define [
 ], (I18n, $, assignmentDetailsDialogTemplate, round) ->
 
   class AssignmentDetailsDialog
+    @show: (opts) ->
+      dialog = new AssignmentDetailsDialog(opts)
+      dialog.show()
+
     constructor: ({@assignment, @students}) ->
+
+    show: () ->
       {scores, locals} = @compute()
       tally = 0
       width = 0
@@ -36,9 +42,10 @@ define [
       scores = (student["assignment_#{assignment.id}"].score for idx, student of students when student["assignment_#{assignment.id}"]?.score?)
       locals =
         assignment: assignment
-        cnt: scores.length
+        cnt: I18n.n scores.length
         max: @nonNumericGuard Math.max scores...
         min: @nonNumericGuard Math.min scores...
+        pointsPossible: @nonNumericGuard assignment.points_possible, I18n.t('N/A')
         average: do (scores) =>
           total = 0
           total += score for score in scores
@@ -47,8 +54,8 @@ define [
       scores: scores
       locals: locals
 
-    nonNumericGuard: (number) =>
+    nonNumericGuard: (number, message = I18n.t("No graded submissions")) =>
       if isFinite(number) and not isNaN(number)
-        number
+        I18n.n number
       else
-        I18n.t('no_graded_submissions', "No graded submissions")
+        message

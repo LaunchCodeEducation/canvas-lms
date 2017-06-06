@@ -178,7 +178,7 @@ define([
     loadFolder: function(node) {
       node.data('includes_files', true);
       var url = $.replaceTags($("#editor_tabs_3 #folder_url").attr('href'), 'id', node.data('id'));
-      $loading = $tree1.find(">.loading").clone();
+      var $loading = $tree1.find(">.loading").clone();
       $loading.show();
       node.append($loading);
       $.ajaxJSON(url, 'GET', {}, function(data) {
@@ -268,10 +268,10 @@ define([
 
       UsageRights.render('#usage-rights');
 
-      $editor_tabs.find("#pages_accordion a.add").click(function(event){
+      $editor_tabs.find('#pages_accordion a.icon-add').click(function (event) {
         event.preventDefault();
         $editor_tabs.find('#new_page_drop_down').slideToggle("fast", function() {
-          $(this).find(":text:visible:first").focus().select();
+          $(this).find(':text:visible:first').focus().select();
         });
       });
 
@@ -327,7 +327,7 @@ define([
             }
           });
 
-          $node = $tree1.find('.folder').first();
+          var $node = $tree1.find('.folder').first();
           $tree1.attr('aria-activedescendant', $node.attr('id'));
           $tree1.find('[aria-selected="true"]').attr('aria-selected', 'false');
           $node.attr('aria-selected', 'true');

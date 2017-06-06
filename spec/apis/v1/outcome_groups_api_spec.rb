@@ -79,11 +79,11 @@ describe "Outcome Groups API", type: :request do
   def assess_with(outcome, context, user = nil)
     assignment = assignment_model(context: context)
     rubric = add_or_get_rubric(outcome)
-    user ||= user(:active_all => true)
+    user ||= user_factory(active_all: true)
     context.enroll_student(user) unless context.student_enrollments.exists?(user_id: user.id)
     a = rubric.associate_with(assignment, context, :purpose => 'grading')
     assignment.reload
-    submission = assignment.grade_student(user, :grade => "10").first
+    submission = assignment.grade_student(user, grade: "10", grader: @teacher).first
     a.assess({
       :user => user,
       :assessor => user,
@@ -307,7 +307,7 @@ describe "Outcome Groups API", type: :request do
       let(:check_outcome_link) do
         ->(outcome_link, context, group, assessed, can_edit, can_unlink) do
           expect(outcome_link).to eq({
-            "context_type" => context.class.to_s,
+          "context_type" => context.class.to_s,
             "context_id" => context.id,
             "url" => polymorphic_path([:api_v1, context, :outcome_link], :id => group.id, :outcome_id => @outcome.id),
             "assessed" => assessed,
@@ -609,8 +609,8 @@ describe "Outcome Groups API", type: :request do
 
       groupC.reload
       expect(groupC.parent_outcome_group).to eq groupB
-      expect(groupA.child_outcome_groups(true)).to eq []
-      expect(groupB.child_outcome_groups(true)).to eq [groupC]
+      expect(groupA.child_outcome_groups.reload).to eq []
+      expect(groupB.child_outcome_groups.reload).to eq [groupC]
     end
 
     it "should fail if changed parentage would create a cycle" do
@@ -909,7 +909,7 @@ describe "Outcome Groups API", type: :request do
       let(:check_outcome_link) do
         ->(outcome_link, context, group, assessed, can_unlink) do
           expect(outcome_link).to eq({
-            "context_type" => context.class.to_s,
+          "context_type" => context.class.to_s,
             "context_id" => context.id,
             "url" => polymorphic_path([:api_v1, context, :outcome_link], :id => group.id, :outcome_id => @outcome.id),
             "assessed" => assessed,
@@ -1063,7 +1063,7 @@ describe "Outcome Groups API", type: :request do
                      :id => @group.id.to_s,
                      :outcome_id => @outcome.id.to_s,
                      :format => 'json')
-        expect(@group.child_outcome_links(true).size).to eq 1
+        expect(@group.child_outcome_links.reload.size).to eq 1
         expect(@group.child_outcome_links.first.content).to eq @outcome
       end
 

@@ -4,6 +4,8 @@ define [
   'compiled/views/ValidatedFormView'
   'underscore'
   'jquery'
+  'jsx/shared/helpers/numberHelper'
+  'compiled/util/round'
   'jsx/shared/rce/RichContentEditor'
   'jst/assignments/EditView'
   'compiled/userSettings'
@@ -18,20 +20,23 @@ define [
   'compiled/views/editor/KeyboardShortcuts'
   'jsx/shared/conditional_release/ConditionalRelease'
   'compiled/util/deparam'
+  'compiled/util/SisValidationHelper'
   'jsx/assignments/AssignmentConfigurationTools'
   'jqueryui/dialog'
   'jquery.toJSON'
   'compiled/jquery.rails_flash_notifications'
-], (INST, I18n, ValidatedFormView, _, $, RichContentEditor, template,
-userSettings, TurnitinSettings, VeriCiteSettings, TurnitinSettingsDialog, preventDefault, MissingDateDialog,
-AssignmentGroupSelector, GroupCategorySelector, toggleAccessibly, RCEKeyboardShortcuts,
-ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
+  'compiled/behaviors/tooltip'
+], (INST, I18n, ValidatedFormView, _, $, numberHelper, round, RichContentEditor, EditViewTemplate,
+  userSettings, TurnitinSettings, VeriCiteSettings, TurnitinSettingsDialog,
+  preventDefault, MissingDateDialog, AssignmentGroupSelector,
+  GroupCategorySelector, toggleAccessibly, RCEKeyboardShortcuts,
+  ConditionalRelease, deparam, SisValidationHelper, SimilarityDetectionTools) ->
 
   RichContentEditor.preloadRemoteModule()
 
   class EditView extends ValidatedFormView
 
-    template: template
+    template: EditViewTemplate
 
     dontRenableAfterSaveSuccess: true
 
@@ -65,7 +70,7 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
     GROUP_CATEGORY_BOX = '#has_group_category'
     MODERATED_GRADING_BOX = '#assignment_moderated_grading'
     CONDITIONAL_RELEASE_TARGET = '#conditional_release_target'
-    ASSIGNMENT_CONFIGURATION_TOOLS = '#assignment_configuration_tools'
+    SIMILARITY_DETECTION_TOOLS = '#similarity_detection_tools'
 
     els: _.extend({}, @::els, do ->
       els = {}
@@ -94,7 +99,7 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
       els["#{ASSIGNMENT_POINTS_CHANGE_WARN}"] = '$pointsChangeWarning'
       els["#{MODERATED_GRADING_BOX}"] = '$moderatedGradingBox'
       els["#{CONDITIONAL_RELEASE_TARGET}"] = '$conditionalReleaseTarget'
-      els["#{ASSIGNMENT_CONFIGURATION_TOOLS}"] = '$assignmentConfigurationTools'
+      els["#{SIMILARITY_DETECTION_TOOLS}"] = '$similarityDetectionTools'
       els["#{SECURE_PARAMS}"] = '$secureParams'
       els
     )
@@ -113,7 +118,6 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
       events["click #{EXTERNAL_TOOLS_URL}_find"] = 'showExternalToolsDialog'
       events["change #assignment_points_possible"] = 'handlePointsChange'
       events["change #{PEER_REVIEWS_BOX}"] = 'handleModeratedGradingChange'
-      events["change #{GROUP_CATEGORY_BOX}"] = 'handleModeratedGradingChange'
       events["change #{MODERATED_GRADING_BOX}"] = 'handleModeratedGradingChange'
       events["change #{GROUP_CATEGORY_BOX}"] = 'handleGroupCategoryChange'
       if ENV.CONDITIONAL_RELEASE_SERVICE_ENABLED
@@ -136,6 +140,8 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
       if ENV.CONDITIONAL_RELEASE_SERVICE_ENABLED
         @gradingTypeSelector.on 'change:gradingType', @onChange
 
+      @lockedItems = options.lockedItems || {};
+
     handleCancel: (ev) =>
       ev.preventDefault()
       @redirectAfterCancel()
@@ -148,6 +154,10 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
 
     handlePointsChange:(ev) =>
       ev.preventDefault()
+      if (numberHelper.validate(@$assignmentPointsPossible.val()))
+        newPoints = round(numberHelper.parse(@$assignmentPointsPossible.val()), 2)
+        @$assignmentPointsPossible.val(I18n.n(newPoints))
+
       if @assignment.hasSubmittedSubmissions()
         @$pointsChangeWarning.toggleAccessibly(@$assignmentPointsPossible.val() != "#{@assignment.pointsPossible()}")
 
@@ -166,14 +176,17 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
       @checkboxAccessibleAdvisory(box).text(message)
 
     enableCheckbox: (box) ->
-      if box.prop("disabled")
-        box.removeProp("disabled").parent().timeoutTooltip().timeoutTooltip('disable').removeAttr('data-tooltip').removeAttr('title')
+      if box.prop('disabled')
+        return if @assignment.inClosedGradingPeriod()
+
+        box.prop('disabled', false).parent().timeoutTooltip().timeoutTooltip('disable').removeAttr('data-tooltip').removeAttr('title')
         @setImplicitCheckboxValue(box, '0')
         @checkboxAccessibleAdvisory(box).text('')
 
     handleGroupCategoryChange: ->
       isGrouped = @$groupCategoryBox.prop('checked')
       @$intraGroupPeerReviews.toggleAccessibly(isGrouped)
+      @handleModeratedGradingChange()
 
     handleModeratedGradingChange: =>
       if !ENV?.HAS_GRADED_SUBMISSIONS
@@ -202,9 +215,8 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
             if setting_from_cache && (!@assignment.get(setting)? || @assignment.get(setting)?.length == 0)
               @assignment.set(setting, setting_from_cache)
           )
-        else
-          @assignment.set('submission_type','online')
-          @assignment.set('submission_types',['online'])
+        if @assignment.submissionTypes().length == 0
+          @assignment.submissionTypes(['online'])
 
     cacheAssignmentSettings: =>
       new_assignment_settings = _.pick(@getFormData(), @settingsToCache()...)
@@ -258,13 +270,13 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
       @$externalToolSettings.toggleAccessibly subVal == 'external_tool'
       @$groupCategorySelector.toggleAccessibly subVal != 'external_tool'
       @$peerReviewsFields.toggleAccessibly subVal != 'external_tool'
-      @$assignmentConfigurationTools.toggleAccessibly subVal == 'online' && ENV.PLAGIARISM_DETECTION_PLATFORM
+      @$similarityDetectionTools.toggleAccessibly subVal == 'online' && ENV.PLAGIARISM_DETECTION_PLATFORM
       if subVal == 'online'
         @handleOnlineSubmissionTypeChange()
 
     handleOnlineSubmissionTypeChange: (env) =>
       showConfigTools = @$onlineSubmissionTypes.find(ALLOW_FILE_UPLOADS).attr('checked')
-      @$assignmentConfigurationTools.toggleAccessibly showConfigTools && ENV.PLAGIARISM_DETECTION_PLATFORM
+      @$similarityDetectionTools.toggleAccessibly showConfigTools && ENV.PLAGIARISM_DETECTION_PLATFORM
 
     afterRender: =>
       # have to do these here because they're rendered by other things
@@ -272,11 +284,12 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
       @$intraGroupPeerReviews = $("#{INTRA_GROUP_PEER_REVIEWS}")
       @$groupCategoryBox = $("#{GROUP_CATEGORY_BOX}")
 
-      @assignmentConfigurationTools = AssignmentConfigurationsTools.attach(
-            @$assignmentConfigurationTools.get(0),
+      @similarityDetectionTools = SimilarityDetectionTools.attach(
+            @$similarityDetectionTools.get(0),
             parseInt(ENV.COURSE_ID),
             @$secureParams.val(),
-            parseInt(ENV.SELECTED_CONFIG_TOOL_ID))
+            parseInt(ENV.SELECTED_CONFIG_TOOL_ID),
+            ENV.SELECTED_CONFIG_TOOL_TYPE)
 
       @_attachEditorToDescription()
       @addTinyMCEKeyboardShortcuts()
@@ -291,19 +304,27 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
           @$conditionalReleaseTarget.get(0),
           I18n.t('assignment'),
           ENV.CONDITIONAL_RELEASE_ENV)
+
+      @disableFields() if @assignment.inClosedGradingPeriod()
+
       this
 
     toJSON: =>
       data = @assignment.toView()
+
       _.extend data,
         kalturaEnabled: ENV?.KALTURA_ENABLED or false
         postToSISEnabled: ENV?.POST_TO_SIS or false
+        postToSISName: ENV.SIS_NAME
         isLargeRoster: ENV?.IS_LARGE_ROSTER or false
         submissionTypesFrozen: _.include(data.frozenAttributes, 'submission_types')
         conditionalReleaseServiceEnabled: ENV?.CONDITIONAL_RELEASE_SERVICE_ENABLED or false
+        lockedItems: @lockedItems
 
 
     _attachEditorToDescription: =>
+      return if @lockedItems.content
+
       RichContentEditor.initSidebar()
       RichContentEditor.loadNewEditor(@$description, { focus: true, manageParent: true })
 
@@ -335,6 +356,8 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
       data.only_visible_to_overrides = !@dueDateOverrideView.overridesContainDefault()
       data.assignment_overrides = @dueDateOverrideView.getOverrides()
       data.published = true if @shouldPublish
+      data.points_possible = round(numberHelper.parse(data.points_possible), 2)
+      data.peer_review_count = numberHelper.parse(data.peer_review_count) if data.peer_review_count
       return data
 
     saveFormData: =>
@@ -375,6 +398,12 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
       @submit(event)
 
     onSaveFail: (xhr) =>
+      response_text = JSON.parse(xhr.responseText)
+      if response_text.errors
+        subscription_errors = response_text.errors.plagiarism_tool_subscription
+        if subscription_errors && subscription_errors.length > 0
+          $.flashError(subscription_errors[0].message)
+
       @shouldPublish = false
       @disableWhileLoadingOpts = {}
       super(xhr)
@@ -435,7 +464,8 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
       errors = @_validatePointsRequired(data, errors)
       errors = @_validateExternalTool(data, errors)
       data2 =
-        assignment_overrides: @dueDateOverrideView.getAllDates()
+        assignment_overrides: @dueDateOverrideView.getAllDates(),
+        postToSIS: data.post_to_sis == '1'
       errors = @dueDateOverrideView.validateBeforeSave(data2,errors)
       if ENV.CONDITIONAL_RELEASE_SERVICE_ENABLED
         crErrors = @conditionalReleaseEditor.validateBeforeSave()
@@ -445,13 +475,24 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
     _validateTitle: (data, errors) =>
       return errors if _.contains(@model.frozenAttributes(), "title")
 
+      post_to_sis = data.post_to_sis == '1'
+      max_name_length = 256
+      if post_to_sis && ENV.MAX_NAME_LENGTH_REQUIRED_FOR_ACCOUNT && data.grading_type != 'not_graded'
+        max_name_length = ENV.MAX_NAME_LENGTH
+
+      validationHelper = new SisValidationHelper({
+        postToSIS: post_to_sis
+        maxNameLength: max_name_length
+        name: data.name
+      })
+
       if !data.name or $.trim(data.name.toString()).length == 0
         errors["name"] = [
           message: I18n.t 'name_is_required', 'Name is required!'
         ]
-      else if $.trim(data.name.toString()).length > 255
+      else if validationHelper.nameTooLong()
         errors["name"] = [
-          message: I18n.t 'name_too_long', 'Name is too long'
+          message: I18n.t("Name is too long, must be under %{length} characters", length: max_name_length + 1)
         ]
       errors
 
@@ -460,6 +501,15 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
         errors["online_submission_types[online_text_entry]"] = [
           message: I18n.t 'at_least_one_submission_type', 'Please choose at least one submission type'
         ]
+      else if data.submission_type == 'online' and data.vericite_enabled == "1"
+        allow_vericite = true
+        _.select _.keys(data.submission_types), (k) ->
+          allow_vericite = allow_vericite && (data.submission_types[k] == "online_upload" || data.submission_types[k] == "online_text_entry")
+        if !allow_vericite
+          errors["online_submission_types[online_text_entry]"] = [
+            message: I18n.t 'vericite_submission_types_validation', 'VeriCite only supports file submissions and text entry'
+          ]
+
       errors
 
     _validateAllowedExtensions: (data, errors) =>
@@ -471,8 +521,9 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
 
     _validatePointsPossible: (data, errors) =>
       return errors if _.contains(@model.frozenAttributes(), "points_possible")
+      return errors if this.lockedItems.points
 
-      if data.points_possible and isNaN(parseFloat(data.points_possible))
+      if typeof data.points_possible != 'number' or isNaN(data.points_possible)
         errors["points_possible"] = [
           message: I18n.t 'points_possible_number', 'Points possible must be a number'
         ]
@@ -483,7 +534,7 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
     _validatePointsRequired: (data, errors) =>
       return errors unless _.include ['percent','letter_grade','gpa_scale'], data.grading_type
 
-      if parseInt(data.points_possible,10) < 0 or isNaN(parseFloat(data.points_possible))
+      if typeof data.points_possible != 'number' or data.points_possible < 0 or isNaN(data.points_possible)
         errors["points_possible"] = [
           message: I18n.t("Points possible must be 0 or more for selected grading type")
         ]
@@ -521,3 +572,30 @@ ConditionalRelease, deparam, AssignmentConfigurationsTools) ->
         assignmentData = @getFormData()
         @conditionalReleaseEditor.updateAssignment(assignmentData)
         @assignmentUpToDate = true
+
+    disableFields: ->
+      ignoreFields = [
+        "#overrides-wrapper *"
+        "#submission_type_fields *"
+        "#assignment_peer_reviews_fields *"
+        "#assignment_description"
+        "#assignment_notify_of_update"
+        "#assignment_post_to_sis"
+      ]
+      ignoreFilter = ignoreFields.map((field) -> "not(#{field})").join(":")
+
+      self = this
+      @$el.find(":checkbox:#{ignoreFilter}").each ->
+        self.disableCheckbox($(this), I18n.t("Cannot be edited for assignments in closed grading periods"))
+      @$el.find(":radio:#{ignoreFilter}").click(@ignoreClickHandler)
+      @$el.find("select:#{ignoreFilter}").each(@lockSelectValueHandler)
+
+    ignoreClickHandler: (event) ->
+      event.preventDefault()
+      event.stopPropagation()
+
+    lockSelectValueHandler: ->
+      lockedValue = this.value
+      $(this).change (event) ->
+        this.value = lockedValue
+        event.stopPropagation()

@@ -18,7 +18,7 @@
 require 'dynamic_form'
 
 class PluginsController < ApplicationController
-  before_filter :require_setting_site_admin, :set_site_admin_context, :set_navigation
+  before_action :require_setting_site_admin, :set_site_admin_context, :set_navigation
 
   def index
     @plugins = Canvas::Plugin.all
@@ -42,7 +42,7 @@ class PluginsController < ApplicationController
       @plugin_setting.posted_settings = params[:settings] || {} unless @plugin_setting.disabled
       if @plugin_setting.save
         flash[:notice] = t('notices.settings_updated', "Plugin settings successfully updated.")
-        redirect_to plugin_path(@plugin.id, :all => params[:all])
+        redirect_to plugin_path(@plugin.id)
       else
         @settings = @plugin.settings
         flash[:error] = t('errors.setting_update_failed', "There was an error saving the plugin settings.")

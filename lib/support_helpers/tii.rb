@@ -95,7 +95,7 @@ module SupportHelpers
           .where(updated_field.gt(@after_time))
           .where(updated_field.lt(@buffer_time))
           .where("submissions.#{like_error}")
-          .uniq.pluck(:id)
+          .distinct.pluck(:id)
       end
 
       def object_type
@@ -105,6 +105,25 @@ module SupportHelpers
       def updated_field
         Submission.arel_table[:updated_at]
       end
+    end
+
+    class LtiAttachmentFixer < TiiFixer
+      def initialize(email, after_time, submission_id, attachment_id)
+        @submission = Submission.find(submission_id)
+        @attachment = Attachment.find(attachment_id)
+        super(email, after_time)
+      end
+
+      def fix
+        Turnitin::AttachmentManager.update_attachment(@submission, @attachment)
+      end
+
+      private
+
+      def load_broken_objects
+        [@submission]
+      end
+
     end
 
     class AssignmentFixer < TiiFixer

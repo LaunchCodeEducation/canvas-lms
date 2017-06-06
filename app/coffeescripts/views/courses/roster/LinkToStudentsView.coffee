@@ -27,6 +27,7 @@ define [
         placeholder: I18n.t 'link_students_placeholder', 'Enter a student name'
         change: (tokens) =>
           @students = tokens
+        onNewToken: @onNewToken
         selector:
           baseData:
             type: 'user'
@@ -50,8 +51,16 @@ define [
 
       this
 
+    onNewToken: ($token) =>
+      $link = $token.find('a')
+      $link.attr('href', '#')
+      $link.attr('title', I18n.t("Remove linked student %{name}", name: $token.find('div').attr('title')))
+      $screenreader_span = $('<span class="screenreader-only"></span>').text(
+        I18n.t("Remove linked student %{name}", name: $token.find('div').attr('title')))
+      $link.append($screenreader_span)
+
     getUserData: (id) ->
-      $.get("/api/v1/courses/#{ENV.course.id}/users/#{id}", include:['enrollments'])
+      $.getJSON("/api/v1/courses/#{ENV.course.id}/users/#{id}", include:['enrollments'])
 
     update: (e) =>
       e.preventDefault()
@@ -80,7 +89,7 @@ define [
             data =
               enrollment:
                 user_id: @model.get('id')
-                associated_user_id: id
+                associated_user_id: user.id
                 type: enrollment.type
                 limit_privileges_to_course_section: enrollment.limit_priveleges_to_course_section
             if enrollment.role != enrollment.type

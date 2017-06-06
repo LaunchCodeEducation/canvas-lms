@@ -1,0 +1,105 @@
+require_relative '../common'
+
+describe "master courses - child courses - discussion locking" do
+  include_context "in-process server selenium tests"
+
+  before :once do
+    Account.default.enable_feature!(:master_courses)
+
+    @copy_from = course_factory(:active_all => true)
+    @template = MasterCourses::MasterTemplate.set_as_master_course(@copy_from)
+    @original_topic = @copy_from.discussion_topics.create!(:title => "blah", :message => "bloo")
+    @tag = @template.create_content_tag_for!(@original_topic)
+
+    course_with_teacher(:active_all => true)
+    @copy_to = @course
+    @template.add_child_course!(@copy_to)
+    @topic_copy = @copy_to.discussion_topics.new(:title => "blah", :message => "bloo") # just create a copy directly instead of doing a real migration
+    @topic_copy.migration_id = @tag.migration_id
+    @topic_copy.save!
+  end
+
+  before :each do
+    user_session(@teacher)
+  end
+
+  it "should not show the deletion cog-menu option on the index when locked" do
+    @tag.update_attribute(:restrictions, {:content => true})
+
+    get "/courses/#{@copy_to.id}/discussion_topics"
+
+    expect(f('.discussion-row')).to contain_css('.icon-lock')
+
+    f('.discussion-row .al-trigger').click
+    expect(f('.discussion-row')).not_to include_text('Delete')
+  end
+
+  it "should show all the cog-menu options on the index when not locked" do
+    get "/courses/#{@copy_to.id}/discussion_topics"
+
+    expect(f('.discussion-row')).to contain_css('.icon-unlock')
+
+    f('.discussion-row .al-trigger').click
+    expect(f('.discussion-row')).to include_text('Delete')
+  end
+
+  it "should not show the delete options on the show page when locked" do
+    @tag.update_attribute(:restrictions, {:content => true})
+
+    get "/courses/#{@copy_to.id}/discussion_topics/#{@topic_copy.id}"
+
+    expect(f('#content')).to contain_css('.edit-btn')
+    f('.al-trigger').click
+    expect(f('.al-options')).not_to contain_css('.delete_discussion')
+  end
+
+  it "should show the delete cog-menu options on the show when not locked" do
+    get "/courses/#{@copy_to.id}/discussion_topics/#{@topic_copy.id}"
+
+    f('.al-trigger').click
+    expect(f('.al-options')).to contain_css('.delete_discussion')
+  end
+
+  context "announcements" do
+    before :once do
+      @original_topic.update_attribute(:type, 'Announcement')
+      @topic_copy.update_attribute(:type, 'Announcement')
+    end
+
+    it "should not show the cog-menu options on the index when locked" do
+      @tag.update_attribute(:restrictions, {:content => true})
+
+      get "/courses/#{@copy_to.id}/announcements"
+
+      expect(f('.discussion-topic')).to contain_css('.lock-icon')
+
+      expect(f('.discussion-topic')).not_to contain_css('.al-trigger')
+    end
+
+    it "should show the cog-menu options on the index when not locked" do
+      get "/courses/#{@copy_to.id}/announcements"
+
+      expect(f('.discussion-topic')).to contain_css('.icon-unlock')
+
+      expect(f('.discussion-topic')).to contain_css('.al-trigger')
+    end
+
+    it "should not show the edit/delete options on the show page when locked" do
+      @tag.update_attribute(:restrictions, {:content => true})
+
+      get "/courses/#{@copy_to.id}/discussion_topics/#{@topic_copy.id}"
+
+      expect(f('#content')).to contain_css('.edit-btn')
+      f('.al-trigger').click
+      expect(f('.al-options')).not_to contain_css('.delete_discussion')
+    end
+
+    it "should show the edit/delete cog-menu options on the show when not locked" do
+      get "/courses/#{@copy_to.id}/discussion_topics/#{@topic_copy.id}"
+
+      expect(f('#content')).to contain_css('.edit-btn')
+      f('.al-trigger').click
+      expect(f('.al-options')).to contain_css('.delete_discussion')
+    end
+  end
+end

@@ -23,10 +23,10 @@ describe "/gradebooks/submissions_zip_upload", type: :view do
   before do
     course_with_student
     view_context
-    assigns[:students] = [@user]
-    assigns[:assignment] = @course.assignments.create!(:title => "some assignment")
-    assigns[:comments] = []
-    assigns[:failures] = []
+    assign(:students, [@user])
+    assign(:assignment, @course.assignments.create!(:title => "some assignment"))
+    assign(:comments, [])
+    assign(:failures, [])
   end
 
   it "should render" do
@@ -35,7 +35,7 @@ describe "/gradebooks/submissions_zip_upload", type: :view do
     expect(rendered).to be_present
   end
 
-  it "includes a link back to the gradebook (gradebook2 by default)" do
+  it "includes a link back to the gradebook (gradebook by default)" do
     render 'gradebooks/submissions_zip_upload'
 
     expect(view.content_for(:right_side)).to match(/a.+?href="\/courses\/#{@course.id}\/gradebook"/)

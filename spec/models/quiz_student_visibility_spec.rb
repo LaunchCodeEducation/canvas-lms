@@ -29,10 +29,6 @@ describe "differentiated_assignments" do
     make_quiz({date: Time.now, ovto: false})
   end
 
-  def quiz_with_null_only_visible_to_overrides
-    make_quiz({date: Time.now, ovto: nil})
-  end
-
   def student_in_course_with_adhoc_override(quiz, opts={})
     @user = opts[:user] || user_model
     StudentEnrollment.create!(:user => @user, :course => @course)
@@ -169,27 +165,34 @@ describe "differentiated_assignments" do
       end
 
       context "user in section with override who then changes sections" do
-        before{enroller_user_in_section(@section_foo)}
+        before do
+          enroller_user_in_section(@section_foo)
+          @student = @user
+          teacher_in_course(course: @course)
+        end
         it "should keep the quiz visible if there is a grade" do
-          @quiz.assignment.grade_student(@user, {grade: 10})
-          @user.enrollments.each(&:destroy_permanently!)
-          enroller_user_in_section(@section_bar, {user: @user})
+          @quiz.assignment.grade_student(@student, grade: 10, grader: @teacher)
+          Score.where(enrollment_id: @student.enrollments).delete_all
+          @student.enrollments.each(&:destroy_permanently!)
+          enroller_user_in_section(@section_bar, {user: @student})
           ensure_user_sees_quiz
         end
 
         it "should not keep the quiz visible if there is no score, even if it has a grade" do
-          @quiz.assignment.grade_student(@user, {grade: 10})
+          @quiz.assignment.grade_student(@student, grade: 10, grader: @teacher)
           @quiz.assignment.submissions.last.update_attribute("score", nil)
           @quiz.assignment.submissions.last.update_attribute("grade", 10)
-          @user.enrollments.each(&:destroy_permanently!)
-          enroller_user_in_section(@section_bar, {user: @user})
+          Score.where(enrollment_id: @student.enrollments).delete_all
+          @student.enrollments.each(&:destroy_permanently!)
+          enroller_user_in_section(@section_bar, {user: @student})
           ensure_user_does_not_see_quiz
         end
 
         it "should keep the quiz visible if the grade is zero" do
-          @quiz.assignment.grade_student(@user, {grade: 0})
-          @user.enrollments.each(&:destroy_permanently!)
-          enroller_user_in_section(@section_bar, {user: @user})
+          @quiz.assignment.grade_student(@student, grade: 0, grader: @teacher)
+          Score.where(enrollment_id: @student.enrollments).delete_all
+          @student.enrollments.each(&:destroy_permanently!)
+          enroller_user_in_section(@section_bar, {user: @student})
           ensure_user_sees_quiz
         end
       end
@@ -207,6 +210,7 @@ describe "differentiated_assignments" do
         it "should update when enrollments change" do
           ensure_user_sees_quiz
           enrollments = StudentEnrollment.where(:user_id => @user.id, :course_id => @course.id, :course_section_id => @section_foo.id)
+          Score.where(enrollment_id: enrollments).delete_all
           enrollments.each(&:destroy_permanently!)
           ensure_user_does_not_see_quiz
         end
@@ -234,37 +238,6 @@ describe "differentiated_assignments" do
     context "quiz with false only_visible_to_overrides" do
       before do
         quiz_with_false_only_visible_to_overrides
-        give_section_foo_due_date(@quiz)
-      end
-      context "user in default section" do
-        it "should show the quiz to the user" do
-          ensure_user_sees_quiz
-        end
-      end
-      context "user in section with override" do
-        before{enroller_user_in_section(@section_foo)}
-        it "should show the quiz to the user" do
-          ensure_user_sees_quiz
-        end
-      end
-      context "user in section with no override" do
-        before{enroller_user_in_section(@section_bar)}
-        it "should show the quiz to the user" do
-          ensure_user_sees_quiz
-        end
-      end
-      context "user in section with override and one without override" do
-        before do
-          enroller_user_in_both_sections
-        end
-        it "should show the quiz to the user" do
-          ensure_user_sees_quiz
-        end
-      end
-    end
-    context "quiz with null only_visible_to_overrides" do
-      before do
-        quiz_with_null_only_visible_to_overrides
         give_section_foo_due_date(@quiz)
       end
       context "user in default section" do

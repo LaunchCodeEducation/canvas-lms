@@ -26,7 +26,7 @@ define [
       configurationForm: component.refs.configurationForm?.getDOMNode()
     }
 
-  module 'ExternalApps.AddExternalToolButton',
+  QUnit.module 'ExternalApps.AddExternalToolButton',
     setup: ->
       wrapper = document.getElementById('fixtures')
       wrapper.innerHTML = ''
@@ -40,6 +40,19 @@ define [
     nodes = getDOMNodes()
     ok nodes.component.isMounted()
     ok TestUtils.isCompositeComponentWithType(nodes.component, AddExternalToolButton)
+
+  test 'does not include close button in footer if not LTI2 registration', ->
+    addToolButton = renderComponent({'canAddEdit': true})
+    addToolButton.setState({isLti2: false})
+    addToolButton.setState({modalIsOpen: true})
+    ok !document.querySelector('#footer-close-button')
+
+  test 'includes close button in footer if LTI2 registration', ->
+    addToolButton = renderComponent({'canAddEdit': true})
+    addToolButton.setState({isLti2: true})
+    addToolButton.setState({modalIsOpen: true})
+    console.log(addToolButton.state)
+    ok document.querySelector('#footer-close-button')
 
   test 'bad config url error message', ->
     addToolButton = renderComponent()
@@ -128,15 +141,4 @@ define [
         })
         equal addToolButton._errorHandler(xhr), 'We were unable to add the app.'
 
-      test 'gives access error message when permission not granted', ->
-        component = renderComponent({'canAddEdit': false})
-        accessDeniedMessage = 'This action has been disabled by your admin.'
-        form = JSON.stringify(component.renderForm())
-        ok form.indexOf(accessDeniedMessage) >= 0
-
-      test 'gives no access error message when permission is granted', ->
-        component = renderComponent({'canAddEdit': true})
-        accessDeniedMessage = 'This action has been disabled by your admin.'
-        form = JSON.stringify(component.renderForm())
-        notOk form.indexOf(accessDeniedMessage) >= 0
 

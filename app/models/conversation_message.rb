@@ -29,13 +29,12 @@ class ConversationMessage < ActiveRecord::Base
   belongs_to :author, :class_name => 'User'
   belongs_to :context, polymorphic: [:account]
   has_many :conversation_message_participants
-  has_many :attachment_associations, :as => :context
+  has_many :attachment_associations, :as => :context, :inverse_of => :context
   # we used to attach submission comments to conversations via this asset
   # TODO: remove this column when we're sure we don't want this relation anymore
   belongs_to :asset, polymorphic: [:submission]
   delegate :participants, :to => :conversation
   delegate :subscribed_participants, :to => :conversation
-  attr_accessible
 
   after_create :generate_user_note!
   after_save :update_attachment_associations
@@ -109,10 +108,8 @@ class ConversationMessage < ActiveRecord::Base
   end
 
   def after_participants_created_broadcast
-    conversation_message_participants(true) # reload this association so we get latest data
-    skip_broadcasts = false
+    CANVAS_RAILS4_2 ? conversation_message_participants(true) : conversation_message_participants.reload # reload this association so we get latest data
     @re_send_message = true
-    set_broadcast_flags
     broadcast_notifications
     queue_create_stream_items
     generate_user_note!

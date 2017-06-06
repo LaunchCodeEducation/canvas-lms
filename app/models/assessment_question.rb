@@ -18,10 +18,9 @@
 
 class AssessmentQuestion < ActiveRecord::Base
   include Workflow
-  strong_params
 
   has_many :quiz_questions, :class_name => 'Quizzes::QuizQuestion'
-  has_many :attachments, :as => :context
+  has_many :attachments, :as => :context, :inverse_of => :context
   delegate :context, :context_id, :context_type, :to => :assessment_question_bank
   attr_accessor :initial_context
   belongs_to :assessment_question_bank, :touch => true
@@ -40,6 +39,10 @@ class AssessmentQuestion < ActiveRecord::Base
                         "essay_question", "true_false_question", "file_upload_question"]
 
   serialize :question_data
+
+  include MasterCourses::CollectionRestrictor
+  self.collection_owner_association = :assessment_question_bank
+  restrict_columns :content, [:name, :question_data]
 
   set_policy do
     given{|user, session| self.context.grants_right?(user, session, :manage_assignments) }
@@ -96,6 +99,9 @@ class AssessmentQuestion < ActiveRecord::Base
         path = URI.unescape(id_or_path)
         file = Folder.find_attachment_in_context_with_path(assessment_question_bank.context, path)
       end
+      if file && file.replacement_attachment_id
+        file = file.replacement_attachment
+      end
       begin
         new_file = file.try(:clone_for, self)
       rescue => e
@@ -138,11 +144,13 @@ class AssessmentQuestion < ActiveRecord::Base
     end
 
     hash = deep_translate.call(self.question_data)
-    self.question_data = hash
+    if hash != self.question_data
+      self.question_data = hash
 
-    @skip_translate_links = true
-    self.save!
-    @skip_translate_links = false
+      @skip_translate_links = true
+      self.save!
+      @skip_translate_links = false
+    end
   end
 
   def data

@@ -7,7 +7,7 @@ define [
   'jquery.ajaxJSON'
   'jquery.instructure_date_and_time'
   'compiled/jquery.rails_flash_notifications'
-], (Backbone,$, I18n, template, ValidatedMixin) ->
+], (Backbone, $, I18n, template, ValidatedMixin) ->
   class UserDateRangeSearchFormView extends Backbone.View
     @mixin ValidatedMixin
 
@@ -46,9 +46,13 @@ define [
       @inputFilterView.collection.on 'setParam deleteParam', @fetchUsers
       @usersView.collection.on 'selectedModelChange', @selectUser
       @usersView.collection.on 'sync', @resultsFound
+      @collection.on 'sync', @notificationsFound
 
     resultsFound: =>
       $.screenReaderFlashMessage(I18n.t('results_found', "%{length} results found", { length: @usersView.collection.length }))
+
+    notificationsFound: =>
+      $.screenReaderFlashMessage(I18n.t('%{length} notifications found', { length: @collection.length }))
 
     fetchUsers: =>
       @selectUser null

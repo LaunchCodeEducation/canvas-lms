@@ -76,9 +76,7 @@ module AuthenticationMethods
       # and for some normal use cases (old token, access token),
       # so we can return and move on
       return
-    rescue  Faraday::ConnectionFailed,            # consul config present, but couldn't connect
-            Faraday::ClientError,                 # connetion established, but something went wrong
-            Diplomat::KeyNotFound => exception    # talked to consul, but data missing
+    rescue Imperium::TimeoutError => exception # Something went wrong in the Network
       # these are indications of infrastructure of data problems
       # so we should log them for resolution, but recover gracefully
       Canvas::Errors.capture_exception(:jwt_check, exception)
@@ -207,7 +205,7 @@ module AuthenticationMethods
         params_without_become = params.dup
         params_without_become.delete_if {|k,v| [ 'become_user_id', 'become_teacher', 'become_student', 'me' ].include? k }
         params_without_become[:only_path] = true
-        session[:masquerade_return_to] = url_for(params_without_become)
+        session[:masquerade_return_to] = url_for(params_without_become.to_hash)
         return redirect_to user_masquerade_url(request_become_user.id)
       end
     end
@@ -288,7 +286,7 @@ module AuthenticationMethods
       format.html {
         store_location
         flash[:warning] = I18n.t('lib.auth.errors.not_authenticated', "You must be logged in to access this page") unless request.path == '/'
-        redirect_to login_url(params.slice(:canvas_login, :authentication_provider))
+        redirect_to login_url(params.permit(:canvas_login, :authentication_provider))
       }
       format.json { render_json_unauthorized }
     end

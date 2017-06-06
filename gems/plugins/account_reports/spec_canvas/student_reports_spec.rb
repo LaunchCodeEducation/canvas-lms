@@ -25,17 +25,23 @@ describe 'Student reports' do
     Notification.where(name: "Report Generated").first_or_create
     Notification.where(name: "Report Generation Failed").first_or_create
     @account = Account.create(name: 'New Account', default_time_zone: 'UTC')
-    @course1 = course(:course_name => 'English 101', :account => @account,
+    @course1 = course_factory(:course_name => 'English 101', :account => @account,
                       :active_course => true)
     @course1.sis_source_id = 'SIS_COURSE_ID_1'
     @course1.save!
     @course1.offer
-    @course2 = course(:course_name => 'Math 101', :account => @account,
+    @course2 = course_factory(:course_name => 'Math 101', :account => @account,
                       :active_course => true)
     @course2.offer
     @course3 = Course.create(:name => 'Science 101', :course_code => 'SCI101',
                              :account => @account)
     @course3.offer
+
+    @teacher = User.create!
+    @course1.enroll_teacher(@teacher)
+    @course2.enroll_teacher(@teacher)
+    @course3.enroll_teacher(@teacher)
+
     @assignment1 = @course1.assignments.create!(:title => 'My Assignment')
     @assignment2 = @course2.assignments.create!(:title => 'My Assignment')
     @assignment3 = @course3.assignments.create!(:title => 'My Assignment')
@@ -69,18 +75,18 @@ describe 'Student reports' do
       @end_at = 1.day.ago
 
       @submission_time = 1.month.ago
-      @assignment1.grade_student(@user1, {:grade => '4'})
+      @assignment1.grade_student(@user1, grade: '4', grader: @teacher)
       s = Submission.where(assignment_id: @assignment1, user_id: @user1).first
       s.submitted_at = @submission_time
       s.save!
 
       @submission_time2 = 40.days.ago
-      @assignment1.grade_student(@user2, {:grade => '5'})
+      @assignment1.grade_student(@user2, grade: '5', grader: @teacher)
       s = Submission.where(assignment_id: @assignment1, user_id: @user2).first
       s.submitted_at = @submission_time2
       s.save!
 
-      @assignment2.grade_student(@user1, {:grade => '9'})
+      @assignment2.grade_student(@user1, grade: '9', grader: @teacher)
       s = Submission.where(assignment_id: @assignment2, user_id: @user1).first
       s.submitted_at = @submission_time2
       s.save!
@@ -574,7 +580,7 @@ describe 'Student reports' do
     it 'should show data for users in other accounts with enrollments on this account' do
       @different_account = Account.create(name: 'New Account', default_time_zone: 'UTC')
 
-      @course3 = course(:course_name => 'English 101', :account => @account, :active_course => true)
+      @course3 = course_factory(:course_name => 'English 101', :account => @account, :active_course => true)
       @course3.save!
       @course3.offer
 
@@ -605,6 +611,7 @@ describe 'Student reports' do
         :developer_key => DeveloperKey.default,
         :expires_at => 2.hours.ago
       )
+      @user1.destroy
 
       @at2 = AccessToken.create!(
         :user => @user2,
@@ -621,8 +628,8 @@ describe 'Student reports' do
       )
     end
 
-    it 'should run the user access tokens report' do
-      parsed = read_report(@type, {order: 1})
+    it 'should run and include deleted users' do
+      parsed = read_report(@type, {params: {"include_deleted" => true}, order: 1})
       expect(parsed.length).to eq 3
       expect(parsed[0]).to eq([
         @user3.id.to_s,
@@ -653,6 +660,11 @@ describe 'Student reports' do
         DeveloperKey.default.id.to_s,
         "User-Generated"
       ])
+    end
+
+    it 'should run and exclude deleted users' do
+      parsed = read_report(@type, {order: 1})
+      expect(parsed.length).to eq 2
     end
   end
 end

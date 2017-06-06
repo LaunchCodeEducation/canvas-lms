@@ -20,7 +20,7 @@ describe "account" do
       get "/accounts/#{Account.default.id}/users"
       f(".add_user_link").click
       dialog = f("#add_user_dialog")
-      expect(dialog.find_elements(:id, "pseudonym_path").length).to eq 0
+      expect(dialog).not_to contain_css("#pseudonym_path")
       expect(dialog.find_element(:id, "pseudonym_unique_id")).to be_displayed
 
       Account.default.authentication_providers.create(:auth_type => 'cas')
@@ -41,7 +41,7 @@ describe "account" do
 
       wait_for_ajaximations
       expect(f('#add_course_dialog')).not_to be_displayed
-      assert_flash_notice_message(/Test Course successfully added/)
+      assert_flash_notice_message("Test Course successfully added")
     end
 
     it "should be able to create a new course when no other courses exist" do
@@ -68,7 +68,7 @@ describe "account" do
       f("#term_new .general_dates .start_date .edit_term input").send_keys("2011-07-01")
       f("#term_new .general_dates .end_date .edit_term input").send_keys("2011-07-31")
 
-      submit_form(".enrollment_term_form")
+      f(".submit_button").click
       wait_for_ajaximations
 
       term = Account.default.enrollment_terms.last
@@ -85,7 +85,7 @@ describe "account" do
       f('.edit_term_link').click
       f('.editing_term .general_dates .start_date .edit_term input').send_keys("2011-07-01")
       f('.editing_term .general_dates .end_date .edit_term input').send_keys("2011-07-31")
-      f("button[type='submit']").click
+      f(".submit_button").click
       expect(term).not_to have_class("editing_term")
       verify_displayed_term_dates(term, {
           :general => ["Jul 1", "Jul 31"],
@@ -101,7 +101,7 @@ describe "account" do
       f('.edit_term_link').click
       f('.editing_term .student_enrollment_dates .start_date .edit_term input').send_keys("2011-07-02")
       f('.editing_term .student_enrollment_dates .end_date .edit_term input').send_keys("2011-07-30")
-      f("button[type='submit']").click
+      f(".submit_button").click
       expect(term).not_to have_class("editing_term")
       verify_displayed_term_dates(term, {
           :general => ["whenever", "whenever"],
@@ -117,7 +117,7 @@ describe "account" do
       f('.edit_term_link').click
       f('.editing_term .teacher_enrollment_dates .start_date .edit_term input').send_keys("2011-07-03")
       f('.editing_term .teacher_enrollment_dates .end_date .edit_term input').send_keys("2011-07-29")
-      f("button[type='submit']").click
+      f(".submit_button").click
       expect(term).not_to have_class("editing_term")
       verify_displayed_term_dates(term, {
           :general => ["whenever", "whenever"],
@@ -133,7 +133,7 @@ describe "account" do
       f('.edit_term_link').click
       f('.editing_term .ta_enrollment_dates .start_date .edit_term input').send_keys("2011-07-04")
       f('.editing_term .ta_enrollment_dates .end_date .edit_term input').send_keys("2011-07-28")
-      f("button[type='submit']").click
+      f(".submit_button").click
       expect(term).not_to have_class("editing_term")
       verify_displayed_term_dates(term, {
           :general => ["whenever", "whenever"],
@@ -216,7 +216,7 @@ describe "account" do
     end
 
     it "should be able to view user details from parent account" do
-      user_non_root = user
+      user_non_root = user_factory
       create_sub_account.account_users.create!(user: user_non_root)
       get "/accounts/#{Account.default.id}/users/#{user_non_root.id}"
       # verify user details displayed properly

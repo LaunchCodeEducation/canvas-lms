@@ -18,9 +18,9 @@ module Submissions
   class PreviewsController < ApplicationController
     include KalturaHelper
     include Submissions::ShowHelper
-    before_filter :require_context
+    before_action :require_context
 
-    rescue_from ActiveRecord::RecordNotFound, only: :show, with: :render_user_not_found
+    rescue_from ActiveRecord::RecordNotFound, with: :render_user_not_found
     def show
       service = Submissions::SubmissionForShow.new(
         @context, params.slice(:assignment_id, :id, :preview, :version)

@@ -19,11 +19,11 @@
 define([
   'i18n!message_students',
   'jquery' /* $ */,
+  'jsx/shared/helpers/numberHelper',
   'jquery.instructure_forms' /* formSubmit */,
   'jqueryui/dialog',
-  'jquery.instructure_misc_plugins' /* showIf */
-], function(I18n, $) {
-
+  'jquery.instructure_misc_plugins', /* showIf */
+], function (I18n, $, numberHelper) {
   var $message_students_dialog = $("#message_students_dialog");
   var $sendButton = $message_students_dialog.find(".send_button");
   var currentSettings = {};
@@ -34,6 +34,7 @@ define([
     );
   }
 
+  /*global messageStudents*/
   window.messageStudents = function(settings) {
     currentSettings = settings;
     $message_students_dialog.find(".message_types").empty();
@@ -86,7 +87,7 @@ define([
     $message_students_dialog.find(".asset_title").text(title);
     $message_students_dialog.find(".out_of").showIf(settings.points_possible != null);
     $message_students_dialog.find(".send_button").text(I18n.t("send_message", "Send Message"));
-    $message_students_dialog.find(".points_possible").text(settings.points_possible);
+    $message_students_dialog.find(".points_possible").text(I18n.n(settings.points_possible));
     $message_students_dialog.find("[name=context_code]").val(settings.context_code);
 
     $message_students_dialog.find("textarea").val("");
@@ -135,9 +136,9 @@ define([
     var showStudentsMessageSentTo = function() {
       var idx = parseInt($message_students_dialog.find("select").val(), 10) || 0;
       var option = currentSettings.options[idx];
-      var students_hash = $message_students_dialog.data('students_hash'),
-          cutoff = parseFloat($message_students_dialog.find(".cutoff_score").val(), 10);
-      if (!cutoff && cutoff !== 0) {
+      var students_hash = $message_students_dialog.data('students_hash');
+      var cutoff = numberHelper.parse($message_students_dialog.find('.cutoff_score').val());
+      if (isNaN(cutoff)) {
         cutoff = null;
       }
       var student_ids = null;
@@ -173,22 +174,12 @@ define([
       }
     };
 
-    var focusOnCutoffScore = function() {
-      var idx = parseInt($message_students_dialog.find("select").val(), 10) || 0;
-      var option = currentSettings.options[idx];
-      if (option.cutoff) {
-        $(".cutoff_score").focus();
-      }
-    };
-
     var closeDialog = function() {
       $message_students_dialog.dialog('close');
     };
 
     $message_students_dialog.find(".cancel_button").click(closeDialog);
-    $message_students_dialog.find("select").change(showStudentsMessageSentTo)
-      .change(focusOnCutoffScore)
-      .change(checkSendable);
+    $message_students_dialog.find("select").change(showStudentsMessageSentTo).change(checkSendable);
     $message_students_dialog.find(".cutoff_score").bind('change blur keyup', showStudentsMessageSentTo)
       .bind('change blur keyup', checkSendable);
     $message_students_dialog.find("#body").bind('change blur keyup', checkSendable);

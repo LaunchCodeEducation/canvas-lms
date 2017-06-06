@@ -7,12 +7,16 @@ describe Quizzes::QuizStatistics::StudentAnalysis do
 
   let(:report_type) { 'student_analysis' }
   include_examples "Quizzes::QuizStatistics::Report"
-  before(:once) { course }
+  before(:once) { course_factory }
 
   def csv(opts = {}, quiz = @quiz)
     stats = quiz.statistics_csv('student_analysis', opts)
     run_jobs
-    stats.csv_attachment(true).open.read
+    if CANVAS_RAILS4_2
+      stats.csv_attachment(true).open.read
+    else
+      stats.reload_csv_attachment.open.read
+    end
   end
 
   it 'should calculate mean/stddev as expected with no submissions' do
@@ -105,7 +109,7 @@ describe Quizzes::QuizStatistics::StudentAnalysis do
     end
 
     def survey_with_logged_out_submission
-      course_with_teacher_logged_in(:active_all => true)
+      course_with_teacher(:active_all => true)
 
       @assignment = @course.assignments.create(:title => "Test Assignment")
       @assignment.workflow_state = "available"
@@ -479,7 +483,7 @@ describe Quizzes::QuizStatistics::StudentAnalysis do
   end
 
   it 'should not count student view submissions' do
-    @course = course(active_all: true)
+    @course = course_factory(active_all: true)
     fake_student = @course.student_view_student
     q = @course.quizzes.create!
     q.update_attribute(:published_at, Time.now)

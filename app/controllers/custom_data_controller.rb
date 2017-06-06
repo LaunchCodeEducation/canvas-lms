@@ -19,8 +19,8 @@
 # @API Users
 # @subtopic Custom Data
 class CustomDataController < ApplicationController
-  before_filter :require_namespace, :get_scope, :get_context
-  before_filter :require_custom_data, :except => :set_data
+  before_action :require_namespace, :get_scope, :get_context
+  before_action :require_custom_data, :except => :set_data
 
   # @API Store custom data
   # @beta
@@ -206,11 +206,12 @@ class CustomDataController < ApplicationController
 
     data = params[:data]
     render(json: {message: 'no data specified'}, status: :bad_request) and return if data.nil?
+    data = data.to_hash.with_indifferent_access if data.is_a?(ActionController::Parameters)
 
     begin
       overwrite = cd.set_data(@scope, data)
     rescue CustomData::WriteConflict => wc
-      render(json: wc.as_json.merge({message: wc.message}), status: :conflict) and return
+      render(json: wc.as_json.merge(message: wc.message), status: :conflict) and return
     end
     if cd.save
       render(json: {data: cd.get_data(@scope)},

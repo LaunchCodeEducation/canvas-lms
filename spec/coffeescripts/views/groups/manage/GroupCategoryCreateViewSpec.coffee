@@ -8,7 +8,7 @@ define [
   view = null
   groupCategory = null
 
-  module 'GroupCategoryCreateView',
+  QUnit.module 'GroupCategoryCreateView',
     setup: ->
       fakeENV.setup({allow_self_signup: true})
       groupCategory = new GroupCategory()
@@ -22,12 +22,12 @@ define [
       document.getElementById("fixtures").innerHTML = ""
 
   test 'toggling auto group leader enables and disables accompanying controls', ->
-    $('.auto-group-leader-toggle').prop( "checked", true )
-    $(".auto-group-leader-toggle").trigger('click')
+    $(".auto-group-leader-toggle").click()
+
     view.$autoGroupLeaderControls.find('label.radio').each ->
       equal $(this).css('opacity'), "1"
-    $('.auto-group-leader-toggle').prop( "checked", false )
-    $(".auto-group-leader-toggle").trigger('click')
+    $(".auto-group-leader-toggle").click()
+
     view.$autoGroupLeaderControls.find('label.radio').each ->
       equal $(this).css('opacity'), "0.5"
 

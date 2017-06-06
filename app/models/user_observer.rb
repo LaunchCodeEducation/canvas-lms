@@ -19,8 +19,6 @@
 class UserObserver < ActiveRecord::Base
   belongs_to :user, inverse_of: :user_observees
   belongs_to :observer, :class_name => 'User', inverse_of: :user_observers
-  strong_params
-
   after_create :create_linked_enrollments
 
   validate :not_same_user, :if => lambda { |uo| uo.changed? }
@@ -34,8 +32,8 @@ class UserObserver < ActiveRecord::Base
           user_observer.workflow_state = 'active'
           user_observer.sis_batch_id = nil
           user_observer.save!
-          user_observer.create_linked_enrollments
         end
+        user_observer.create_linked_enrollments
       else
         user_observer = create!(attributes)
       end
@@ -56,9 +54,15 @@ class UserObserver < ActiveRecord::Base
   end
 
   def create_linked_enrollments
-    user.student_enrollments.all_active_or_pending.order("course_id").each do |enrollment|
-      next unless enrollment.valid?
-      enrollment.create_linked_enrollment_for(observer)
+    self.class.connection.after_transaction_commit do
+      User.skip_updating_account_associations do
+        user.student_enrollments.all_active_or_pending.order("course_id").each do |enrollment|
+          next unless enrollment.valid?
+          enrollment.create_linked_enrollment_for(observer)
+        end
+
+        observer.update_account_associations
+      end
     end
   end
 

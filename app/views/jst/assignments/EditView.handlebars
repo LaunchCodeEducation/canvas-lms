@@ -1,48 +1,70 @@
 <div id="edit_assignment_wrapper">
   {{#if frozen}}
     <div class="alert alert-info">
-      <i class="icon-warning"></i> {{#t "warnings.assignment_is_frozen"}}Some settings have been administratively locked.{{/t}}
+      <i class="icon-warning"></i> {{#t}}Some settings have been administratively locked.{{/t}}
+    </div>
+  {{/if}}
+  {{#if inClosedGradingPeriod}}
+    <div class="alert alert-info">
+      <i class="icon-warning"></i> {{#t}}Some settings have been disabled because the assignment is in a closed grading period.{{/t}}
     </div>
   {{/if}}
 
-  <div class="control-group">
-    <div>
-      <label for="assignment_name" class="screenreader-only">{{#t}}Assignment Name{{/t}}</label>
-      <input id="assignment_name"
-        name="name"
-        placeholder="{{#t "assignment_name"}}Assignment Name{{/t}}"
-        value="{{name}}"
-        type="text"
-        maxlength="254"
-        class="input-block-level"
-        {{disabledIfIncludes frozenAttributes "title"}}/>
-    </div>
-  </div>
 
   <div class="control-group">
-    {{#ifIncludes frozenAttributes "description"}}
-      <div class="frozen-description user_content">
-        {{convertApiUserContent description}}
-      </div>
+    {{#if lockedItems.content}}
+      <h1 id="assignment_name" class="title">{{name}}</h1>
+      <input type="hidden" name="name" value="{{name}}"/>
     {{else}}
-      <div style="float: right;">
-        <a href="#" class="rte_switch_views_link">
-          {{#t "#editor.switch_editor_html"}}HTML Editor{{/t}}
-        </a>
-        <a href="#" class="rte_switch_views_link" style="display:none;">
-          {{#t "#editor.switch_editor_rich_text"}}Rich Content Editor{{/t}}
-        </a>
+      <div>
+        <label for="assignment_name" class="screenreader-only">{{#t}}Assignment Name{{/t}}</label>
+        <input id="assignment_name"
+          name="name"
+          placeholder="{{#t "assignment_name"}}Assignment Name{{/t}}"
+          value="{{name}}"
+          type="text"
+          maxlength="254"
+          class="input-block-level"
+          {{#if inClosedGradingPeriod}}
+            readonly
+          {{/if}}
+          {{disabledIfIncludes frozenAttributes "title"}}/>
       </div>
-      <div style="clear:both;"></div>
-      <textarea id="assignment_description"
-        name="description"
-        aria-label="{{#t "description"}}Description{{/t}}"
-        {{disabledIfIncludes frozenAttributes "description"}}>
-        {{convertApiUserContent description forEditing=1}}
-      </textarea>
-    {{/ifIncludes}}
-
+    {{/if}}
   </div>
+
+  {{#unless isQuizLTIAssignment}}
+    <div class="control-group">
+      {{#ifIncludes frozenAttributes "description"}}
+        <div class="frozen-description user_content">
+          {{convertApiUserContent description}}
+        </div>
+      {{else}}
+        {{#if lockedItems.content}}
+          <div id="assignment_description" class="assignment_description">
+            {{convertApiUserContent description}}
+          </div>
+          <input type="hidden" name="description" value="{{convertApiUserContent description forEditing=1}}"/>
+        {{else}}
+          <div style="float: right;">
+            <a href="#" class="rte_switch_views_link">
+              {{#t "#editor.switch_editor_html"}}HTML Editor{{/t}}
+            </a>
+            <a href="#" class="rte_switch_views_link" style="display:none;">
+              {{#t "#editor.switch_editor_rich_text"}}Rich Content Editor{{/t}}
+            </a>
+          </div>
+          <div style="clear:both;"></div>
+          <textarea id="assignment_description"
+            name="description"
+            aria-label="{{#t "description"}}Description{{/t}}"
+            {{disabledIfIncludes frozenAttributes "description"}}>
+            {{convertApiUserContent description forEditing=1}}
+          </textarea>
+        {{/if}}
+      {{/ifIncludes}}
+    </div>
+  {{/unless}}
 
   <div class="control-group">
 
@@ -55,14 +77,20 @@
     <div class="form-column-right">
       <input id="assignment_points_possible"
         name="points_possible"
-        value="{{pointsPossible}}"
+        value="{{n pointsPossible}}"
         type="text"
-        {{disabledIfIncludes frozenAttributes "points_possible"}}/>
+        {{#ifAny inClosedGradingPeriod lockedItems.points}}
+          readonly
+        {{/ifAny}}
+        {{disabledIfIncludes frozenAttributes "points_possible"}}
+      />
+      {{#unless lockedItems.points}}
         <div aria-live="polite" role="alert">
           <div id=point_change_warning class="alert">
             {{#t}}If you change an assignment's points possible, you must regrade any submissions.{{/t}}
            </div>
         </div>
+      {{/unless}}
     </div>
 
   </div>
@@ -81,17 +109,26 @@
     <div class="form-column-left"></div>
     <div id="omit-from-final-grade" class="form-column-right" style="margin-top: 14px;">
       <label class="checkbox">
-        {{checkbox "omitFromFinalGrade"
-          id="assignment_omit_from_final_grade"
-          name="omit_from_final_grade"
-        }}
+        {{#if inClosedGradingPeriod}}
+          {{checkbox "omitFromFinalGrade"
+            id="assignment_omit_from_final_grade"
+            name="omit_from_final_grade"
+            readonly="readonly"
+            aria-readonly="true"
+          }}
+        {{else}}
+          {{checkbox "omitFromFinalGrade"
+            id="assignment_omit_from_final_grade"
+            name="omit_from_final_grade"
+          }}
+        {{/if}}
         {{#t}}Do not count this assignment towards the final grade{{/t}}
       </label>
     </div>
 
     {{>[assignments/submission_types_form]}}
 
-    <fieldset id="assignment_configuration_tools">
+    <fieldset id="similarity_detection_tools">
     </fieldset>
 
     {{#unless isLargeRoster}}
@@ -110,7 +147,7 @@
 
     {{#if postToSISEnabled}}
       <fieldset>
-        <div class="form-column-left">{{#t}}Post Grades to SIS{{/t}}</div>
+        <div class="form-column-left">{{#t}}Sync to {{postToSISName}}{{/t}}</div>
           <div class="form-column-right" style="margin-top: 14px;">
             <label class="checkbox">
               {{checkbox "postToSIS"
@@ -123,18 +160,20 @@
       </fieldset>
     {{/if}}
 
-    <fieldset>
-      <div class="form-column-left">{{#t}}Moderated Grading{{/t}}</div>
-      <div class="form-column-right" style="margin-top: 14px;">
-        <label class="checkbox">
-          {{checkbox "moderatedGrading"
-            id="assignment_moderated_grading"
-            name="moderated_grading"
-          }}
-          {{#t}}Allow a moderator to review multiple independent grades for selected submissions{{/t}}
-        </label>
-      </div>
-    </fieldset>
+    {{#unless isQuizLTIAssignment}}
+      <fieldset>
+        <div class="form-column-left">{{#t}}Moderated Grading{{/t}}</div>
+        <div class="form-column-right" style="margin-top: 14px;">
+          <label class="checkbox">
+            {{checkbox "moderatedGrading"
+              id="assignment_moderated_grading"
+              name="moderated_grading"
+            }}
+            {{#t}}Allow a moderator to review multiple independent grades for selected submissions{{/t}}
+          </label>
+        </div>
+      </fieldset>
+    {{/unless}}
 
   </div>
 
@@ -165,6 +204,10 @@
 <div id="mastery-paths-editor" style="display: none">
   <div id="conditional_release_target" />
 </div>
+{{/if}}
+
+{{#if isQuizLTIAssignment}}
+  <input type="hidden" name="quiz_lti" value="1" />
 {{/if}}
 
 <input type='hidden' id="secure_params" name="secure_params" value="{{secureParams}}" />

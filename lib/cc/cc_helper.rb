@@ -96,10 +96,6 @@ module CCHelper
   ASSIGNMENT_XML = 'assignment.xml'
   EXTERNAL_CONTENT_FOLDER = 'external_content'
 
-  def create_key(object, prepend="")
-    CCHelper.create_key(object, prepend)
-  end
-
   def ims_date(date=nil)
     CCHelper.ims_date(date)
   end
@@ -148,6 +144,29 @@ module CCHelper
     [title, body]
   end
 
+  def self.map_linked_objects(content)
+    linked_objects = []
+    html = Nokogiri::HTML.fragment(content)
+    html.css('a, img').each do |atag|
+      source = atag['href'] || atag['src']
+      next unless source =~ /%24[^%]*%24/
+      if source.include?(CGI.escape(CC::CCHelper::WEB_CONTENT_TOKEN))
+        attachment_key = source.sub(CGI.escape(CC::CCHelper::WEB_CONTENT_TOKEN), '')
+        attachment_key = attachment_key.split('?').first
+        attachment_key = attachment_key.split('/').map {|ak| CGI.unescape(ak)}.join('/')
+        linked_objects.push({local_path: attachment_key, type: 'Attachment'})
+      else
+        type, object_key = source.split('/').last 2
+        if type =~ /%24[^%]*%24/
+          type = object_key
+          object_key = nil
+        end
+        linked_objects.push({identifier: object_key, type: type})
+      end
+    end
+    linked_objects
+  end
+
   require 'set'
   class HtmlContentExporter
     attr_reader :used_media_objects, :media_object_flavor, :media_object_infos
@@ -163,6 +182,7 @@ module CCHelper
       @track_referenced_files = opts[:track_referenced_files]
       @for_course_copy = opts[:for_course_copy]
       @for_epub_export = opts[:for_epub_export]
+      @key_generator = opts[:key_generator] || CC::CCHelper
       @referenced_files = {}
 
       @rewriter.set_handler('file_contents') do |match|
@@ -190,11 +210,11 @@ module CCHelper
           else
             obj = match.obj_class.where(id: match.obj_id).first
           end
-          next(match.url) unless obj && @rewriter.user_can_view_content?(obj)
+          next(match.url) unless obj && (@rewriter.user_can_view_content?(obj) || @for_epub_export)
           folder = obj.folder.full_name.sub(/course( |%20)files/, WEB_CONTENT_TOKEN)
           folder = folder.split("/").map{|part| URI.escape(part)}.join("/")
 
-          @referenced_files[obj.id] = CCHelper.create_key(obj) if @track_referenced_files && !@referenced_files[obj.id]
+          @referenced_files[obj.id] = @key_generator.create_key(obj) if @track_referenced_files && !@referenced_files[obj.id]
           # for files, turn it into a relative link by path, rather than by file id
           # we retain the file query string parameters
           path = "#{folder}/#{URI.escape(obj.display_name)}"

@@ -17,7 +17,6 @@
 #
 
 class GroupCategory < ActiveRecord::Base
-  attr_accessible :name, :role, :context
   attr_reader :create_group_count
   attr_accessor :assign_unassigned_members, :group_by_section
 
@@ -25,7 +24,7 @@ class GroupCategory < ActiveRecord::Base
   has_many :groups, :dependent => :destroy
   has_many :assignments, :dependent => :nullify
   has_many :progresses, :as => 'context', :dependent => :destroy
-  has_one :current_progress, -> { where(workflow_state: ['queued', 'running']).order(:created_at) }, as: 'context', class_name: 'Progress'
+  has_one :current_progress, -> { where(workflow_state: ['queued', 'running']).order(:created_at) }, as: :context, inverse_of: :context, class_name: 'Progress'
 
   after_save :auto_create_groups
   after_update :update_groups_max_membership
@@ -554,8 +553,8 @@ class GroupCategory < ActiveRecord::Base
         else
           # more likely will we have some extra groups now because of remainder students from our first pass
           # so at least one section will have to have some smaller groups now
-          # best thing to do now is to find the group with the most remaining
-          leftover_sec_id = group_counts.sort_by{|k, count| [-1 * (extra_groups[k] || 0), user_counts[k] % count]}.last.first
+          # best thing to do now is to find the group that can take the hit the easiest
+          leftover_sec_id = group_counts.sort_by{|k, count| [-1 * (extra_groups[k] || 0), (user_counts[k].to_f / (count + 1)), k]}.last.first
           group_counts[leftover_sec_id] += 1
           extra_groups[leftover_sec_id] ||= 0
           extra_groups[leftover_sec_id] += 1

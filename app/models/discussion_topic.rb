@@ -33,14 +33,13 @@ class DiscussionTopic < ActiveRecord::Base
   include ContextModuleItem
   include SearchTermHelper
   include Submittable
+  include MasterCourses::Restrictor
+  restrict_columns :content, [:title, :message]
+  restrict_columns :settings, [:delayed_post_at, :require_initial_post, :discussion_type,
+                               :lock_at, :pinned, :locked, :allow_rating, :only_graders_can_rate, :sort_by_rating]
+  restrict_assignment_columns
 
-  attr_accessible(
-    :title, :message, :user, :delayed_post_at, :lock_at, :assignment,
-    :plaintext_message, :podcast_enabled, :podcast_has_student_posts,
-    :require_initial_post, :threaded, :discussion_type, :context, :pinned, :locked,
-    :group_category, :allow_rating, :only_graders_can_rate, :sort_by_rating
-  )
-  attr_accessor :user_has_posted, :saved_by
+  attr_accessor :user_has_posted, :saved_by, :total_root_discussion_entries
 
   module DiscussionTypes
     SIDE_COMMENT = 'side_comment'
@@ -121,6 +120,12 @@ class DiscussionTopic < ActiveRecord::Base
     if self.has_group_category?
       self.subtopics_refreshed_at ||= Time.parse("Jan 1 2000")
     end
+
+    [
+      :could_be_locked, :podcast_enabled, :podcast_has_student_posts,
+      :require_initial_post, :pinned, :locked, :allow_rating,
+      :only_graders_can_rate, :sort_by_rating
+    ].each { |attr| self[attr] = false if self[attr].nil? }
   end
   protected :default_values
 
@@ -228,10 +233,14 @@ class DiscussionTopic < ActiveRecord::Base
     # transition from graded to ungraded) we acknowledge that the users that
     # have posted have contributed to the topic
     if self.assignment_id && self.assignment_id_changed?
-      posters.each{ |user| self.context_module_action(user, :contributed) }
+      recalculate_context_module_actions!
     end
   end
   protected :update_assignment
+
+  def recalculate_context_module_actions!
+    posters.each{ |user| self.context_module_action(user, :contributed) }
+  end
 
   def is_announcement; false end
 
@@ -562,6 +571,12 @@ class DiscussionTopic < ActiveRecord::Base
     !(self.assignment.try(:due_at) && self.assignment.due_at > Time.now)
   end
 
+  def comments_disabled?
+    !!(self.is_a?(Announcement) &&
+      self.context.is_a?(Course) &&
+      self.context.lock_all_announcements)
+  end
+
   def lock(opts = {})
     raise "cannot lock before due date" unless can_lock?
     self.locked = true
@@ -575,12 +590,6 @@ class DiscussionTopic < ActiveRecord::Base
     save! unless opts[:without_save]
   end
   alias_method :unlock!, :unlock
-
-  # deprecated with draft state: use publish+available_[from|until] machinery instead
-  # you probably want available?
-  def locked?
-    locked.nil? ? workflow_state == 'locked' : locked
-  end
 
   def published?
     return false if workflow_state == 'unpublished'
@@ -612,9 +621,9 @@ class DiscussionTopic < ActiveRecord::Base
 
     student_ids = context.all_real_student_enrollments.select(:user_id)
     topic_ids_with_entries = DiscussionEntry.active.where(discussion_topic_id: topics).
-      where(:user_id => student_ids).uniq.pluck(:discussion_topic_id)
+      where(:user_id => student_ids).distinct.pluck(:discussion_topic_id)
     topic_ids_with_entries += DiscussionTopic.where("root_topic_id IS NOT NULL").
-      where(:id => topic_ids_with_entries).uniq.pluck(:root_topic_id)
+      where(:id => topic_ids_with_entries).distinct.pluck(:root_topic_id)
 
     topics.each do |topic|
       if topic.assignment_id
@@ -668,7 +677,7 @@ class DiscussionTopic < ActiveRecord::Base
   end
 
   def user_ids_who_have_posted_and_admins
-    scope = DiscussionEntry.active.select(:user_id).uniq.where(:discussion_topic_id => self)
+    scope = DiscussionEntry.active.select(:user_id).distinct.where(:discussion_topic_id => self)
     ids = scope.pluck(:user_id)
     ids += self.context.admin_enrollments.active.pluck(:user_id) if self.context.respond_to?(:admin_enrollments)
     ids
@@ -755,8 +764,10 @@ class DiscussionTopic < ActiveRecord::Base
   end
 
   def initialize_last_reply_at
-    self.posted_at ||= Time.now.utc
-    self.last_reply_at ||= Time.now.utc unless [:migration, :after_migration].include?(self.saved_by)
+    unless [:migration, :after_migration].include?(self.saved_by)
+      self.posted_at ||= Time.now.utc
+      self.last_reply_at ||= Time.now.utc
+    end
   end
 
   set_policy do
@@ -766,7 +777,7 @@ class DiscussionTopic < ActiveRecord::Base
     given { |user| self.grants_right?(user, :read) }
     can :read_replies
 
-    given { |user| self.user && self.user == user && self.visible_for?(user) && !self.locked_for?(user, :check_policies => true) && !context.concluded?}
+    given { |user| self.user && self.user == user && self.visible_for?(user) && !self.locked_for?(user, :check_policies => true) && can_participate_in_course?(user)}
     can :reply
 
     given { |user| self.user && self.user == user && self.available_for?(user) && context.user_can_manage_own_discussion_posts?(user) && context.grants_right?(user, :participate_as_student) }
@@ -776,8 +787,8 @@ class DiscussionTopic < ActiveRecord::Base
     can :delete
 
     given { |user, session| !self.locked_for?(user, :check_policies => true) &&
-        self.context.grants_right?(user, session, :post_to_forum) && self.visible_for?(user)}
-    can :reply and can :read
+        self.context.grants_right?(user, session, :post_to_forum) && self.visible_for?(user) && can_participate_in_course?(user)}
+    can :reply
 
     given { |user, session|
       !is_announcement &&
@@ -818,7 +829,7 @@ class DiscussionTopic < ActiveRecord::Base
 
   def context_allows_user_to_create?(user)
     return true unless context.respond_to?(:allow_student_discussion_topics)
-    return true unless context.user_is_student?(user)
+    return true if context.user_is_admin?(user)
     context.allow_student_discussion_topics
   end
 
@@ -917,8 +928,7 @@ class DiscussionTopic < ActiveRecord::Base
   def active_participants_include_tas_and_teachers(include_observers=false)
     participants = active_participants(include_observers)
     if self.context.is_a?(Group) && !self.context.course.nil?
-      participants += self.context.course.teachers
-      participants += self.context.course.tas
+      participants += self.context.course.participating_instructors_by_date
       participants = participants.compact.uniq
     end
     participants
@@ -936,6 +946,10 @@ class DiscussionTopic < ActiveRecord::Base
 
   def course
     @course ||= context.is_a?(Group) ? context.context : context
+  end
+
+  def group
+    @group ||= context.is_a?(Group) ? context : nil
   end
 
   def active_participants_with_visibility
@@ -1035,6 +1049,17 @@ class DiscussionTopic < ActiveRecord::Base
       else
         next true
       end
+    end
+  end
+
+  def can_participate_in_course?(user)
+    if self.group && self.group.deleted?
+      false
+    elsif self.course.is_a?(Course)
+      # this probably isn't a perfect way to determine this but I can't think of a better one
+      self.course.enrollments.for_user(user).active_by_date.exists? || self.course.grants_right?(user, :read_as_admin)
+    else
+      true
     end
   end
 

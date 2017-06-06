@@ -24,10 +24,6 @@ describe ContextExternalTool do
     @root_account = @course.root_account
     @account = account_model(:root_account => @root_account, :parent_account => @root_account)
     @course.update_attribute(:account, @account)
-    expect(@course.account).to eql(@account)
-    expect(@course.root_account).to eql(@root_account)
-    expect(@account.parent_account).to eql(@root_account)
-    expect(@account.root_account).to eql(@root_account)
   end
 
   describe '#content_migration_configured?' do
@@ -177,6 +173,12 @@ describe ContextExternalTool do
     it "should match on the same domain" do
       @tool = @course.context_external_tools.create!(:name => "a", :domain => "google.com", :consumer_key => '12345', :shared_secret => 'secret')
       @found_tool = ContextExternalTool.find_external_tool("http://google.com/is/cool", Course.find(@course.id))
+      expect(@found_tool).to eql(@tool)
+    end
+
+    it "should be case insensitive when matching on the same domain" do
+      @tool = @course.context_external_tools.create!(:name => "a", :domain => "Google.com", :consumer_key => '12345', :shared_secret => 'secret')
+      @found_tool = ContextExternalTool.find_external_tool("http://google.com/is/cool", Course.find(@course.id), @tool.id)
       expect(@found_tool).to eql(@tool)
     end
 
@@ -349,18 +351,6 @@ describe ContextExternalTool do
         preferred = c1.context_external_tools.create!(:name => "a", :url => "http://www.google.com", :consumer_key => '12345', :shared_secret => 'secret')
         expect(ContextExternalTool.find_external_tool(nil, c1, preferred.id)).to eq preferred
       end
-    end
-  end
-
-  describe "assignments" do
-    it "should have assignments" do
-      tool = @course.context_external_tools.create!(name: "a", url: "http://www.google.com", consumer_key: '12345', shared_secret: 'secret')
-      a = @course.assignments.create!(title: "test",
-                                        submission_types: 'external_tool',
-                                        external_tool_tag_attributes: {url: tool.url})
-      tool.tool_settings_assignments << a
-      tool.save
-      expect(tool.tool_settings_assignments).to include(a)
     end
   end
 
@@ -756,6 +746,21 @@ describe ContextExternalTool do
       expect(url).to eql(ContextExternalTool.standardize_url("www.google.com/?b=2&a=1"))
     end
 
+    it 'should handle spaces in front of url' do
+      url = ContextExternalTool.standardize_url(" http://sub_underscore.google.com?a=1&b=2")
+      expect(url).to eql('http://sub_underscore.google.com/?a=1&b=2')
+    end
+
+    it 'should handle tabs in front of url' do
+      url = ContextExternalTool.standardize_url("\thttp://sub_underscore.google.com?a=1&b=2")
+      expect(url).to eql('http://sub_underscore.google.com/?a=1&b=2')
+    end
+
+    it 'should handle unicode whitespace' do
+      url = ContextExternalTool.standardize_url("\u00A0http://sub_underscore.go\u2005ogle.com?a=1\u2002&b=2")
+      expect(url).to eql('http://sub_underscore.google.com/?a=1&b=2')
+    end
+
     it 'handles underscores in the domain' do
       url = ContextExternalTool.standardize_url("http://sub_underscore.google.com?a=1&b=2")
       expect(url).to eql('http://sub_underscore.google.com/?a=1&b=2')
@@ -1055,9 +1060,9 @@ describe ContextExternalTool do
     end
 
     describe ".visible?" do
-      let(:u) {user}
+      let(:u) {user_factory}
       let(:admin) {account_admin_user(account:c.root_account)}
-      let(:c) {course(active_course:true)}
+      let(:c) {course_factory(active_course:true)}
       let(:student) do
         student = factory_with_protected_attributes(User, valid_user_attributes)
         e = c.enroll_student(student)
@@ -1129,16 +1134,16 @@ describe ContextExternalTool do
         @admin = account_admin_user()
 
         course_with_teacher(:active_all => true, :account => Account.default)
-        @teacher = user(:active_all => true)
+        @teacher = user_factory(active_all: true)
         @course.enroll_teacher(@teacher).accept!
 
-        @designer = user(:active_all => true)
+        @designer = user_factory(active_all: true)
         @course.enroll_designer(@designer).accept!
 
-        @ta = user(:active_all => true)
+        @ta = user_factory(active_all: true)
         @course.enroll_ta(@ta).accept!
 
-        @student = user(:active_all => true)
+        @student = user_factory(active_all: true)
         @course.enroll_student(@student).accept!
 
         expect(tool.grants_right?(@admin, :update_manually)).to be_truthy

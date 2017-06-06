@@ -21,26 +21,26 @@ require File.expand_path(File.dirname(__FILE__) + '/../views_helper')
 
 describe "/context_modules/index" do
   before :each do
-    assigns[:body_classes] = []
-    assigns[:menu_tools] = Hash.new([])
-    assigns[:collapsed_modules] = []
+    assign(:body_classes, [])
+    assign(:menu_tools, Hash.new([]))
+    assign(:collapsed_modules, [])
   end
 
   it "should render" do
-    course
+    course_factory
     view_context(@course, @user)
-    assigns[:modules] = @course.context_modules.active
+    assign(:modules, @course.context_modules.active)
     render 'context_modules/index'
     expect(response).not_to be_nil
   end
 
   it "should show content_tags" do
-    course
+    course_factory
     context_module = @course.context_modules.create!
     module_item = context_module.add_item :type => 'context_module_sub_header'
     module_item.publish! if module_item.unpublished?
     view_context(@course, @user)
-    assigns[:modules] = @course.context_modules.active
+    assign(:modules, @course.context_modules.active)
     render 'context_modules/index'
     expect(response).not_to be_nil
     page = Nokogiri('<document>' + response.body + '</document>')
@@ -58,7 +58,7 @@ describe "/context_modules/index" do
     expect(module_item.workflow_state).to eq 'unpublished'
 
     view_context(@course, @user)
-    assigns[:modules] = @course.context_modules.active
+    assign(:modules, @course.context_modules.active)
     render 'context_modules/index'
 
     expect(response).not_to be_nil
@@ -67,15 +67,39 @@ describe "/context_modules/index" do
   end
 
   it "should not show deleted content_tags" do
-    course
+    course_factory
     context_module = @course.context_modules.create!
     module_item = context_module.add_item :type => 'context_module_sub_header'
     module_item.destroy
     view_context(@course, @user)
-    assigns[:modules] = @course.context_modules.active
+    assign(:modules, @course.context_modules.active)
     render 'context_modules/index'
     expect(response).not_to be_nil
     page = Nokogiri('<document>' + response.body + '</document>')
     expect(page.css("#context_module_item_#{module_item.id}").length).to eq 0
+  end
+
+  it "does not show download course content if setting is disabled" do
+    course_factory
+    view_context(@course, @user)
+    assign(:modules, @course.context_modules.active)
+    render 'context_modules/index'
+    expect(response).not_to be_nil
+    page = Nokogiri('<document>' + response.body + '</document>')
+    expect(page.css(".offline_web_export").length).to eq 0
+  end
+
+  it "shows download course content if settings are enabled" do
+    course_factory
+    acct = @course.root_account
+    acct.settings[:enable_offline_web_export] = true
+    acct.save!
+    view_context(@course, @user)
+    assign(:modules, @course.context_modules.active)
+    assign(:allow_web_export_download, true)
+    render 'context_modules/index'
+    expect(response).not_to be_nil
+    page = Nokogiri('<document>' + response.body + '</document>')
+    expect(page.css(".offline_web_export").length).to eq 1
   end
 end

@@ -81,15 +81,18 @@ describe GradebookExporter do
 
         student_in_course active_all: true
 
-        @no_due_date_assignment.grade_student @student, grade: 1
-        @past_assignment.grade_student @student, grade: 2
-        @current_assignment.grade_student @student, grade: 3
-        @future_assignment.grade_student @student, grade: 4
+        @no_due_date_assignment.grade_student @student, grade: 1, grader: @teacher
+        @past_assignment.grade_student @student, grade: 2, grader: @teacher
+        @current_assignment.grade_student @student, grade: 3, grader: @teacher
+        @future_assignment.grade_student @student, grade: 4, grader: @teacher
       end
 
       let(:assignments) { course.assignments }
 
-      let!(:group) { Factories::GradingPeriodGroupHelper.new.legacy_create_for_course(course) }
+      let!(:group) do
+        @course.instance_variable_set(:@has_grading_periods, nil)
+        Factories::GradingPeriodGroupHelper.new.legacy_create_for_course(course)
+      end
 
       let!(:first_period) do
         args = {
@@ -115,14 +118,10 @@ describe GradebookExporter do
       let(:rows)    { CSV.parse(csv, headers: true) }
       let(:headers) { rows.headers }
 
-      describe "when multiple grading periods is on" do
+      describe "with grading periods" do
         before { @grading_period_id = last_period.id }
 
         describe "assignments in the selected grading period are exported" do
-          let!(:enable_mgp) do
-            course.enable_feature!(:multiple_grading_periods)
-          end
-
           it "exports selected grading period's assignments" do
             expect(headers).to include @no_due_date_assignment.title_with_id,
                                        @current_assignment.title_with_id
@@ -161,24 +160,6 @@ describe GradebookExporter do
           end
         end
       end
-
-
-      describe "when multiple grading periods is off" do
-        describe "all assignments are exported" do
-          let!(:disable_mgp) do
-            course.disable_feature!(:multiple_grading_periods)
-          end
-
-          it "includes all assignments" do
-            expect(headers).to include @no_due_date_assignment.title_with_id,
-                                       @current_assignment.title_with_id,
-                                       @past_assignment.title_with_id,
-                                       @future_assignment.title_with_id
-            final_grade = rows[1]["Final Score"].try(:to_f)
-            expect(final_grade).to eq 25
-          end
-        end
-      end
     end
 
     it "should include inactive students" do
@@ -189,8 +170,8 @@ describe GradebookExporter do
       student2_enrollment = student_in_course(course: @course, active_all: true)
       student2 = student2_enrollment.user
 
-      assmt.grade_student(student1, grade: 1)
-      assmt.grade_student(student2, grade: 2)
+      assmt.grade_student(student1, grade: 1, grader: @teacher)
+      assmt.grade_student(student2, grade: 2, grader: @teacher)
 
       student1_enrollment.deactivate
       student2_enrollment.deactivate
@@ -221,7 +202,7 @@ describe GradebookExporter do
 
   context "a course with a student whose name starts with an equals sign" do
     let(:student) do
-      user = user(name: "=sum(A)", active_user: true)
+      user = user_factory(name: "=sum(A)", active_user: true)
       course_with_student(course: course, user: user)
       user
     end
@@ -229,7 +210,7 @@ describe GradebookExporter do
     let(:assignment) { course.assignments.create!(title: "Assignment", points_possible: 4) }
 
     it "quotes the name that starts with an equals so it's not considered a formula" do
-      assignment.grade_student(student, grade: 1)
+      assignment.grade_student(student, grade: 1, grader: @teacher)
       csv = GradebookExporter.new(course, @teacher, {}).to_csv
       rows = CSV.parse(csv, headers: true)
 

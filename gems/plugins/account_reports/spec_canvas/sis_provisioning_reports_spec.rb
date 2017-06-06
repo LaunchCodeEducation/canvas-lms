@@ -95,6 +95,32 @@ describe "Default Account Reports" do
     @term1.save!
   end
 
+  def create_some_group_categories()
+    create_some_courses
+    @group_category1 = GroupCategory.create(
+      :name => 'Test Group Category'
+    )
+    @group_category2 = GroupCategory.create(
+      :name => 'Test Group Category2'
+    )
+    @group_category1.save!
+    @group_category2.auto_leader = 'first'
+    @group_category2.group_limit = 2
+    @group_category2.save!
+    @group_category3 = GroupCategory.create(
+      :name => 'Test Group Category Deleted'
+    )
+    @group_category4 = GroupCategory.create(
+      :name => 'Test Group Category Course'
+    )
+    @account.group_categories << @group_category1
+    @account.group_categories << @group_category2
+    @account.group_categories << @group_category3
+    @course3.group_categories << @group_category4
+    @group_category3.destroy
+    @account.save!
+  end
+
   def create_some_terms()
     create_a_term
     @term2 = EnrollmentTerm.create(:name => 'Winter',:start_at => 3.weeks.ago,
@@ -224,13 +250,15 @@ describe "Default Account Reports" do
   end
 
   def create_some_groups()
-    create_an_account()
+    create_some_group_categories
     @group1 = @account.groups.create(:name => 'group1name')
+    @group1.group_category = @group_category1
     @group1.sis_source_id = 'group1sis'
     @group1.sis_batch_id = @sis.id
     @group1.save!
     @group2 = @sub_account.groups.create(:name => 'group2name')
     @group2.sis_source_id = 'group2sis'
+    @group2.group_category = @group_category2
     @group2.sis_batch_id = @sis.id
     @group2.save!
     @group3 = @sub_account.groups.create(:name => 'group3name')
@@ -240,6 +268,10 @@ describe "Default Account Reports" do
     @group4.sis_batch_id = @sis.id
     @group4.save!
     @group4.destroy
+    @group5 = @course1.groups.create(:name => 'group5name')
+    @group5.sis_source_id = 'group5sis'
+    @group5.sis_batch_id = @sis.id
+    @group5.save!
   end
 
   def create_some_group_memberships_n_stuff()
@@ -283,24 +315,25 @@ describe "Default Account Reports" do
         parameters["users"] = true
         parsed = read_report("sis_export_csv", {params: parameters, header: true, order: 0})
         headers = parsed.shift
-        expect(headers).to eq ['user_id', 'login_id', 'password', 'first_name',
-                               'last_name', 'full_name', 'sortable_name',
-                               'short_name', 'email', 'status']
+        expect(headers).to eq ['user_id', 'integration_id','authentication_provider_id',
+                               'login_id', 'password', 'first_name', 'last_name',
+                               'full_name', 'sortable_name', 'short_name', 'email',
+                               'status']
         expect(parsed.length).to eq 4
 
-        expect(parsed[0]).to eq ["user_sis_id_01", "john@stclair.com", nil,
-                                 "John St.", "Clair", "John St. Clair",
+        expect(parsed[0]).to eq ["user_sis_id_01", nil, nil, "john@stclair.com",
+                                 nil, "John St.", "Clair", "John St. Clair",
                                  "Clair, John St.", nil,
                                  "john@stclair.com", "active"]
-        expect(parsed[1]).to eq ["user_sis_id_02", "micheal@michaelbolton.com",
+        expect(parsed[1]).to eq ["user_sis_id_02", nil, nil, "micheal@michaelbolton.com",
                                  nil, "Michael", "Bolton", "Michael Bolton",
                                  "Bolton, Michael", nil,
                                  "micheal@michaelbolton.com", "active"]
-        expect(parsed[2]).to eq ["user_sis_id_03", "rick@roll.com", nil, "Rick",
-                                 "Astley", "Rick Astley", "Astley, Rick", nil,
-                                 "rick@roll.com", "active"]
-        expect(parsed[3]).to eq ["user_sis_id_05", "nobody@example.com", nil,
-                                 "James", "Brown", "James Brown",
+        expect(parsed[2]).to eq ["user_sis_id_03", nil, nil, "rick@roll.com",
+                                 nil, "Rick", "Astley", "Rick Astley", "Astley, Rick",
+                                 nil, "rick@roll.com", "active"]
+        expect(parsed[3]).to eq ["user_sis_id_05", nil, nil, "nobody@example.com",
+                                 nil, "James", "Brown", "James Brown",
                                  "Brown, James", nil, nil, "deleted"]
       end
 
@@ -310,19 +343,19 @@ describe "Default Account Reports" do
         parsed = read_report("sis_export_csv", {params: parameters, order: 0})
         expect(parsed.length).to eq 4
 
-        expect(parsed[0]).to eq ["user_sis_id_01", "john@stclair.com", nil,
-                                 "John St.", "Clair", "John St. Clair",
+        expect(parsed[0]).to eq ["user_sis_id_01", nil, nil, "john@stclair.com",
+                                 nil, "John St.", "Clair", "John St. Clair",
                                  "Clair, John St.", nil,
                                  "john@stclair.com", "active"]
-        expect(parsed[1]).to eq ["user_sis_id_02", "micheal@michaelbolton.com",
-                                 nil, "Michael", "Bolton", "Michael Bolton",
-                                 "Bolton, Michael", nil,
-                                 "micheal@michaelbolton.com", "active"]
-        expect(parsed[2]).to eq ["user_sis_id_03", "rick@roll.com", nil, "Rick",
-                                 "Astley", "Rick Astley", "Astley, Rick", nil,
-                                 "rick@roll.com", "active"]
-        expect(parsed[3]).to eq ["user_sis_id_04", "jason@donovan.com", nil,
-                                 "Jason", "Donovan", "Jason Donovan",
+        expect(parsed[1]).to eq ["user_sis_id_02", nil, nil,
+                                 "micheal@michaelbolton.com", nil, "Michael",
+                                 "Bolton", "Michael Bolton", "Bolton, Michael",
+                                 nil, "micheal@michaelbolton.com", "active"]
+        expect(parsed[2]).to eq ["user_sis_id_03", nil, nil, "rick@roll.com",
+                                 nil, "Rick", "Astley", "Rick Astley", "Astley, Rick",
+                                 nil, "rick@roll.com", "active"]
+        expect(parsed[3]).to eq ["user_sis_id_04", nil, nil, "jason@donovan.com",
+                                 nil, "Jason", "Donovan", "Jason Donovan",
                                  "Donovan, Jason", nil, "jason@donovan.com",
                                  "active"]
       end
@@ -340,8 +373,8 @@ describe "Default Account Reports" do
         parsed = read_report("sis_export_csv", {params: parameters, account: @sub_account})
         expect(parsed.length).to eq 1
 
-        expect(parsed[0]).to eq ["user_sis_id_01", "john@stclair.com", nil,
-                                 "John St.", "Clair", "John St. Clair",
+        expect(parsed[0]).to eq ["user_sis_id_01", nil, nil, "john@stclair.com",
+                                 nil, "John St.", "Clair", "John St. Clair",
                                  "Clair, John St.", nil,
                                  "john@stclair.com", "active"]
       end
@@ -352,30 +385,32 @@ describe "Default Account Reports" do
         parsed = read_report("provisioning_csv", {params: parameters, order: [1, 2], header: true})
 
         headers = parsed.shift
-        expect(headers).to eq ["canvas_user_id", "user_id", "login_id",
+        expect(headers).to eq ["canvas_user_id", "user_id", "integration_id",
+                               "authentication_provider_id", "login_id",
                                "first_name", "last_name", "full_name",
-                               "sortable_name", "short_name", "email", "status", "created_by_sis"]
+                               "sortable_name", "short_name", "email", "status",
+                               "created_by_sis"]
         expect(parsed.length).to eq 6
 
-        expect(parsed[0]).to eq [@user6.id.to_s, nil, "john@smith.com", "John",
-                                 "Smith", "John Smith", "Smith, John", nil,
-                                 "john@smith.com", "active", "false"]
-        expect(parsed[1]).to eq [@user7.id.to_s, nil, "jony@apple.com", "Jony",
-                                 "Ive", "Jony Ive", "Ive, Jony", nil,
+        expect(parsed[0]).to eq [@user6.id.to_s, nil, nil, nil, "john@smith.com",
+                                 "John", "Smith", "John Smith", "Smith, John",
+                                 nil, "john@smith.com", "active", "false"]
+        expect(parsed[1]).to eq [@user7.id.to_s, nil, nil, nil, "jony@apple.com",
+                                 "Jony", "Ive", "Jony Ive", "Ive, Jony", nil,
                                  "jony@apple.com", "active", "false"]
-        expect(parsed[2]).to eq [@user1.id.to_s, "user_sis_id_01",
+        expect(parsed[2]).to eq [@user1.id.to_s, "user_sis_id_01", nil, nil,
                                  "john@stclair.com", "John St.", "Clair",
                                  "John St. Clair", "Clair, John St.", nil,
                                  "john@stclair.com", "active", "true"]
-        expect(parsed[3]).to eq [@user2.id.to_s, "user_sis_id_02",
+        expect(parsed[3]).to eq [@user2.id.to_s, "user_sis_id_02", nil, nil,
                                  "micheal@michaelbolton.com", "Michael",
                                  "Bolton", "Michael Bolton", "Bolton, Michael",
                                  nil, "micheal@michaelbolton.com", "active", "true"]
-        expect(parsed[4]).to eq [@user3.id.to_s, "user_sis_id_03",
+        expect(parsed[4]).to eq [@user3.id.to_s, "user_sis_id_03", nil, nil,
                                  "rick@roll.com", "Rick", "Astley",
                                  "Rick Astley", "Astley, Rick", nil,
                                  "rick@roll.com", "active", "true"]
-        expect(parsed[5]).to eq [@user4.id.to_s, "user_sis_id_04",
+        expect(parsed[5]).to eq [@user4.id.to_s, "user_sis_id_04", nil, nil,
                                  "jason@donovan.com", "Jason", "Donovan",
                                  "Jason Donovan", "Donovan, Jason", nil,
                                  "jason@donovan.com", "active", "false"]
@@ -391,19 +426,19 @@ describe "Default Account Reports" do
         parsed = read_report("provisioning_csv", {params: parameters, order: [1, 2]})
         expect(parsed.length).to eq 4
 
-        expect(parsed[0]).to eq [@user1.id.to_s, "user_sis_id_01",
+        expect(parsed[0]).to eq [@user1.id.to_s, "user_sis_id_01", nil, nil,
                                  "john@stclair.com", "John St.", "Clair",
                                  "John St. Clair", "Clair, John St.", nil,
                                  "john@stclair.com", "active", "true"]
-        expect(parsed[1]).to eq [@user2.id.to_s, "user_sis_id_02",
+        expect(parsed[1]).to eq [@user2.id.to_s, "user_sis_id_02", nil, nil,
                                  "micheal@michaelbolton.com", "Michael",
                                  "Bolton", "Michael Bolton", "Bolton, Michael",
                                  nil, "micheal@michaelbolton.com", "active", "true"]
-        expect(parsed[2]).to eq [@user3.id.to_s, "user_sis_id_03",
+        expect(parsed[2]).to eq [@user3.id.to_s, "user_sis_id_03", nil, nil,
                                  "rick@roll.com", "Rick", "Astley",
                                  "Rick Astley", "Astley, Rick", nil,
                                  "rick@roll.com", "active", "true"]
-        expect(parsed[3]).to eq [@user5.id.to_s, "user_sis_id_05",
+        expect(parsed[3]).to eq [@user5.id.to_s, "user_sis_id_05", nil, nil,
                                  "nobody@example.com", "James", "Brown",
                                  "James Brown", "Brown, James", nil, nil,
                                  "deleted", "true"]
@@ -457,13 +492,16 @@ describe "Default Account Reports" do
         parsed = read_report("provisioning_csv", {params: parameters, order: 4})
 
         expect(parsed.length).to eq 5
-        expect(parsed[0]).to eq [@sub_account.id.to_s, "sub1", @account.id.to_s, nil, "English", "active", "true"]
-        expect(parsed[1]).to eq [@sub_account4.id.to_s, "sub4", @account.id.to_s, nil,
-                                 "deleted sis account", "deleted", "true"]
-        expect(parsed[2]).to eq [@sub_account3.id.to_s, "sub3", @account.id.to_s, nil, "math", "active", "true"]
-        expect(parsed[3]).to eq [@sub_account5.id.to_s, nil, @account.id.to_s, nil, "other", "active", "false"]
-        expect(parsed[4]).to eq [@sub_sub_account.id.to_s, "subsub1", @sub_account.id.to_s,
-                                 "sub1", "sESL", "active", "true"]
+        expect(parsed[0]).to eq [@sub_account.id.to_s, "sub1", @account.id.to_s,
+                                 nil, "English", "active", "true"]
+        expect(parsed[1]).to eq [@sub_account4.id.to_s, "sub4", @account.id.to_s,
+                                 nil, "deleted sis account", "deleted", "true"]
+        expect(parsed[2]).to eq [@sub_account3.id.to_s, "sub3", @account.id.to_s,
+                                 nil, "math", "active", "true"]
+        expect(parsed[3]).to eq [@sub_account5.id.to_s, nil, @account.id.to_s, nil,
+                                 "other", "active", "false"]
+        expect(parsed[4]).to eq [@sub_sub_account.id.to_s, "subsub1",
+                                 @sub_account.id.to_s, "sub1", "sESL", "active", "true"]
       end
     end
 
@@ -528,12 +566,12 @@ describe "Default Account Reports" do
         parsed = read_report("sis_export_csv", {params: parameters, order: 0})
 
         expect(parsed.length).to eq 3
-        expect(parsed[0]).to eq [@course1.sis_source_id,@course1.course_code,@course1.name,
+        expect(parsed[0]).to eq [@course1.sis_source_id,nil,@course1.course_code,@course1.name,
                              @sub_account.sis_source_id,@term1.sis_source_id,"active",
                              @course1.start_at.iso8601,@course1.end_at.iso8601]
-        expect(parsed[1]).to eq ["SIS_COURSE_ID_2","MAT101","Math 101",nil,nil,
+        expect(parsed[1]).to eq ["SIS_COURSE_ID_2",nil,"MAT101","Math 101",nil,nil,
                              "active",nil,@course2.end_at.iso8601]
-        expect(parsed[2]).to eq ["SIS_COURSE_ID_3","SCI101","Science 101",nil,nil,"active",nil,nil]
+        expect(parsed[2]).to eq ["SIS_COURSE_ID_3",nil,"SCI101","Science 101",nil,nil,"active",nil,nil]
       end
 
       it "should run the SIS report with sis term and deleted courses" do
@@ -545,10 +583,10 @@ describe "Default Account Reports" do
         parsed = read_report("sis_export_csv", {params: parameters, order: 0})
 
         expect(parsed.length).to eq 2
-        expect(parsed[0]).to eq [@course1.sis_source_id,@course1.course_code,@course1.name,
+        expect(parsed[0]).to eq [@course1.sis_source_id,nil,@course1.course_code,@course1.name,
                              @sub_account.sis_source_id,@term1.sis_source_id,"completed",
                              @course1.start_at.iso8601,@course1.conclude_at.iso8601]
-        expect(parsed[1]).to eq ["SIS_COURSE_ID_5","ENG101","Sd Math 100","sub1",
+        expect(parsed[1]).to eq ["SIS_COURSE_ID_5",nil,"ENG101","Sd Math 100","sub1",
                              "fall12","deleted",nil,nil]
       end
 
@@ -561,20 +599,27 @@ describe "Default Account Reports" do
         parameters["courses"] = true
         parsed = read_report("provisioning_csv", {params: parameters, order: 3})
 
-        expect(parsed[0]).to eq [@course1.id.to_s, @course1.sis_source_id, @course1.course_code,
-                                 @course1.name, @sub_account.id.to_s, @sub_account.sis_source_id,
-                                 @term1.id.to_s, @term1.sis_source_id, "active",
-                                 @course1.start_at.iso8601, @course1.conclude_at.iso8601, "true"]
-        expect(parsed[1]).to eq [@course2.id.to_s, "SIS_COURSE_ID_2", "MAT101", "Math 101",
-                                 @course2.account_id.to_s, nil, @default_term.id.to_s, nil,
-                                 "active", nil, @course2.conclude_at.iso8601, "true"]
-        expect(parsed[2]).to eq [@course3.id.to_s, "SIS_COURSE_ID_3", "SCI101", "Science 101",
-                                 @course3.account_id.to_s, nil, @default_term.id.to_s, nil,
-                                 "active", nil, nil, "true"]
-        expect(parsed[3]).to eq [@course5.id.to_s, "SIS_COURSE_ID_5", "ENG101", "Sd Math 100",
-                                 @sub_account.id.to_s, "sub1", @term1.id.to_s, "fall12", "deleted", nil, nil, "true"]
-        expect(parsed[4]).to eq [@course4.id.to_s, nil, "self", "self help", @course4.account_id.to_s, nil,
-                                 @default_term.id.to_s, nil, "deleted", nil, nil, "false"]
+        expect(parsed[0]).to eq [@course5.id.to_s, @course5.sis_source_id, nil,
+                                 @course5.course_code, @course5.name,
+                                 @sub_account.id.to_s, "sub1", @term1.id.to_s,
+                                 "fall12", "deleted", nil, nil, "true"]
+       expect(parsed[1]).to eq [@course1.id.to_s, "SIS_COURSE_ID_1",nil, "ENG101",
+                                "English 101", @course1.account_id.to_s,
+                                @sub_account.sis_source_id, @term1.id.to_s,
+                                @term1.sis_source_id, "active",
+                                @course1.start_at.iso8601,
+                                @course1.conclude_at.iso8601, "true"]
+        expect(parsed[2]).to eq [@course2.id.to_s, "SIS_COURSE_ID_2", nil, "MAT101",
+                                 "Math 101", @course2.account_id.to_s, nil,
+                                 @default_term.id.to_s, nil, "active", nil,
+                                 @course2.conclude_at.iso8601, "true"]
+        expect(parsed[3]).to eq [@course3.id.to_s, "SIS_COURSE_ID_3", nil, "SCI101",
+                                 "Science 101", @course3.account_id.to_s, nil,
+                                 @default_term.id.to_s, nil, "active", nil, nil,
+                                 "true"]
+        expect(parsed[4]).to eq [@course4.id.to_s, nil, nil, "self", "self help",
+                                 @course4.account_id.to_s, nil, @default_term.id.to_s,
+                                 nil, "deleted", nil, nil, "false"]
         expect(parsed.length).to eq 5
       end
 
@@ -582,7 +627,9 @@ describe "Default Account Reports" do
         parameters = {}
         parameters["courses"] = true
         # all I care about is that it didn't throw a database error due to ambiguous columns
-        parsed = read_report("sis_export_csv",{params: parameters, account: @sub_account})
+        expect {
+          read_report("sis_export_csv",{params: parameters, account: @sub_account})
+        }.not_to raise_error
       end
 
       it "should run the provisioning report on a sub account" do
@@ -591,10 +638,12 @@ describe "Default Account Reports" do
         parsed = read_report("provisioning_csv", {params: parameters, account: @sub_account, order: 3})
 
         expect(parsed.length).to eq 1
-        expect(parsed[0]).to eq [@course1.id.to_s, @course1.sis_source_id, @course1.course_code,
-                                 @course1.name, @sub_account.id.to_s, @sub_account.sis_source_id,
+        expect(parsed[0]).to eq [@course1.id.to_s, @course1.sis_source_id, nil,
+                                 @course1.course_code, @course1.name,
+                                 @sub_account.id.to_s, @sub_account.sis_source_id,
                                  @term1.id.to_s, @term1.sis_source_id, "active",
-                                 @course1.start_at.iso8601, @course1.conclude_at.iso8601, "true"]
+                                 @course1.start_at.iso8601,
+                                 @course1.conclude_at.iso8601, "true"]
       end
 
       it "should run the sis report with the default term" do
@@ -604,11 +653,12 @@ describe "Default Account Reports" do
         parsed = read_report("sis_export_csv", {params: parameters, order: 0})
 
         expect(parsed.length).to eq 2
-        expect(parsed[0]).to eq ["SIS_COURSE_ID_2","MAT101","Math 101",nil,
+        expect(parsed[0]).to eq ["SIS_COURSE_ID_2", nil,"MAT101","Math 101",nil,
                              nil,"active",nil,@course2.end_at.iso8601]
-        expect(parsed[1]).to eq ["SIS_COURSE_ID_3","SCI101","Science 101",nil,nil,"active",nil,nil]
+        expect(parsed[1]).to eq ["SIS_COURSE_ID_3",nil,"SCI101","Science 101",nil,nil,"active",nil,nil]
       end
     end
+
 
     describe "Sections" do
       before(:once) do
@@ -622,8 +672,9 @@ describe "Default Account Reports" do
         parsed = read_report("sis_export_csv",{params: parameters})
 
         expect(parsed.length).to eq 1
-        expect(parsed[0]).to eq [@section3.sis_source_id,@course2.sis_source_id,@section3.name,
-                             "active",nil,@course2.conclude_at.iso8601]
+        expect(parsed[0]).to eq [@section3.sis_source_id,@course2.sis_source_id,
+                                 nil,@section3.name,"active",nil,
+                                 @course2.conclude_at.iso8601]
       end
 
       it "should not include sections from deleted courses" do
@@ -633,10 +684,13 @@ describe "Default Account Reports" do
         parsed = read_report("sis_export_csv", {params: parameters, order: 0})
 
         expect(parsed.length).to eq 2
-        expect(parsed[0]).to eq [@section1.sis_source_id,@course1.sis_source_id,@section1.name,"active",
-                            @course1.start_at.iso8601,@course1.conclude_at.iso8601]
-        expect(parsed[1]).to eq [@section2.sis_source_id,@course1.sis_source_id,@section2.name,"active",
-                             nil,@course1.conclude_at.iso8601]
+        expect(parsed[0]).to eq [@section1.sis_source_id,@course1.sis_source_id,
+                                 nil,@section1.name,"active",
+                                 @course1.start_at.iso8601,
+                                 @course1.conclude_at.iso8601]
+        expect(parsed[1]).to eq [@section2.sis_source_id,@course1.sis_source_id,
+                                 nil,@section2.name,"active",nil,
+                                 @course1.conclude_at.iso8601]
       end
 
       it "should run the provisioning report" do
@@ -645,18 +699,26 @@ describe "Default Account Reports" do
         parameters["sections"] = true
         parsed = read_report("provisioning_csv", {params: parameters, order: 4})
         expect(parsed.length).to eq 4
-        expect(parsed[0]).to eq [@section1.id.to_s, @section1.sis_source_id, @course1.id.to_s,
-                                 @course1.sis_source_id, @section1.name, "active",
-                                 @course1.start_at.iso8601, @course1.conclude_at.iso8601,
+        expect(parsed[0]).to eq [@section1.id.to_s, @section1.sis_source_id,
+                                 @course1.id.to_s, @course1.sis_source_id, nil,
+                                 @section1.name, "active",
+                                 @course1.start_at.iso8601,
+                                 @course1.conclude_at.iso8601, @sub_account.id.to_s,
+                                 "sub1", "true"]
+        expect(parsed[1]).to eq [@section4.id.to_s, nil, @course2.id.to_s,
+                                 @course2.sis_source_id, nil, @section4.name,
+                                 "active", nil,  nil, @account.id.to_s, nil,
+                                 "false"]
+        expect(parsed[2]).to eq [@section3.id.to_s, @section3.sis_source_id,
+                                 @course2.id.to_s, "SIS_COURSE_ID_2", nil,
+                                 "Math_01", "active", nil,
+                                 @course2.conclude_at.iso8601,
+                                 @account.id.to_s, nil, "true"]
+        expect(parsed[3]).to eq [@section2.id.to_s, @section2.sis_source_id,
+                                 @course1.id.to_s, "SIS_COURSE_ID_1",nil,
+                                 "English_02", "active", nil,
+                                 @course2.conclude_at.iso8601,
                                  @sub_account.id.to_s, "sub1", "true"]
-        expect(parsed[1]).to eq [@section2.id.to_s, @section2.sis_source_id, @course1.id.to_s,
-                                 @course1.sis_source_id, @section2.name, "active", nil,
-                                 @course1.conclude_at.iso8601, @sub_account.id.to_s, "sub1", "true"]
-        expect(parsed[2]).to eq [@section3.id.to_s, "english_section_3", @course2.id.to_s,
-                                 "SIS_COURSE_ID_2", "Math_01", "active", nil,
-                                 @course2.conclude_at.iso8601, @account.id.to_s, nil, "true"]
-        expect(parsed[3]).to eq [@section4.id.to_s, nil, @course2.id.to_s, "SIS_COURSE_ID_2",
-                                 "Math_02", "active", nil, nil, @account.id.to_s, nil, "false"]
       end
 
       it "should run the provisioning report with deleted sections" do
@@ -666,18 +728,25 @@ describe "Default Account Reports" do
         parameters["include_deleted"] = true
         parsed = read_report("provisioning_csv", {params: parameters, order: 4})
         expect(parsed.length).to eq 4
-        expect(parsed[0]).to eq [@section1.id.to_s, @section1.sis_source_id, @course1.id.to_s,
-                                 @course1.sis_source_id, @section1.name, "deleted",
-                                 @course1.start_at.iso8601, @course1.conclude_at.iso8601,
+        expect(parsed[0]).to eq [@section4.id.to_s, nil, @course2.id.to_s,
+                                 "SIS_COURSE_ID_2", nil, "Math_02", "active",
+                                 nil, nil, @account.id.to_s, nil, "false"]
+        expect(parsed[1]).to eq [@section3.id.to_s, @section3.sis_source_id,
+                                 @course2.id.to_s, "SIS_COURSE_ID_2", nil,
+                                 "Math_01", "active", nil,
+                                 @course2.conclude_at.iso8601, @account.id.to_s,
+                                 nil, "true"]
+        expect(parsed[2]).to eq [@section2.id.to_s, @section2.sis_source_id,
+                                 @course1.id.to_s, @course1.sis_source_id, nil,
+                                 @section2.name, "active", nil,
+                                 @course1.conclude_at.iso8601,
                                  @sub_account.id.to_s, "sub1", "true"]
-        expect(parsed[1]).to eq [@section2.id.to_s, @section2.sis_source_id, @course1.id.to_s,
-                                 @course1.sis_source_id, @section2.name, "active",
-                                 nil, @course1.conclude_at.iso8601, @sub_account.id.to_s, "sub1", "true"]
-        expect(parsed[2]).to eq [@section3.id.to_s, "english_section_3", @course2.id.to_s,
-                                 "SIS_COURSE_ID_2", "Math_01", "active", nil,
-                                 @course2.conclude_at.iso8601, @account.id.to_s, nil, "true"]
-        expect(parsed[3]).to eq [@section4.id.to_s, nil, @course2.id.to_s, "SIS_COURSE_ID_2",
-                                 "Math_02", "active", nil, nil, @account.id.to_s, nil, "false"]
+        expect(parsed[3]).to eq [@section1.id.to_s, @section1.sis_source_id,
+                                 @course1.id.to_s, @course1.sis_source_id, nil,
+                                 @section1.name, "deleted",
+                                 @course1.start_at.iso8601,
+                                 @course1.conclude_at.iso8601,
+                                 @sub_account.id.to_s, "sub1", "true"]
       end
 
       it "should run the provisioning report with deleted sections on a sub account" do
@@ -689,13 +758,18 @@ describe "Default Account Reports" do
         parsed = read_report("provisioning_csv", {params: parameters, account: @sub_account, order: 4})
         expect(parsed.length).to eq 2
 
-        expect(parsed[0]).to eq [@section1.id.to_s, @section1.sis_source_id, @course1.id.to_s,
-                                 @course1.sis_source_id, @section1.name, "active",
-                                 @course1.start_at.iso8601, @course1.conclude_at.iso8601,
+        expect(parsed[0]).to eq [@section2.id.to_s, @section2.sis_source_id,
+                                 @course1.id.to_s, @course1.sis_source_id, nil,
+                                 @section2.name, "deleted", nil,
+                                 @course1.conclude_at.iso8601,
                                  @sub_account.id.to_s, "sub1", "true"]
-        expect(parsed[1]).to eq [@section2.id.to_s, @section2.sis_source_id, @course1.id.to_s,
-                                 @course1.sis_source_id, @section2.name, "deleted",
-                                 nil, @course1.conclude_at.iso8601, @sub_account.id.to_s, "sub1", "true"]
+        expect(parsed[1]).to eq [
+                                 @section1.id.to_s, @section1.sis_source_id,
+                                 @course1.id.to_s, @course1.sis_source_id, nil,
+                                 @section1.name, "active",
+                                 @course1.start_at.iso8601,
+                                 @course1.conclude_at.iso8601,
+                                 @sub_account.id.to_s, "sub1", "true"]
       end
     end
 
@@ -707,34 +781,53 @@ describe "Default Account Reports" do
       it "should run the SIS report" do
         parameters = {}
         parameters["enrollments"] = true
-        parsed = read_report("sis_export_csv",{params: parameters, order: [1,0]})
+        parsed = read_report("sis_export_csv", {params: parameters, order: [1, 0]})
         # should ignore creation pending enrollments on sis_export
         expect(parsed.length).to eq 8
 
-        expect(parsed[0]).to eq ["SIS_COURSE_ID_1","user_sis_id_01","observer",observer_role.id.to_s,nil,"active",nil]
-        expect(parsed[1]).to eq ["SIS_COURSE_ID_2","user_sis_id_01","observer",observer_role.id.to_s,nil,
-                             "active","user_sis_id_03"]
-        expect(parsed[2]).to eq ["SIS_COURSE_ID_1","user_sis_id_02","ta",ta_role.id.to_s,nil,"active",nil]
-        expect(parsed[3]).to eq ["SIS_COURSE_ID_3","user_sis_id_02","student",student_role.id.to_s,nil,"active",nil]
-        expect(parsed[4]).to eq ["SIS_COURSE_ID_1","user_sis_id_03","student",student_role.id.to_s,nil,"active",nil]
-        expect(parsed[5]).to eq ["SIS_COURSE_ID_2","user_sis_id_03","student",student_role.id.to_s,nil,"active",nil]
-        expect(parsed[6]).to eq ["SIS_COURSE_ID_1","user_sis_id_04","teacher",teacher_role.id.to_s,
-                             "english_section_1","active",nil]
-        expect(parsed[7]).to eq ["SIS_COURSE_ID_2","user_sis_id_04","Pixel Engineer",@role.id.to_s,nil,"active",nil]
+        expect(parsed[0]).to eq ["SIS_COURSE_ID_1", "user_sis_id_01", "observer",
+                                 observer_role.id.to_s, nil, "active", nil,
+                                 "false"]
+        expect(parsed[1]).to eq ["SIS_COURSE_ID_2", "user_sis_id_01", "observer",
+                                 observer_role.id.to_s, nil,
+                                 "active", "user_sis_id_03", "false"]
+        expect(parsed[2]).to eq ["SIS_COURSE_ID_1", "user_sis_id_02", "ta",
+                                 ta_role.id.to_s, nil, "active", nil,
+                                 "false"]
+        expect(parsed[3]).to eq ["SIS_COURSE_ID_3", "user_sis_id_02", "student",
+                                 student_role.id.to_s, nil, "active", nil,
+                                 "false"]
+        expect(parsed[4]).to eq ["SIS_COURSE_ID_1", "user_sis_id_03", "student",
+                                 student_role.id.to_s, nil, "active", nil,
+                                 "false"]
+        expect(parsed[5]).to eq ["SIS_COURSE_ID_2", "user_sis_id_03", "student",
+                                 student_role.id.to_s, nil, "active", nil,
+                                 "false"]
+        expect(parsed[6]).to eq ["SIS_COURSE_ID_1", "user_sis_id_04", "teacher",
+                                 teacher_role.id.to_s,
+                                 "english_section_1", "active", nil, "false"]
+        expect(parsed[7]).to eq ["SIS_COURSE_ID_2", "user_sis_id_04", "Pixel Engineer",
+                                 @role.id.to_s, nil, "active", nil, "false"]
       end
 
       it "should run sis report for a term" do
         parameters = {}
         parameters["enrollment_term_id"] = @default_term.id
         parameters["enrollments"] = true
-        parsed = read_report("sis_export_csv",{params: parameters, order: [1,0]})
+        parsed = read_report("sis_export_csv", {params: parameters, order: [1, 0]})
         expect(parsed.length).to eq 4
 
-        expect(parsed[0]).to eq ["SIS_COURSE_ID_2","user_sis_id_01","observer",observer_role.id.to_s,
-                             nil,"active","user_sis_id_03"]
-        expect(parsed[1]).to eq ["SIS_COURSE_ID_3","user_sis_id_02","student",student_role.id.to_s,nil,"active",nil]
-        expect(parsed[2]).to eq ["SIS_COURSE_ID_2","user_sis_id_03","student",student_role.id.to_s,nil,"active",nil]
-        expect(parsed[3]).to eq ["SIS_COURSE_ID_2","user_sis_id_04","Pixel Engineer",@role.id.to_s,nil,"active",nil]
+        expect(parsed[0]).to eq ["SIS_COURSE_ID_2", "user_sis_id_01", "observer",
+                                 observer_role.id.to_s, nil, "active",
+                                 "user_sis_id_03", "false"]
+        expect(parsed[1]).to eq ["SIS_COURSE_ID_3", "user_sis_id_02", "student",
+                                 student_role.id.to_s, nil, "active", nil,
+                                 "false"]
+        expect(parsed[2]).to eq ["SIS_COURSE_ID_2", "user_sis_id_03", "student",
+                                 student_role.id.to_s, nil, "active", nil,
+                                 "false"]
+        expect(parsed[3]).to eq ["SIS_COURSE_ID_2", "user_sis_id_04", "Pixel Engineer",
+                                 @role.id.to_s, nil, "active", nil, "false"]
       end
 
       it "should run the provisioning report with deleted enrollments" do
@@ -747,51 +840,51 @@ describe "Default Account Reports" do
         expect(parsed).to match_array [
                                 [@course1.id.to_s, "SIS_COURSE_ID_1", @user6.id.to_s, nil,
                                  "teacher", teacher_role.id.to_s, @enrollment10.course_section_id.to_s,
-                                 nil, "concluded", nil, nil, "false", 'TeacherEnrollment'],
+                                 nil, "concluded", nil, nil, "false", 'TeacherEnrollment', "false"],
                                 [@course1.id.to_s, "SIS_COURSE_ID_1", @user1.id.to_s, "user_sis_id_01",
                                  "observer", observer_role.id.to_s,
                                  @enrollment1.course_section_id.to_s, nil, "active", nil, nil, "true",
-                                 'ObserverEnrollment'],
+                                 'ObserverEnrollment', "false"],
                                 [@course2.id.to_s, "SIS_COURSE_ID_2", @user1.id.to_s, "user_sis_id_01",
                                  "observer", observer_role.id.to_s,
                                  @enrollment7.course_section_id.to_s, nil, "active",
-                                 @user3.id.to_s, "user_sis_id_03", "true", 'ObserverEnrollment'],
+                                 @user3.id.to_s, "user_sis_id_03", "true", 'ObserverEnrollment', "false"],
                                 [@course1.id.to_s, "SIS_COURSE_ID_1", @user2.id.to_s, "user_sis_id_02",
                                  "ta", ta_role.id.to_s,
                                  @enrollment3.course_section_id.to_s, nil, "active", nil, nil, "true",
-                                 'TaEnrollment'],
+                                 'TaEnrollment', "false"],
                                 [@course3.id.to_s, "SIS_COURSE_ID_3", @user2.id.to_s, "user_sis_id_02",
                                  "student", student_role.id.to_s,
                                  @enrollment2.course_section_id.to_s, nil, "active", nil, nil, "true",
-                                 'StudentEnrollment'],
+                                 'StudentEnrollment', "false"],
                                 [@course1.id.to_s, "SIS_COURSE_ID_1", @user3.id.to_s, "user_sis_id_03",
                                  "student", student_role.id.to_s,
                                  @enrollment4.course_section_id.to_s, nil, "active", nil, nil, "true",
-                                 'StudentEnrollment'],
+                                 'StudentEnrollment', "false"],
                                 [@course2.id.to_s, "SIS_COURSE_ID_2", @user3.id.to_s, "user_sis_id_03",
                                  "student", student_role.id.to_s,
                                  @enrollment5.course_section_id.to_s, nil, "active", nil, nil, "true",
-                                 'StudentEnrollment'],
+                                 'StudentEnrollment', "false"],
                                 [@course1.id.to_s, "SIS_COURSE_ID_1", @user4.id.to_s, "user_sis_id_04",
                                  "teacher", teacher_role.id.to_s, @enrollment9.course_section_id.to_s,
                                  "english_section_1", "active", nil, nil, "true",
-                                 'TeacherEnrollment'],
+                                 'TeacherEnrollment', "false"],
                                 [@course1.id.to_s, "SIS_COURSE_ID_1", @user4.id.to_s, "user_sis_id_04",
                                  "teacher", teacher_role.id.to_s,
                                  @enrollment6.course_section_id.to_s, nil, "deleted", nil, nil, "true",
-                                 'TeacherEnrollment'],
+                                 'TeacherEnrollment', "false"],
                                 [@course2.id.to_s, "SIS_COURSE_ID_2", @user4.id.to_s, "user_sis_id_04",
                                  "Pixel Engineer", @role.id.to_s, @enrollment11.course_section_id.to_s,
-                                 nil, "active", nil, nil, "true", 'DesignerEnrollment'],
+                                 nil, "active", nil, nil, "true", 'DesignerEnrollment', "false"],
                                 [@course4.id.to_s, nil, @user4.id.to_s,
                                  "user_sis_id_04", "student",
                                  student_role.id.to_s,
                                  @enrollment12.course_section_id.to_s, nil,
-                                 "invited", nil, nil, "false", 'StudentEnrollment'],
+                                 "invited", nil, nil, "false", 'StudentEnrollment', "false"],
                                 [@course4.id.to_s, nil, @user5.id.to_s,
                                  "user_sis_id_05", "teacher", teacher_role.id.to_s,
                                  @enrollment8.course_section_id.to_s, nil, "active", nil, nil, "false",
-                                 'TeacherEnrollment']
+                                 'TeacherEnrollment', "false"]
         ]
       end
 
@@ -808,23 +901,23 @@ describe "Default Account Reports" do
 
         expect(parsed[0]).to eq [@course1.id.to_s, "SIS_COURSE_ID_1", @user6.id.to_s, nil, "teacher",
                                  teacher_role.id.to_s, @enrollment10.course_section_id.to_s,
-                                 nil, "concluded", nil, nil, "false", 'TeacherEnrollment']
+                                 nil, "concluded", nil, nil, "false", 'TeacherEnrollment', "false"]
         expect(parsed[1]).to eq [@course1.id.to_s, "SIS_COURSE_ID_1", @user1.id.to_s, "user_sis_id_01",
                                  "observer", observer_role.id.to_s, @enrollment1.course_section_id.to_s,
-                                 nil, "active", nil, nil, "true", 'ObserverEnrollment']
+                                 nil, "active", nil, nil, "true", 'ObserverEnrollment', "false"]
         expect(parsed[2]).to eq [@course1.id.to_s, "SIS_COURSE_ID_1", @user2.id.to_s, "user_sis_id_02",
                                  "ta", ta_role.id.to_s, @enrollment3.course_section_id.to_s,
-                                 nil, "active", nil, nil, "true", 'TaEnrollment']
+                                 nil, "active", nil, nil, "true", 'TaEnrollment', "false"]
         expect(parsed[3]).to eq [@course1.id.to_s, "SIS_COURSE_ID_1", @user3.id.to_s, "user_sis_id_03",
                                  "student", student_role.id.to_s,
                                  @enrollment4.course_section_id.to_s, nil, "active", nil, nil, "true",
-                                 'StudentEnrollment']
+                                 'StudentEnrollment', "false"]
         expect(parsed[4]).to eq [@course1.id.to_s, "SIS_COURSE_ID_1", @user4.id.to_s, "user_sis_id_04",
                                  "teacher", teacher_role.id.to_s, @enrollment9.course_section_id.to_s,
-                                 "english_section_1", "active", nil, nil, "true", 'TeacherEnrollment']
+                                 "english_section_1", "active", nil, nil, "true", 'TeacherEnrollment', "false"]
         expect(parsed[5]).to eq [@course1.id.to_s, "SIS_COURSE_ID_1", @user4.id.to_s, "user_sis_id_04",
                                  "teacher", teacher_role.id.to_s, @enrollment6.course_section_id.to_s,
-                                 nil, "deleted", nil, nil, "true", 'TeacherEnrollment']
+                                 nil, "deleted", nil, nil, "true", 'TeacherEnrollment', "false"]
       end
     end
 
@@ -838,9 +931,10 @@ describe "Default Account Reports" do
         parameters["enrollment_term_id"] = @default_term.id
         parameters["groups"] = true
         parsed = read_report("sis_export_csv",{params: parameters, order: 2})
-        expect(parsed.length).to eq 2
-        expect(parsed[0]).to eq ["group1sis",nil,"group1name","available"]
-        expect(parsed[1]).to eq ["group2sis","sub1","group2name","available"]
+        expect(parsed.length).to eq 3
+        expect(parsed[0]).to eq ["group1sis", nil, "group1name", "available"]
+        expect(parsed[1]).to eq ["group2sis", "sub1", "group2name", "available"]
+        expect(parsed[2]).to eq ["group5sis", "sub1", "group5name", "available"]
       end
 
       it "should run the SIS report with deleted groups" do
@@ -848,34 +942,95 @@ describe "Default Account Reports" do
         parameters["include_deleted"] = true
         parameters["groups"] = true
         parsed = read_report("sis_export_csv",{params: parameters, order: 2})
-        expect(parsed.length).to eq 3
-        expect(parsed[0]).to eq ["group1sis",nil,"group1name","available"]
-        expect(parsed[1]).to eq ["group2sis","sub1","group2name","available"]
-        expect(parsed[2]).to eq ["group4sis",nil,"group4name","deleted"]
+        expect(parsed.length).to eq 4
+        expect(parsed[0]).to eq ["group1sis", nil, "group1name", "available"]
+        expect(parsed[1]).to eq ["group2sis", "sub1", "group2name", "available"]
+        expect(parsed[2]).to eq ["group4sis", nil, "group4name", "deleted",]
+        expect(parsed[3]).to eq ["group5sis", "sub1", "group5name", "available"]
       end
 
       it "should run the provisioning report" do
         parameters = {}
         parameters["groups"] = true
         parsed = read_report("provisioning_csv", {params: parameters, order: 4})
-        expect(parsed.length).to eq 3
+        expect(parsed.length).to eq 4
         expect(parsed[0]).to eq [@group1.id.to_s, "group1sis", @account.id.to_s,
-                                 nil, "group1name", "available", "true"]
+                                 nil, "group1name", "available", "true", @account.id.to_s, 'Account', @group1.group_category.id.to_s]
         expect(parsed[1]).to eq [@group2.id.to_s, "group2sis", @sub_account.id.to_s,
-                                 "sub1", "group2name", "available", "true"]
+                                 "sub1", "group2name", "available", "true", @sub_account.id.to_s, 'Account', @group2.group_category.id.to_s]
         expect(parsed[2]).to eq [@group3.id.to_s, nil, @sub_account.id.to_s,
-                                 "sub1", "group3name", "available", "false"]
+                                 "sub1", "group3name", "available", "false", @sub_account.id.to_s,'Account', nil]
+        expect(parsed[3]).to eq [@group5.id.to_s, "group5sis", @sub_account.id.to_s,
+                                 "sub1", "group5name", "available", "true", @course1.id.to_s,'Course', @group5.group_category.id.to_s]
       end
 
       it "should run the provisioning report on a sub account" do
         parameters = {}
         parameters["groups"] = true
         parsed = read_report("provisioning_csv", {params: parameters, account: @sub_account, order: 4})
-        expect(parsed.length).to eq 2
+        expect(parsed.length).to eq 3
         expect(parsed[0]).to eq [@group2.id.to_s, "group2sis", @sub_account.id.to_s,
-                                 "sub1", "group2name", "available", "true"]
+                                 "sub1", "group2name", "available", "true", @sub_account.id.to_s, 'Account', @group2.group_category.id.to_s]
         expect(parsed[1]).to eq [@group3.id.to_s, nil, @sub_account.id.to_s,
-                                 "sub1", "group3name", "available", "false"]
+                                 "sub1", "group3name", "available", "false", @sub_account.id.to_s, 'Account', nil]
+        expect(parsed[2]).to eq [@group5.id.to_s, "group5sis", @sub_account.id.to_s,
+                                 "sub1", "group5name", "available", "true", @course1.id.to_s, 'Course', @group5.group_category.id.to_s]
+      end
+
+      it "includes sub-sub-account groups when run on a sub account" do
+        sub_sub_account = Account.create(:parent_account => @sub_account,:name => 'sESL')
+        group6 = sub_sub_account.groups.create!(:name => 'group6name')
+        parameters = {}
+        parameters["groups"] = true
+        parsed = read_report("provisioning_csv", {params: parameters, account: @sub_account, order: 4})
+        expect(parsed.length).to eq 4
+        expect(parsed[0]).to eq [@group2.id.to_s, "group2sis", @sub_account.id.to_s,
+                                 "sub1", "group2name", "available", "true", @sub_account.id.to_s, 'Account', @group2.group_category.id.to_s]
+        expect(parsed[1]).to eq [@group3.id.to_s, nil, @sub_account.id.to_s,
+                                 "sub1", "group3name", "available", "false", @sub_account.id.to_s, 'Account', nil]
+        expect(parsed[2]).to eq [@group5.id.to_s, "group5sis", @sub_account.id.to_s,
+                                 "sub1", "group5name", "available", "true", @course1.id.to_s, 'Course', @group5.group_category.id.to_s]
+        expect(parsed[3]).to eq [group6.id.to_s, nil, sub_sub_account.id.to_s,
+                                 nil, "group6name", "available", "false", sub_sub_account.id.to_s, 'Account', nil]
+      end
+    end
+
+    describe "Group Categories" do
+      before(:once) do
+        create_some_groups
+        @student_category = GroupCategory.where(name: "Student Groups").first
+      end
+
+      it 'should run the provisioning report' do
+        parameters = {}
+        parameters["group_categories"] = true
+        parsed = read_report("provisioning_csv", {params: parameters, order: 4})
+        expect(parsed.length).to eq 4
+        expect(parsed[0]).to eq [@group_category1.id.to_s, @account.id.to_s, "Account", "Test Group Category", nil, nil, nil, nil]
+        expect(parsed[1]).to eq [@group_category2.id.to_s, @account.id.to_s, "Account", "Test Group Category2", nil, nil, "2", "first"]
+        expect(parsed[2]).to eq [@group_category4.id.to_s, @course3.id.to_s, "Course", "Test Group Category Course", nil, nil, nil, nil]
+        expect(parsed[3]).to eq [@student_category.id.to_s, @course1.id.to_s, "Course", "Student Groups", "student_organized", nil, nil, nil]
+      end
+
+      it 'should run the provisioning report for a sub account' do
+        parameters = {}
+        parameters["group_categories"] = true
+        parsed = read_report("provisioning_csv", {params: parameters, order: 4, account: @sub_account})
+        expect(parsed.length).to eq 1
+        expect(parsed[0]).to eq [@student_category.id.to_s, @course1.id.to_s, "Course", "Student Groups", "student_organized", nil, nil, nil]
+      end
+
+      it 'should run the report for deleted categories' do
+        parameters = {}
+        parameters["group_categories"] = true
+        parameters["include_deleted"] = true
+        parsed = read_report("provisioning_csv", {params: parameters, order: 4})
+        expect(parsed.length).to eq 5
+        expect(parsed[0]).to eq [@group_category1.id.to_s, @account.id.to_s, "Account", "Test Group Category", nil, nil, nil, nil]
+        expect(parsed[1]).to eq [@group_category2.id.to_s, @account.id.to_s, "Account", "Test Group Category2", nil, nil, "2", "first"]
+        expect(parsed[2]).to eq [@group_category3.id.to_s, @account.id.to_s, "Account", "Test Group Category Deleted", nil, nil, nil, nil]
+        expect(parsed[3]).to eq [@group_category4.id.to_s, @course3.id.to_s, "Course", "Test Group Category Course", nil, nil, nil, nil]
+        expect(parsed[4]).to eq [@student_category.id.to_s, @course1.id.to_s, "Course", "Student Groups", "student_organized", nil, nil, nil]
       end
     end
 
@@ -919,7 +1074,7 @@ describe "Default Account Reports" do
         ])
       end
 
-      it "should run the provisioning report" do
+      it "should run the provisioning report for a subaccount" do
         parameters = {}
         parameters["group_membership"] = true
         parsed = read_report("provisioning_csv", {params: parameters, account: @sub_account, order: [1, 3]})
@@ -949,7 +1104,8 @@ describe "Default Account Reports" do
         parsed = parse_report(report, {header: true})
         headers = parsed.shift
         expect(headers).to eq ['xlist_course_id', 'section_id', 'status']
-        expect(parsed[0]).to eq ["SIS_COURSE_ID_2","english_section_1","active"]
+        expect(parsed[0]).to eq ["SIS_COURSE_ID_2", "english_section_1",
+                                 "active"]
         expect(parsed.length).to eq 1
       end
 
@@ -959,8 +1115,10 @@ describe "Default Account Reports" do
         parameters["xlist"] = true
         parameters["include_deleted"] = true
         parsed = read_report("sis_export_csv", {params: parameters, order: 0})
-        expect(parsed[0]).to eq ["SIS_COURSE_ID_1","english_section_3","deleted"]
-        expect(parsed[1]).to eq ["SIS_COURSE_ID_2","english_section_1","active"]
+        expect(parsed[0]).to eq ["SIS_COURSE_ID_1", "english_section_3",
+                                 "deleted"]
+        expect(parsed[1]).to eq ["SIS_COURSE_ID_2", "english_section_1",
+                                 "active"]
         expect(parsed.length).to eq 2
       end
 
@@ -972,7 +1130,8 @@ describe "Default Account Reports" do
         report = run_report("sis_export_csv",{params: parameters, account: @sub_account})
         expect(report.parameters['extra_text']).to eq "Term: All Terms; Include Deleted Objects; Reports: xlist "
         parsed = parse_report(report)
-        expect(parsed[0]).to eq ["SIS_COURSE_ID_1","english_section_3","deleted"]
+        expect(parsed[0]).to eq ["SIS_COURSE_ID_1", "english_section_3",
+                                 "deleted"]
         expect(parsed.length).to eq 1
       end
 
@@ -1004,6 +1163,62 @@ describe "Default Account Reports" do
       end
     end
 
+    describe "user_observers" do
+      before(:once) do
+        create_an_account
+        create_some_users_with_pseudonyms
+        @uo1 = @user2.user_observees.create_or_restore(user_id: @user1)
+        uo2 = @user4.user_observees.create_or_restore(user_id: @user3)
+        @user7.user_observees.create_or_restore(user_id: @user6)
+        UserObserver.where(id: [@uo1.id, uo2.id]).update_all(sis_batch_id: @sis)
+      end
+
+      it 'should run user_observer provisioning report' do
+        parameters = {}
+        parameters["user_observers"] = true
+        parsed = read_report("provisioning_csv", {params: parameters, order: 0, header: true})
+        expect(parsed[0]).to eq ['canvas_observer_id', 'observer_id', 'canvas_student_id',
+                                 'student_id', 'status', 'created_by_sis']
+        expect(parsed[1]).to eq [@user2.id.to_s, "user_sis_id_02",
+                                 @user1.id.to_s, "user_sis_id_01", "active", 'true']
+        expect(parsed[2]).to eq [@user4.id.to_s, "user_sis_id_04",
+                                 @user3.id.to_s, "user_sis_id_03", "active", 'true']
+        expect(parsed[3]).to eq [@user7.id.to_s, nil,
+                                 @user6.id.to_s, nil, "active", 'false']
+        expect(parsed.length).to eq 4
+      end
+
+      it 'should run user_observer sis_export report' do
+        parameters = {}
+        parameters["user_observers"] = true
+        parsed = read_report("sis_export_csv", {params: parameters, order: 0, header: true})
+        expect(parsed[0]).to eq ['observer_id', 'student_id', 'status']
+        expect(parsed[1]).to eq ["user_sis_id_02", "user_sis_id_01", "active"]
+        expect(parsed[2]).to eq ["user_sis_id_04", "user_sis_id_03", "active"]
+        expect(parsed.length).to eq 3
+      end
+
+      it 'should exclude deleted observers by default' do
+        @uo1.destroy
+        parameters = {}
+        parameters["user_observers"] = true
+        parsed = read_report("sis_export_csv", {params: parameters, order: 0})
+        expect(parsed[0]).to eq ["user_sis_id_04", "user_sis_id_03", "active"]
+        expect(parsed.length).to eq 1
+      end
+
+      it 'should include deleted observers by when param is present' do
+        @uo1.destroy
+        parameters = {}
+        parameters["user_observers"] = true
+        parameters["include_deleted"] = true
+        parsed = read_report("sis_export_csv", {params: parameters, order: 0})
+        expect(parsed[0]).to eq ["user_sis_id_02", "user_sis_id_01", "deleted"]
+        expect(parsed[1]).to eq ["user_sis_id_04", "user_sis_id_03", "active"]
+        expect(parsed.length).to eq 2
+      end
+    end
+
     it "should run multiple SIS Export reports" do
       create_some_users_with_pseudonyms
       create_some_accounts
@@ -1022,21 +1237,22 @@ describe "Default Account Reports" do
 
       users_report = parsed["users.csv"][1..-1].sort_by { |r| r[0] }
       expect(users_report.length).to eq 4
-      expect(users_report[0]).to eq ["user_sis_id_01", "john@stclair.com", nil,
-                                     "John St.", "Clair", "John St. Clair",
-                                     "Clair, John St.", nil,
-                                     "john@stclair.com", "active"]
-      expect(users_report[1]).to eq ["user_sis_id_02", "micheal@michaelbolton.com",
-                                     nil, "Michael", "Bolton", "Michael Bolton",
-                                     "Bolton, Michael", nil,
-                                     "micheal@michaelbolton.com", "active"]
-      expect(users_report[2]).to eq ["user_sis_id_03", "rick@roll.com", nil, "Rick",
-                                     "Astley", "Rick Astley", "Astley, Rick", nil,
-                                     "rick@roll.com", "active"]
-      expect(users_report[3]).to eq ["user_sis_id_04", "jason@donovan.com", nil,
-                                     "Jason", "Donovan", "Jason Donovan",
-                                     "Donovan, Jason", nil, "jason@donovan.com",
+      expect(users_report[0]).to eq ["user_sis_id_01", nil, nil,
+                                     "john@stclair.com", nil, "John St.",
+                                     "Clair", "John St. Clair", "Clair, John St.",
+                                     nil, "john@stclair.com", "active"]
+      expect(users_report[1]).to eq ["user_sis_id_02", nil, nil,
+                                     "micheal@michaelbolton.com", nil, "Michael",
+                                     "Bolton", "Michael Bolton", "Bolton, Michael",
+                                     nil, "micheal@michaelbolton.com", "active"]
+      expect(users_report[2]).to eq ["user_sis_id_03", nil, nil, "rick@roll.com",
+                                     nil, "Rick", "Astley", "Rick Astley",
+                                     "Astley, Rick", nil, "rick@roll.com",
                                      "active"]
+      expect(users_report[3]).to eq ["user_sis_id_04", nil, nil,
+                                     "jason@donovan.com", nil, "Jason", "Donovan",
+                                     "Jason Donovan", "Donovan, Jason", nil,
+                                     "jason@donovan.com", "active"]
     end
 
     it "should run the SIS Export reports with no data" do
@@ -1054,15 +1270,16 @@ describe "Default Account Reports" do
 
       expect(parsed["accounts.csv"]).to eq [["account_id", "parent_account_id", "name", "status"]]
       expect(parsed["terms.csv"]).to eq [["term_id", "name", "status", "start_date", "end_date"]]
-      expect(parsed["users.csv"]).to eq [['user_id', 'login_id', 'password', 'first_name',
-                                          'last_name', 'full_name', 'sortable_name',
-                                          'short_name', 'email', 'status']]
-      expect(parsed["courses.csv"]).to eq [["course_id", "short_name", "long_name", "account_id",
-                                            "term_id", "status", "start_date", "end_date"]]
-      expect(parsed["sections.csv"]).to eq [["section_id", "course_id", "name", "status",
+      expect(parsed["users.csv"]).to eq [['user_id', 'integration_id', 'authentication_provider_id',
+                                          'login_id', 'password', 'first_name', 'last_name',
+                                          'full_name', 'sortable_name', 'short_name', 'email', 'status']]
+      expect(parsed["courses.csv"]).to eq [["course_id", "integration_id", "short_name", "long_name",
+                                            "account_id", "term_id", "status", "start_date", "end_date"]]
+      expect(parsed["sections.csv"]).to eq [["section_id", "course_id", "integration_id", "name", "status",
                                              "start_date", "end_date"]]
       expect(parsed["enrollments.csv"]).to eq [["course_id", "user_id", "role", "role_id", "section_id",
-                                                "status", "associated_user_id"]]
+                                                "status", "associated_user_id",
+                                                "limit_section_privileges"]]
       expect(parsed["groups.csv"]).to eq [["group_id", "account_id", "name", "status"]]
       expect(parsed["group_membership.csv"]).to eq [["group_id", "user_id", "status"]]
       expect(parsed["xlist.csv"]).to eq [["xlist_course_id", "section_id", "status"]]
@@ -1083,9 +1300,9 @@ describe "Default Account Reports" do
 
       expect(parsed["accounts.csv"]).to eq nil
       expect(parsed["terms.csv"]).to eq [["term_id", "name", "status", "start_date", "end_date"]]
-      expect(parsed["users.csv"]).to eq [['user_id', 'login_id', 'password', 'first_name',
-                                          'last_name', 'full_name', 'sortable_name',
-                                          'short_name', 'email', 'status']]
+      expect(parsed["users.csv"]).to eq [['user_id', 'integration_id', 'authentication_provider_id',
+                                          'login_id', 'password', 'first_name', 'last_name',
+                                          'full_name', 'sortable_name', 'short_name', 'email', 'status']]
       expect(parsed["courses.csv"]).to eq nil
       expect(parsed["sections.csv"]).to eq nil
       expect(parsed["enrollments.csv"]).to eq nil

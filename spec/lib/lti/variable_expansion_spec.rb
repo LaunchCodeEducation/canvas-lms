@@ -17,6 +17,7 @@
 #
 
 require File.expand_path(File.dirname(__FILE__) + '/../../spec_helper')
+require_dependency "lti/variable_expansion"
 
 module Lti
   describe VariableExpansion do
@@ -37,6 +38,11 @@ module Lti
 
       var_exp = described_class.new('test', [], -> { @one + @two + @three }, -> { false }, -> { true } )
       expect(var_exp.expand(TestExpander.new)).to eq '$test'
+    end
+
+    it 'accepts and sets default_name' do
+      var_exp = described_class.new('test', [], -> { 'test' }, -> { true }, default_name: 'test_name' )
+      expect(var_exp.default_name).to eq 'test_name'
     end
 
     it 'expands variables' do

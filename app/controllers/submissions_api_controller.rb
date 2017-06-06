@@ -114,7 +114,7 @@
 #           "type": "integer"
 #         },
 #         "grader_id": {
-#           "description": "The id of the user who graded the submission",
+#           "description": "The id of the user who graded the submission. This will be null for submissions that haven't been graded yet. It will be a positive number if a real user has graded the submission and a negative number if the submission was graded by a process (e.g. Quiz autograder and autograding LTI tools).  Specifically autograded quizzes set grader_id to the negative of the quiz id.  Submissions autograded by LTI tools set grader_id to the negative of the tool id.",
 #           "example": 86,
 #           "type": "integer"
 #         },
@@ -155,7 +155,7 @@
 #     }
 #
 class SubmissionsApiController < ApplicationController
-  before_filter :get_course_from_section, :require_context, :require_user
+  before_action :get_course_from_section, :require_context, :require_user
   batch_jobs_in_actions :only => [:update], :batch => { :priority => Delayed::LOW_PRIORITY }
 
   include Api::V1::Progress
@@ -173,7 +173,7 @@ class SubmissionsApiController < ApplicationController
   #
   # @response_field assignment_id The unique identifier for the assignment.
   # @response_field user_id The id of the user who submitted the assignment.
-  # @response_field grader_id The id of the user who graded the assignment.
+  # @response_field grader_id The id of the user who graded the submission. This will be null for submissions that haven't been graded yet. It will be a positive number if a real user has graded the submission and a negative number if the submission was graded by a process (e.g. Quiz autograder and autograding LTI tools).  Specifically autograded quizzes set grader_id to the negative of the quiz id.  Submissions autograded by LTI tools set grader_id to the negative of the tool id.
   # @response_field submitted_at The timestamp when the assignment was submitted, if an actual submission has been made.
   # @response_field score The raw score for the assignment submission.
   # @response_field attempt If multiple submissions have been made, this is the attempt number.
@@ -201,7 +201,7 @@ class SubmissionsApiController < ApplicationController
                                                            @current_user, section_ids)
                         .pluck(:user_id)
                     end
-      submissions = @assignment.submissions.where(user_id: student_ids)
+      submissions = @assignment.submissions.where(user_id: student_ids).preload(:originality_reports)
 
       if includes.include?("visibility")
         json = bulk_process_submissions_for_visibility(submissions, includes)
@@ -245,7 +245,7 @@ class SubmissionsApiController < ApplicationController
   #
   # @argument grading_period_id [Integer]
   #   The id of the grading period in which submissions are being requested
-  #   (Requires the Multiple Grading Periods account feature turned on)
+  #   (Requires grading periods to exist on the account)
   #
   # @argument order [String, "id"|"graded_at"]
   #   The order submissions will be returned in.  Defaults to "id".  Doesn't
@@ -330,7 +330,7 @@ class SubmissionsApiController < ApplicationController
       assignment_scope = assignment_scope.where(:id => requested_assignment_ids)
     end
 
-    if params[:grading_period_id].present? && multiple_grading_periods?
+    if params[:grading_period_id].present?
       assignments = GradingPeriod.active.find(params[:grading_period_id]).assignments(assignment_scope)
     else
       assignments = assignment_scope.to_a
@@ -354,11 +354,11 @@ class SubmissionsApiController < ApplicationController
           eager_load(:user => :pseudonyms).
           where("users.id" => student_ids)
 
-      submissions = if requested_assignment_ids.present?
+      submissions_scope = if requested_assignment_ids.present?
                       Submission.where(
                         :user_id => student_ids,
                         :assignment_id => assignments
-                      ).to_a
+                      )
                     else
                       Submission.joins(:assignment).where(
                         :user_id => student_ids,
@@ -366,8 +366,9 @@ class SubmissionsApiController < ApplicationController
                         "assignments.context_id" => @context.id
                       ).where(
                         "assignments.workflow_state != 'deleted'"
-                      ).to_a
+                      )
                     end
+      submissions = submissions_scope.preload(:originality_reports).to_a
       bulk_load_attachments_and_previews(submissions)
       submissions_for_user = submissions.group_by(&:user_id)
 
@@ -418,10 +419,11 @@ class SubmissionsApiController < ApplicationController
       order = "#{order_by} #{order_direction}"
       submissions = @context.submissions.except(:order).where(:user_id => student_ids).order(order)
       submissions = submissions.where(:assignment_id => assignments) unless assignments.empty?
-      submissions = submissions.preload(:user)
+      submissions = submissions.preload(:user, :originality_reports)
 
       submissions = Api.paginate(submissions, self, polymorphic_url([:api_v1, @section || @context, :student_submissions]))
       Submission.bulk_load_versioned_attachments(submissions)
+      Version.preload_version_number(submissions)
       result = submissions.select{ |s|
         assignment_visibilities.fetch(s.assignment_id, []).include?(s.user_id) || can_view_all
       }.map { |s|
@@ -619,7 +621,7 @@ class SubmissionsApiController < ApplicationController
 
     if authorized
       submission = { grader: @current_user }
-      if params[:submission].is_a?(Hash)
+      if params[:submission].is_a?(ActionController::Parameters)
         submission[:grade] = params[:submission].delete(:posted_grade)
         submission[:excuse] = params[:submission].delete(:excuse)
         submission[:provisional] = value_to_boolean(params[:submission][:provisional])
@@ -643,7 +645,7 @@ class SubmissionsApiController < ApplicationController
       end
 
       assessment = params[:rubric_assessment]
-      if assessment.is_a?(Hash) && @assignment.rubric_association
+      if assessment.is_a?(ActionController::Parameters) && @assignment.rubric_association
         # prepend each key with "criterion_", which is required by the current
         # RubricAssociation#assess code.
         assessment.keys.each do |crit_name|
@@ -658,7 +660,7 @@ class SubmissionsApiController < ApplicationController
       end
 
       comment = params[:comment]
-      if comment.is_a?(Hash)
+      if comment.is_a?(ActionController::Parameters)
         admin_in_context = !@context_enrollment || @context_enrollment.admin?
         comment = {
           comment: comment[:text_comment],
@@ -700,6 +702,7 @@ class SubmissionsApiController < ApplicationController
       json = submission_json(@submission, @assignment, @current_user, session, @context, includes)
 
       includes.delete("submission_comments")
+      Version.preload_version_number(@submissions)
       json[:all_submissions] = @submissions.map { |submission|
 
         if visiblity_included
@@ -751,6 +754,59 @@ class SubmissionsApiController < ApplicationController
     end
   end
 
+  # @API List multiple assignments gradeable students
+  #
+  # @argument assignment_ids[] [String]
+  #   Assignments being requested
+  #
+  # List students eligible to submit a list of assignments. The caller must have
+  # permission to view grades for the requested course.
+  #
+  # Section-limited instructors will only see students in their own sections.
+  #
+  # @example_response
+  #   A [UserDisplay] with an extra assignment_ids field to indicate what assignments
+  #   that user can submit
+  #
+  #   [
+  #     {
+  #       "id": 2,
+  #       "display_name": "Display Name",
+  #       "avatar_image_url": "http://avatar-image-url.jpeg",
+  #       "html_url": "http://canvas.com",
+  #       "assignment_ids": [1, 2, 3]
+  #     }
+  #   ]
+  def multiple_gradeable_students
+    if authorized_action(@context, @current_user, [:manage_grades, :view_all_grades])
+      assignment_ids = Array(params[:assignment_ids])
+
+      student_scope = context.students_visible_to(@current_user, include: :inactive)
+      student_scope = student_scope.
+        preload(:assignment_student_visibilities).
+        joins(:assignment_student_visibilities).
+        where(:assignment_student_visibilities =>
+              {
+                :assignment_id => assignment_ids,
+                :course_id => @context.id
+              }).
+        distinct.
+        order(:id)
+
+      students = Api.paginate(student_scope, self, api_v1_multiple_assignments_gradeable_students_url(@context))
+
+      student_displays = students.map do |student|
+        user_display = user_display_json(student, @context)
+        user_display['assignment_ids'] = student.assignment_student_visibilities.
+          select { |visibility| assignment_ids.include?(visibility.assignment_id.to_s) }.
+          map(&:assignment_id)
+        user_display
+      end
+
+      render :json => student_displays
+    end
+  end
+
   # @API Grade or comment on multiple submissions
   #
   # Update the grading and comments on multiple student's assignment
@@ -789,7 +845,7 @@ class SubmissionsApiController < ApplicationController
   #
   # @returns Progress
   def bulk_update
-    grade_data = params[:grade_data]
+    grade_data = params[:grade_data].to_hash.with_indifferent_access
     unless grade_data.is_a?(Hash) && grade_data.present?
       return render :json => "'grade_data' parameter required", :status => :bad_request
     end
@@ -866,7 +922,7 @@ class SubmissionsApiController < ApplicationController
   # for failure with participant errors if there are any
   def render_state_change_result(result)
     if result == true || result.try(:errors).blank?
-      render :nothing => true, :status => :no_content
+      head :no_content
     else
       render :json => result.try(:errors) || {}, :status => :bad_request
     end
@@ -889,6 +945,7 @@ class SubmissionsApiController < ApplicationController
     attachments = submissions.flat_map &:versioned_attachments
     ActiveRecord::Associations::Preloader.new.preload(attachments,
       [:canvadoc, :crocodoc_document])
+    Version.preload_version_number(submissions)
   end
 
   def bulk_process_submissions_for_visibility(submissions_scope, includes)

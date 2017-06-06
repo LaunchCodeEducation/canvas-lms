@@ -22,10 +22,11 @@ describe Feature do
   let(:t_site_admin) { Account.site_admin }
   let(:t_root_account) { account_model }
   let(:t_sub_account) { account_model parent_account: t_root_account }
-  let(:t_course) { course account: t_sub_account, active_all: true }
+  let(:t_course) { course_factory account: t_sub_account, active_all: true }
   let(:t_user) { user_with_pseudonym account: t_root_account }
 
   before do
+    User.any_instance.stubs(:set_default_feature_flags)
     Feature.stubs(:definitions).returns({
         'RA' => Feature.new(feature: 'RA', applies_to: 'RootAccount', state: 'hidden'),
         'A' => Feature.new(feature: 'A', applies_to: 'Account', state: 'on'),

@@ -1,7 +1,7 @@
-define ['collaborations'], (collaborations) ->
+define ['collaborations', 'jquery', 'jquery.ajaxJSON'], (collaborations, $) ->
 
   oldAjaxJSON = null
-  module "Collaborations",
+  QUnit.module "Collaborations",
     setup: ->
       oldAjaxJSON = $.ajaxJSON
       link= $("<a></a>")

@@ -189,13 +189,13 @@ class OutcomeResultsController < ApplicationController
   include Api::V1::OutcomeResults
   include Outcomes::ResultAnalytics
 
-  before_filter :require_user
-  before_filter :require_context
-  before_filter :require_outcome_context
-  before_filter :verify_aggregate_parameter, only: :rollups
-  before_filter :verify_include_parameter
-  before_filter :require_outcomes
-  before_filter :require_users
+  before_action :require_user
+  before_action :require_context
+  before_action :require_outcome_context
+  before_action :verify_aggregate_parameter, only: :rollups
+  before_action :verify_include_parameter
+  before_action :require_outcomes
+  before_action :require_users
 
   # @API Get outcome results
   # @beta
@@ -429,6 +429,7 @@ class OutcomeResultsController < ApplicationController
         # need to instead look at the uniqueness of the associating content tag's
         # context and outcome id in order to ensure we get the correct result
         # from the query without rendering the reject! check moot
+
         @outcomes = ContentTag.learning_outcome_links.active.joins(:learning_outcome_content)
           .where(content_id: outcome_ids, context_type: @context.class_name, context_id: @context.id)
           .to_a.uniq{|tag| [tag.context, tag.content_id]}.map(&:learning_outcome_content)
@@ -464,7 +465,7 @@ class OutcomeResultsController < ApplicationController
     reject! "cannot specify both user_ids and section_id" if params[:user_ids] && params[:section_id]
     if params[:user_ids]
       user_ids = Api.value_to_array(params[:user_ids]).uniq
-      @users = api_find_all(users_for_outcome_context, user_ids).uniq.to_a
+      @users = api_find_all(users_for_outcome_context, user_ids).distinct.to_a
       reject!( "can only include id's of users in the outcome context") if @users.count != user_ids.count
     elsif params[:section_id]
       @section = @context.course_sections.where(id: params[:section_id].to_i).first

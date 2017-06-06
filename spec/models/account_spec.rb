@@ -207,7 +207,7 @@ describe Account do
     end
 
     it "should allow settings services" do
-      expect {@a.enable_service(:completly_bogs)}.to raise_error
+      expect {@a.enable_service(:completly_bogs)}.to raise_error("Invalid Service")
 
       @a.disable_service(:twitter)
       expect(@a.service_enabled?(:twitter)).to be_falsey
@@ -322,20 +322,16 @@ describe Account do
   end
 
   context "settings=" do
-    it "should filter disabled settings" do
+    it "should filter non-hash hash settings" do
       a = Account.new
-      a.settings = {'error_reporting' => 'string'}.with_indifferent_access
+      a.settings = {'sis_default_grade_export' => 'string'}.with_indifferent_access
       expect(a.settings[:error_reporting]).to eql(nil)
 
-      a.settings = {'error_reporting' => {
-        'action' => 'email',
-        'email' => 'bob@yahoo.com',
-        'extra' => 'something'
+      a.settings = {'sis_default_grade_export' => {
+        'value' => true
       }}.with_indifferent_access
-      expect(a.settings[:error_reporting]).to be_is_a(Hash)
-      expect(a.settings[:error_reporting][:action]).to eql('email')
-      expect(a.settings[:error_reporting][:email]).to eql('bob@yahoo.com')
-      expect(a.settings[:error_reporting][:extra]).to eql(nil)
+      expect(a.settings[:sis_default_grade_export]).to be_is_a(Hash)
+      expect(a.settings[:sis_default_grade_export][:value]).to eql true
     end
   end
 
@@ -478,7 +474,7 @@ describe Account do
       hash[k][:user] = user
     end
 
-    limited_access = [ :read, :manage, :update, :delete, :read_outcomes ]
+    limited_access = [ :read, :read_as_admin, :manage, :update, :delete, :read_outcomes ]
     conditional_access = RoleOverride.permissions.select { |_, v| v[:account_allows] }.map(&:first)
     full_access = RoleOverride.permissions.keys +
                   limited_access - conditional_access +
@@ -526,7 +522,8 @@ describe Account do
       account.role_overrides.create!(:permission => 'read_reports', :role => (k == :site_admin ? @sa_role : @root_role), :enabled => true)
       account.role_overrides.create!(:permission => 'reset_any_mfa', :role => @sa_role, :enabled => true)
       # clear caches
-      v[:account] = Account.find(account)
+      account.tap{|a| a.settings[:mfa_settings] = :optional; a.save!}
+      v[:account] = Account.find(account.id)
     end
     RoleOverride.clear_cached_contexts
     AdheresToPolicy::Cache.clear
@@ -582,7 +579,7 @@ describe Account do
     a.settings = { :no_enrollments_can_create_courses => true }
     a.save!
 
-    user
+    user_factory
     expect(a.grants_right?(@user, :create_courses)).to be_truthy
   end
 
@@ -590,7 +587,7 @@ describe Account do
     a = Account.site_admin
     a.settings = { :no_enrollments_can_create_courses => true }
     manual = a.manually_created_courses_account
-    user
+    user_factory
 
     expect(a.grants_right?(@user, :create_courses)).to eq false
     expect(manual.grants_right?(@user, :create_courses)).to eq false
@@ -896,13 +893,13 @@ describe Account do
     it "should be preferred for anyone if open registration is turned on" do
       account.settings = { :open_registration => true }
       expect(account.user_list_search_mode_for(nil)).to eq :preferred
-      expect(account.user_list_search_mode_for(user)).to eq :preferred
+      expect(account.user_list_search_mode_for(user_factory)).to eq :preferred
     end
 
     it "should be preferred for account admins" do
       expect(account.user_list_search_mode_for(nil)).to eq :closed
-      expect(account.user_list_search_mode_for(user)).to eq :closed
-      user
+      expect(account.user_list_search_mode_for(user_factory)).to eq :closed
+      user_factory
       account.account_users.create!(user: @user)
       expect(account.user_list_search_mode_for(@user)).to eq :preferred
     end
@@ -913,7 +910,7 @@ describe Account do
 
     it "should properly return site admin permissions regardless of active shard" do
       enable_cache do
-        user
+        user_factory
         site_admin = Account.site_admin
         site_admin.account_users.create!(user: @user)
 
@@ -922,7 +919,7 @@ describe Account do
         end
         expect(site_admin.grants_right?(@user, :manage_site_settings)).to be_truthy
 
-        user
+        user_factory
         @shard1.activate do
           expect(site_admin.grants_right?(@user, :manage_site_settings)).to be_falsey
         end
@@ -957,7 +954,7 @@ describe Account do
     end
 
     it "should grant :read_outcomes to enrollees in account courses" do
-      course(:account => Account.default)
+      course_factory(:account => Account.default)
       teacher_in_course
       student_in_course
       expect(Account.default.grants_right?(@teacher, :read_outcomes)).to be_truthy
@@ -965,7 +962,7 @@ describe Account do
     end
 
     it "should grant :read_outcomes to enrollees in subaccount courses" do
-      course(:account => Account.default.sub_accounts.create!)
+      course_factory(:account => Account.default.sub_accounts.create!)
       teacher_in_course
       student_in_course
       expect(Account.default.grants_right?(@teacher, :read_outcomes)).to be_truthy
@@ -992,7 +989,6 @@ describe Account do
 
     before do
       account.authentication_providers.scope.delete_all
-      expect(account.delegated_authentication?).to eq false
     end
 
     it "is false for LDAP" do
@@ -1084,19 +1080,19 @@ describe Account do
   describe "account_users_for" do
     it "should be cache coherent for site admin" do
       enable_cache do
-        user
+        user_factory
         sa = Account.site_admin
         expect(sa.account_users_for(@user)).to eq []
 
         au = sa.account_users.create!(user: @user)
         # out-of-proc cache should clear, but we have to manually clear
         # the in-proc cache
-        sa = Account.find(sa)
+        sa = Account.find(sa.id)
         expect(sa.account_users_for(@user)).to eq [au]
 
         au.destroy
         #ditto
-        sa = Account.find(sa)
+        sa = Account.find(sa.id)
         expect(sa.account_users_for(@user)).to eq []
       end
     end
@@ -1106,7 +1102,7 @@ describe Account do
 
       it "should be cache coherent for site admin" do
         enable_cache do
-          user
+          user_factory
           sa = Account.site_admin
           @shard1.activate do
             expect(sa.account_users_for(@user)).to eq []
@@ -1114,12 +1110,12 @@ describe Account do
             au = sa.account_users.create!(user: @user)
             # out-of-proc cache should clear, but we have to manually clear
             # the in-proc cache
-            sa = Account.find(sa)
+            sa = Account.find(sa.id)
             expect(sa.account_users_for(@user)).to eq [au]
 
             au.destroy
             #ditto
-            sa = Account.find(sa)
+            sa = Account.find(sa.id)
             expect(sa.account_users_for(@user)).to eq []
           end
         end
@@ -1380,7 +1376,7 @@ describe Account do
         account = Account.find(account.id)
         expect(account.default_storage_quota).to eq 20.megabytes
 
-        subaccount = Account.find(subaccount)
+        subaccount = Account.find(subaccount.id)
         expect(subaccount.default_storage_quota).to eq 20.megabytes
       end
     end
@@ -1414,47 +1410,67 @@ describe Account do
       expected = {:locked => false, :value => false}
       [@account, @sub1, @sub2].each do |a|
         expect(a.restrict_student_future_view).to eq expected
+        expect(a.lock_all_announcements).to eq expected
       end
     end
 
     it "should be able to lock values for sub-accounts" do
       @sub1.settings[:restrict_student_future_view] = {:locked => true, :value => true}
+      @sub1.settings[:lock_all_announcements] = {:locked => true, :value => true}
       @sub1.save!
       # should ignore the subaccount's wishes
       @sub2.settings[:restrict_student_future_view] = {:locked => true, :value => false}
+      @sub2.settings[:lock_all_announcements] = {:locked => true, :value => false}
       @sub2.save!
 
       expect(@account.restrict_student_future_view).to eq({:locked => false, :value => false})
+      expect(@account.lock_all_announcements).to eq({:locked => false, :value => false})
+
       expect(@sub1.restrict_student_future_view).to eq({:locked => true, :value => true})
+      expect(@sub1.lock_all_announcements).to eq({:locked => true, :value => true})
+
       expect(@sub2.restrict_student_future_view).to eq({:locked => true, :value => true, :inherited => true})
+      expect(@sub2.lock_all_announcements).to eq({:locked => true, :value => true, :inherited => true})
     end
 
     it "should grandfather old pre-hash values in" do
       @account.settings[:restrict_student_future_view] = true
+      @account.settings[:lock_all_announcements] = true
       @account.save!
       @sub2.settings[:restrict_student_future_view] = false
+      @sub2.settings[:lock_all_announcements] = false
       @sub2.save!
 
       expect(@account.restrict_student_future_view).to eq({:locked => false, :value => true})
+      expect(@account.lock_all_announcements).to eq({:locked => false, :value => true})
+
       expect(@sub1.restrict_student_future_view).to eq({:locked => false, :value => true, :inherited => true})
+      expect(@sub1.lock_all_announcements).to eq({:locked => false, :value => true, :inherited => true})
+
       expect(@sub2.restrict_student_future_view).to eq({:locked => false, :value => false})
+      expect(@sub2.lock_all_announcements).to eq({:locked => false, :value => false})
     end
 
     it "should translate string values in mass-assignment" do
       settings = @account.settings
       settings[:restrict_student_future_view] = {"value" => "1", "locked" => "0"}
+      settings[:lock_all_announcements] = {"value" => "1", "locked" => "0"}
       @account.settings = settings
       @account.save!
+
       expect(@account.restrict_student_future_view).to eq({:locked => false, :value => true})
+      expect(@account.lock_all_announcements).to eq({:locked => false, :value => true})
     end
 
     context "caching" do
       specs_require_sharding
       it "should clear cached values correctly" do
         enable_cache do
-          [@account, @sub1, @sub2].each(&:restrict_student_future_view) # preload the cached values
+          # preload the cached values
+          [@account, @sub1, @sub2].each(&:restrict_student_future_view)
+          [@account, @sub1, @sub2].each(&:lock_all_announcements)
 
-          @sub1.settings = @sub1.settings.merge(:restrict_student_future_view => {:locked => true, :value => true})
+          @sub1.settings = @sub1.settings.merge(:restrict_student_future_view => {:locked => true, :value => true}, :lock_all_announcements => {:locked => true, :value => true})
           @sub1.save!
 
           # hard reload
@@ -1463,8 +1479,13 @@ describe Account do
           @sub2 = Account.find(@sub2.id)
 
           expect(@account.restrict_student_future_view).to eq({:locked => false, :value => false})
+          expect(@account.lock_all_announcements).to eq({:locked => false, :value => false})
+
           expect(@sub1.restrict_student_future_view).to eq({:locked => true, :value => true})
+          expect(@sub1.lock_all_announcements).to eq({:locked => true, :value => true})
+
           expect(@sub2.restrict_student_future_view).to eq({:locked => true, :value => true, :inherited => true})
+          expect(@sub2.lock_all_announcements).to eq({:locked => true, :value => true, :inherited => true})
         end
       end
     end
@@ -1541,7 +1562,7 @@ describe Account do
         ActiveRecord::Base.connection.stubs(:use_qualified_names?).returns(true)
         @shard1.activate do
           @account = Account.create!
-          @user = user(:name => "silly name")
+          @user = user_factory(:name => "silly name")
           @user.account_users.create(:account => @account)
         end
         expect(@account.users_name_like("silly").first).to eq @user

@@ -1,4 +1,4 @@
-require([
+define([
   'i18n!accounts' /* I18n.t */,
   'jquery' /* $ */,
   'compiled/util/addPrivacyLinkToDialog',
@@ -43,7 +43,8 @@ require([
       $("#add_user_dialog").dialog('close');
     },
     error: function(data) {
-      errorData = {};
+      var errorData = {};
+      var errorList;
 
       // Email errors
       if(data.pseudonym.unique_id){

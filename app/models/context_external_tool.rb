@@ -5,17 +5,11 @@ class ContextExternalTool < ActiveRecord::Base
   has_many :content_tags, :as => :content
   has_many :context_external_tool_placements, :autosave => true
 
-  has_many :context_external_tool_assignment_lookups, dependent: :delete_all
-  has_many :tool_settings_assignments, through: :context_external_tool_assignment_lookups, source: :assignment
-
   belongs_to :context, polymorphic: [:course, :account]
-  attr_accessible :privacy_level, :domain, :url, :shared_secret, :consumer_key,
-                  :name, :description, :custom_fields, :custom_fields_string,
-                  :course_navigation, :account_navigation, :user_navigation,
-                  :resource_selection, :editor_button, :homework_submission,
-                  :course_home_sub_navigation, :course_settings_sub_navigation,
-                  :config_type, :config_url, :config_xml, :tool_id,
-                  :not_selectable
+
+  include MasterCourses::Restrictor
+  restrict_columns :content, [:name, :description]
+  restrict_columns :settings, [:consumer_key, :shared_secret, :url, :domain, :settings]
 
   validates_presence_of :context_id, :context_type, :workflow_state
   validates_presence_of :name, :consumer_key, :shared_secret
@@ -40,14 +34,8 @@ class ContextExternalTool < ActiveRecord::Base
   end
 
   set_policy do
-    given { |user, session| self.context.grants_right?(user, session, :update) }
-    can :read and can :update and can :delete
-
-    given do |user, session|
-      self.grants_right?(user, session, :update) &&
-      self.context.grants_right?(user, session, :lti_add_edit)
-    end
-    can :update_manually
+    given { |user, session| self.context.grants_right?(user, session, :lti_add_edit) }
+    can :read and can :update and can :delete and can :update_manually
   end
 
   CUSTOM_EXTENSION_KEYS = {:file_menu => [:accept_media_types].freeze}.freeze
@@ -104,6 +92,7 @@ class ContextExternalTool < ActiveRecord::Base
       :icon_svg_path_64,
       :icon_url,
       :message_type,
+      :prefer_sis_email,
       :selection_height,
       :selection_width,
       :text,
@@ -321,6 +310,14 @@ class ContextExternalTool < ActiveRecord::Base
     settings[:text]
   end
 
+  def oauth_compliant=(val)
+    settings[:oauth_compliant] = Canvas::Plugin.value_to_boolean(val)
+  end
+
+  def oauth_compliant
+    settings[:oauth_compliant]
+  end
+
   def not_selectable
     !!read_attribute(:not_selectable)
   end
@@ -420,6 +417,7 @@ class ContextExternalTool < ActiveRecord::Base
 
   def self.standardize_url(url)
     return "" if url.blank?
+    url = url.gsub(/[[:space:]]/, '')
     url = "http://" + url unless url.match(/:\/\//)
     res = Addressable::URI.parse(url).normalize
     res.query = res.query.split(/&/).sort.join('&') if !res.query.blank?
@@ -482,7 +480,7 @@ class ContextExternalTool < ActiveRecord::Base
     url = ContextExternalTool.standardize_url(url)
     host = Addressable::URI.parse(url).host
     if domain
-      domain == host
+      domain.downcase == host.downcase
     elsif standard_url
       Addressable::URI.parse(standard_url).host == host
     else
