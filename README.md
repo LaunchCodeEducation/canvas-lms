@@ -49,3 +49,13 @@ again, all this is staging-specific, you'll have to sub in prod values. I grabbe
 7) Give the web server a few minutes to recover
 
 8) Go back to sleep
+
+### Moving prod db to staging db
+
+I (Dave) tried this and couldn't get it going. I had to give up to pursue other priorities. When I quit, it looked like the problem had something to do with running the rake task:
+```
+bundle exec rake db:reset_encryption_key_hash
+```
+Looks like I was reading this post: https://groups.google.com/forum/#!topic/canvas-lms-users/EXSR9f6H-NY
+
+When I ran the rake task, it errored complaining about a nil. Maybe it took a parameter that I didn't specify?
