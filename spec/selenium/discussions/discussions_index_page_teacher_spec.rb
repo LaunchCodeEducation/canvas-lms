@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../helpers/discussions_common')
 
 describe "discussions" do
@@ -189,6 +206,7 @@ describe "discussions" do
         end
 
         it "should delete a topic", priority: "1", test_id: 150502 do
+          skip_if_safari(:alert)
           topic
           get url
 
@@ -201,6 +219,7 @@ describe "discussions" do
         end
 
         it "should restore a deleted topic with replies", priority: "2", test_id: 927756 do
+          skip_if_safari(:alert)
           topic.reply_from(user: student, text: 'student reply')
           topic.workflow_state = "deleted"
           topic.save!
@@ -226,11 +245,15 @@ describe "discussions" do
           3.times do |n|
             topic = topics[2-n]
             fj("[data-id=#{topic.id}] .al-trigger").click
-            fj('.icon-updown:visible').click
-            click_option '.ui-dialog:visible select', "-- At the bottom --"
-            fj('.ui-dialog:visible .btn-primary').click
+            wait_for_ajaximations
+            fj('.move_item:visible').click
+            wait_for_ajaximations
+            click_option '.move-select .move-select__position select', "At the Bottom"
+            wait_for_ajaximations
+            fj('.move-select button[type="submit"]').click
             wait_for_ajaximations
             topics.each(&:reload)
+            sleep 1
           end
           expect(topics.map(&:position)).to eq [4, 3, 2, 1]
         end
@@ -245,9 +268,14 @@ describe "discussions" do
           get url
 
           fj("[data-id=#{topic.id}] .al-trigger").click
-          fj('.icon-updown:visible').click
-          click_option '.ui-dialog:visible select', topics[2].title
-          fj('.ui-dialog:visible .btn-primary').click
+          wait_for_ajaximations
+          fj('.move_item:visible').click
+          wait_for_ajaximations
+          click_option '.move-select .move-select__position select', "Before.."
+          wait_for_ajaximations
+          click_option '.move-select .move-select__sibling select', topics[2].title
+          wait_for_ajaximations
+          fj('.move-select button[type="submit"]').click
           wait_for_ajaximations
           topics.each &:reload
           expect(topics.map(&:position)).to eq [2, 1, 3]

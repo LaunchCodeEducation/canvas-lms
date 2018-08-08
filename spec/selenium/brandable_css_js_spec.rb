@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/common')
 
 describe "brandableCss JS integration specs" do
@@ -6,7 +23,7 @@ describe "brandableCss JS integration specs" do
   EXAMPLE_CDN_HOST = 'https://somecdn.example.com'
 
   it "sets ENV.asset_host correctly" do
-    Canvas::Cdn.config.expects(:host).at_least_once.returns(EXAMPLE_CDN_HOST)
+    expect(Canvas::Cdn.config).to receive(:host).at_least(:once).and_return(EXAMPLE_CDN_HOST)
     get "/login/canvas"
     expect(driver.execute_script("return ENV.ASSET_HOST")).to eq(EXAMPLE_CDN_HOST)
   end
@@ -15,7 +32,7 @@ describe "brandableCss JS integration specs" do
     admin_logged_in
     get "/accounts/#{Account.default.id}/permissions?account_roles=1"
 
-    css_bundle = 'jst/roles/rolesOverrideIndex'
+    css_bundle = 'jst/roles/newRole'
     data = BrandableCSS.all_fingerprints_for(css_bundle).values.first
     expect(data[:includesNoVariables]).to be_truthy
     expect(data[:combinedChecksum]).to match(/\A[a-f0-9]{10}\z/), '10 chars of an MD5'

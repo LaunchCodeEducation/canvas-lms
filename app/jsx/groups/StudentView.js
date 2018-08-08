@@ -1,22 +1,42 @@
+/*
+ * Copyright (C) 2014 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
 import ReactDOM from 'react-dom'
 import $ from 'jquery'
 import I18n from 'i18n!student_groups'
 import natcompare from 'compiled/util/natcompare'
 import Group from 'compiled/models/Group'
+import Spinner from '@instructure/ui-elements/lib/components/Spinner'
 import UserCollection from 'compiled/collections/UserCollection'
 import ContextGroupCollection from 'compiled/collections/ContextGroupCollection'
-import BackboneState from 'jsx/groups/mixins/BackboneState'
-import PaginatedGroupList from 'jsx/groups/components/PaginatedGroupList'
-import Filter from 'jsx/groups/components/Filter'
-import NewGroupDialog from 'jsx/groups/components/NewGroupDialog'
-import ManageGroupDialog from 'jsx/groups/components/ManageGroupDialog'
+import BackboneState from '../groups/mixins/BackboneState'
+import PaginatedGroupList from '../groups/components/PaginatedGroupList'
+import Filter from '../groups/components/Filter'
+import NewGroupDialog from '../groups/components/NewGroupDialog'
+import ManageGroupDialog from '../groups/components/ManageGroupDialog'
   const StudentView = React.createClass({
     mixins: [BackboneState],
 
     getInitialState () {
       return {
         filter: '',
+        loading: false,
         userCollection: new UserCollection(null, {
           params: { enrollment_type: 'student' },
           comparator: natcompare.byGet('sortable_name'),
@@ -109,10 +129,10 @@ import ManageGroupDialog from 'jsx/groups/components/ManageGroupDialog'
 
     _loadMore (collection) {
       if (!collection.loadedAll && !collection.fetchingNextPage) {
-        // if we specify a page before we actually need it, we lose
-        // the params being passed to the api
-        const options = collection.length === 0 ? {} : {page: 'next'}
-        collection.fetch(options)
+        this.setState({loading: true})
+        collection.fetch({ page: 'next' }).done((resp, err) => {
+          this.setState({loading: false})
+        })
       }
     },
 
@@ -216,6 +236,11 @@ import ManageGroupDialog from 'jsx/groups/components/ManageGroupDialog'
             </div>
             <div className="roster-tab tab-panel" ref="panel">
               <Filter onChange={(e) => this.setState({filter: e.target.value})} />
+              {this.state.loading ?
+                <div className="spinner-container">
+                  <Spinner title="Loading" size="large" margin="0 0 0 medium" />
+                </div>
+              : null}
               <PaginatedGroupList loading={this.state.groupCollection.fetchingNextPage}
                                   groups={filteredGroups}
                                   filter={this.state.filter}

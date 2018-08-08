@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2017 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
   'moxios',
   'jsx/gradezilla/shared/GradebookExportManager',
@@ -11,13 +29,18 @@ define([
     attachmentId: 'attachmentId'
   };
 
+  let qunitTimeout
+
   QUnit.module('GradebookExportManager - constructor', {
     setup () {
+      qunitTimeout = QUnit.config.testTimeout
+      QUnit.config.testTimeout = 1500
       moxios.install();
     },
 
     teardown () {
       moxios.uninstall();
+      QUnit.config.testTimeout = qunitTimeout
     }
   });
 
@@ -59,6 +82,8 @@ define([
 
   QUnit.module('GradebookExportManager - monitoringUrl', {
     setup () {
+      qunitTimeout = QUnit.config.testTimeout
+      QUnit.config.testTimeout = 1500
       moxios.install();
 
       this.subject = new GradebookExportManager(exportingUrl, currentUserId, workingExport);
@@ -68,6 +93,7 @@ define([
       moxios.uninstall();
 
       this.subject = undefined;
+      QUnit.config.testTimeout = qunitTimeout
     }
   });
 
@@ -89,6 +115,8 @@ define([
 
   QUnit.module('GradebookExportManager - attachmentUrl', {
     setup () {
+      qunitTimeout = QUnit.config.testTimeout
+      QUnit.config.testTimeout = 1500
       moxios.install();
 
       this.subject = new GradebookExportManager(exportingUrl, currentUserId, workingExport);
@@ -98,6 +126,7 @@ define([
       moxios.uninstall();
 
       this.subject = undefined;
+      QUnit.config.testTimeout = qunitTimeout
     }
   });
 
@@ -119,6 +148,8 @@ define([
 
   QUnit.module('GradebookExportManager - startExport', {
     setup () {
+      qunitTimeout = QUnit.config.testTimeout
+      QUnit.config.testTimeout = 1500
       moxios.install();
 
       const expectedExportFromServer = {
@@ -138,6 +169,7 @@ define([
 
       this.subject.clearMonitor();
       this.subject = undefined;
+      QUnit.config.testTimeout = qunitTimeout
     }
   });
 
@@ -187,7 +219,7 @@ define([
   test('starts polling for progress and returns a rejected promise on progress failure', function () {
     const expectedMonitoringUrl = `${monitoringBase}/newProgressId`;
 
-    this.subject = new GradebookExportManager(exportingUrl, currentUserId);
+    this.subject = new GradebookExportManager(exportingUrl, currentUserId, null, 1);
 
     moxios.stubRequest(expectedMonitoringUrl, {
       status: 200,
@@ -205,7 +237,7 @@ define([
   test('starts polling for progress and returns a rejected promise on unknown progress status', function () {
     const expectedMonitoringUrl = `${monitoringBase}/newProgressId`;
 
-    this.subject = new GradebookExportManager(exportingUrl, currentUserId);
+    this.subject = new GradebookExportManager(exportingUrl, currentUserId, null, 1);
 
     moxios.stubRequest(expectedMonitoringUrl, {
       status: 200,
@@ -224,7 +256,7 @@ define([
     const expectedMonitoringUrl = `${monitoringBase}/newProgressId`;
     const expectedAttachmentUrl = `${attachmentBase}/newAttachmentId`;
 
-    this.subject = new GradebookExportManager(exportingUrl, currentUserId);
+    this.subject = new GradebookExportManager(exportingUrl, currentUserId, null, 1);
 
     moxios.stubRequest(expectedMonitoringUrl, {
       status: 200,

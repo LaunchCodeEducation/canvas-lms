@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2014 Instructure, Inc.
+# Copyright (C) 2015 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -21,15 +21,15 @@ class Login::Oauth2Controller < Login::OauthBaseController
     super
     nonce = session[:oauth2_nonce] = SecureRandom.hex(24)
     expiry = Time.zone.now + Setting.get('oauth2_client_timeout', 10.minutes.to_i).to_i
-    jwt = Canvas::Security.create_jwt({ aac_id: @aac.global_id, nonce: nonce }, expiry)
+    jwt = Canvas::Security.create_jwt({ aac_id: @aac.global_id, nonce: nonce, host: request.host_with_port }, expiry)
     redirect_to delegated_auth_redirect_uri(@aac.generate_authorize_url(oauth2_login_callback_url, jwt))
   end
 
   def create
     return unless validate_request
 
-    @aac = AccountAuthorizationConfig.find(jwt['aac_id'])
-    raise ActiveRecord::RecordNotFound unless @aac.is_a?(AccountAuthorizationConfig::Oauth2)
+    @aac = AuthenticationProvider.find(jwt['aac_id'])
+    raise ActiveRecord::RecordNotFound unless @aac.is_a?(AuthenticationProvider::Oauth2)
 
     unique_id = nil
     provider_attributes = {}

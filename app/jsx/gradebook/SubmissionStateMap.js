@@ -1,7 +1,23 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import _ from 'underscore'
-import tz from 'timezone'
-import I18n from 'i18n!gradebook'
-import GradingPeriodsHelper from 'jsx/grading/helpers/GradingPeriodsHelper'
+import GradingPeriodsHelper from '../grading/helpers/GradingPeriodsHelper'
 
   const TOOLTIP_KEYS = {
     NOT_IN_ANY_GP: "not_in_any_grading_period",
@@ -15,8 +31,18 @@ import GradingPeriodsHelper from 'jsx/grading/helpers/GradingPeriodsHelper'
     return _.contains(assignment.assignment_visibility, student.id);
   }
 
-  function cellMapForSubmission(assignment, student, hasGradingPeriods, selectedGradingPeriodID, isAdmin) {
-    if (!visibleToStudent(assignment, student)) {
+  function cellMapForSubmission(
+    assignment,
+    student,
+    hasGradingPeriods,
+    selectedGradingPeriodID,
+    isAdmin
+  ) {
+    if (assignment.moderated_grading && !assignment.grades_published) {
+      return { locked: true, hideGrade: false };
+    } else if (assignment.anonymous_grading && assignment.muted) {
+      return { locked: true, hideGrade: true };
+    } else if (!visibleToStudent(assignment, student)) {
       return { locked: true, hideGrade: true, tooltip: TOOLTIP_KEYS.NONE };
     } else if (hasGradingPeriods) {
       return cellMappingsForMultipleGradingPeriods(assignment, student, selectedGradingPeriodID, isAdmin);

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/common')
 
 describe "default plugins" do
@@ -12,7 +29,7 @@ describe "default plugins" do
     settings = Canvas::Plugin.find(:twitter).try(:settings)
     expect(settings).to be_nil
 
-    Twitter::Connection.stubs(:config_check).returns("Bad check")
+    allow(Twitter::Connection).to receive(:config_check).and_return("Bad check")
     get "/plugins/twitter"
 
     multiple_accounts_select
@@ -25,7 +42,7 @@ describe "default plugins" do
     assert_flash_error_message "There was an error"
 
     f("#settings_consumer_secret").send_keys("asdf")
-    Twitter::Connection.stubs(:config_check).returns(nil)
+    allow(Twitter::Connection).to receive(:config_check).and_return(nil)
 
     submit_form('#new_plugin_setting')
     wait_for_ajax_requests
@@ -68,7 +85,7 @@ describe "default plugins" do
     settings = Canvas::Plugin.find(:linked_in).try(:settings)
     expect(settings).to be_nil
 
-    LinkedIn::Connection.stubs(:config_check).returns("Bad check")
+    allow(LinkedIn::Connection).to receive(:config_check).and_return("Bad check")
     get "/plugins/linked_in"
 
     multiple_accounts_select
@@ -81,7 +98,7 @@ describe "default plugins" do
     assert_flash_error_message "There was an error"
 
     f("#settings_client_secret").send_keys("asdf")
-    LinkedIn::Connection.stubs(:config_check).returns(nil)
+    allow(LinkedIn::Connection).to receive(:config_check).and_return(nil)
     submit_form('#new_plugin_setting')
     wait_for_ajax_requests
 

@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import $ from 'jquery'
 
   var request = null;
@@ -8,8 +26,13 @@ import $ from 'jquery'
       return { type: 'START_FLICKR_SEARCH', term, page };
     },
 
-    receiveFlickrResults(results) {
-      return { type: 'RECEIVE_FLICKR_RESULTS', results };
+    receiveFlickrResults(originalResults) {
+      const photos = Object.assign({}, originalResults.photos)
+      if (photos.photo) {
+        photos.photo = photos.photo.filter(photo => photo.needs_interstitial !== 1)
+      }
+      const results = Object.assign({}, originalResults, { photos })
+      return { type: 'RECEIVE_FLICKR_RESULTS', results }
     },
 
     clearFlickrSearch() {
@@ -57,7 +80,7 @@ import $ from 'jquery'
       const per_page = '20';
       const imageSize = 'url_m';
 
-      return `https://secure.flickr.com/services/rest/?method=flickr.photos.search&format=json&nojsoncallback=true&api_key=${apiKey}&sort=${sort}&license=${licenses}&text=${term}&per_page=${per_page}&content_type=6&safe_search=1&page=${page}&privacy_filter=1&extras=license,owner_name,${imageSize}`
+      return `https://api.flickr.com/services/rest/?method=flickr.photos.search&format=json&nojsoncallback=true&api_key=${apiKey}&sort=${sort}&license=${licenses}&text=${term}&per_page=${per_page}&content_type=6&safe_search=1&page=${page}&privacy_filter=1&extras=license,owner_name,${imageSize},needs_interstitial`
     }
   };
 

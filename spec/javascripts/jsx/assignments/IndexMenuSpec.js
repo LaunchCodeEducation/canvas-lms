@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
   'react',
   'react-dom',
@@ -6,7 +24,9 @@ define([
   'jsx/assignments/IndexMenu',
   'jsx/assignments/actions/IndexMenuActions',
   './createFakeStore',
-], (React, ReactDOM, TestUtils, Modal, IndexMenu, Actions, createFakeStore) => {
+  'jquery'
+], (React, ReactDOM, TestUtils, Modal, IndexMenu, Actions,
+    createFakeStore, $) => {
   QUnit.module('AssignmentsIndexMenu')
 
   const generateProps = (overrides, initialState = {}) => {
@@ -20,8 +40,13 @@ define([
       contextType: 'course',
       contextId: 1,
       setTrigger: () => {},
+      setDisableTrigger: () => {},
       registerWeightToggle: () => {},
-      ...overrides,
+      disableSyncToSis: () => {},
+      sisName: 'PowerSchool',
+      postToSisDefault: ENV.POST_TO_SIS_DEFAULT,
+      hasAssignments: ENV.HAS_ASSIGNMENTS,
+      ...overrides
     };
   };
 
@@ -127,6 +152,37 @@ define([
     equal(store.dispatchedActions.length, actionsCount + 2);
     equal(store.dispatchedActions[actionsCount + 1].type, Actions.SET_WEIGHTED);
     equal(store.dispatchedActions[actionsCount + 1].payload, false);
+    component.closeModal();
+    ReactDOM.unmountComponentAtNode(component.node.parentElement);
+  });
+
+  testCase('renders a dropdown menu with one option when sync to sis conditions are not met', () => {
+    const component = renderComponent(generateProps({}));
+    const options = TestUtils.scryRenderedDOMComponentsWithTag(component, 'li');
+
+    equal(options.length, 1);
+    component.closeModal();
+    ReactDOM.unmountComponentAtNode(component.node.parentElement);
+  });
+
+  testCase('renders a dropdown menu with two options when sync to sis conditions are met', () => {
+    ENV.POST_TO_SIS_DEFAULT = true
+    ENV.HAS_ASSIGNMENTS = true
+    const component = renderComponent(generateProps({}));
+    const options = TestUtils.scryRenderedDOMComponentsWithTag(component, 'li');
+
+    equal(options.length, 2);
+    component.closeModal();
+    ReactDOM.unmountComponentAtNode(component.node.parentElement);
+  });
+
+  testCase('renders a dropdown menu with one option when sync to sis conditions are not met', () => {
+    ENV.POST_TO_SIS_DEFAULT = true
+    ENV.HAS_ASSIGNMENTS = false
+    const component = renderComponent(generateProps({}));
+    const options = TestUtils.scryRenderedDOMComponentsWithTag(component, 'li');
+
+    equal(options.length, 1);
     component.closeModal();
     ReactDOM.unmountComponentAtNode(component.node.parentElement);
   });

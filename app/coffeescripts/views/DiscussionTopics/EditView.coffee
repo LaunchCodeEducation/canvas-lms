@@ -1,27 +1,47 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18n!discussion_topics'
-  'compiled/views/ValidatedFormView'
-  'compiled/views/assignments/AssignmentGroupSelector'
-  'compiled/views/assignments/GradingTypeSelector'
-  'compiled/views/assignments/GroupCategorySelector'
-  'compiled/views/assignments/PeerReviewsSelector'
-  'compiled/views/assignments/PostToSisSelector'
+  '../ValidatedFormView'
+  '../assignments/AssignmentGroupSelector'
+  '../assignments/GradingTypeSelector'
+  '../assignments/GroupCategorySelector'
+  '../assignments/PeerReviewsSelector'
+  '../assignments/PostToSisSelector'
   'underscore'
+  'react'
+  'react-dom'
   'jst/DiscussionTopics/EditView'
   'jsx/shared/rce/RichContentEditor'
   'str/htmlEscape'
-  'compiled/models/DiscussionTopic'
-  'compiled/models/Announcement'
-  'compiled/models/Assignment'
+  '../../models/DiscussionTopic'
+  '../../models/Announcement'
+  '../../models/Assignment'
   'jquery'
-  'compiled/fn/preventDefault'
-  'compiled/views/calendar/MissingDateDialogView'
-  'compiled/views/editor/KeyboardShortcuts'
+  '../../fn/preventDefault'
+  '../calendar/MissingDateDialogView'
+  '../editor/KeyboardShortcuts'
   'jsx/shared/conditional_release/ConditionalRelease'
-  'compiled/util/deparam'
-  'compiled/jquery.rails_flash_notifications' #flashMessage
+  '../../util/deparam'
+  '../../jquery.rails_flash_notifications' #flashMessage
   'jsx/shared/helpers/numberHelper'
-  'compiled/util/SisValidationHelper'
+  'jsx/due_dates/DueDateCalendarPicker'
+  '../../util/SisValidationHelper'
 ], (
     I18n,
     ValidatedFormView,
@@ -31,6 +51,8 @@ define [
     PeerReviewsSelector,
     PostToSisSelector,
     _,
+    React,
+    ReactDOM,
     template,
     RichContentEditor,
     htmlEscape,
@@ -45,6 +67,7 @@ define [
     deparam,
     flashMessage,
     numberHelper,
+    DueDateCalendarPicker,
     SisValidationHelper) ->
 
   RichContentEditor.preloadRemoteModule()
@@ -67,6 +90,11 @@ define [
       '#discussion-edit-view' : '$discussionEditView'
       '#discussion-details-tab' : '$discussionDetailsTab'
       '#conditional-release-target' : '$conditionalReleaseTarget'
+      '#todo_options': '$todoOptions'
+      '#todo_date_input': '$todoDateInput'
+      '#allow_todo_date': '$allowTodoDate'
+      '#allow_user_comments': '$allowUserComments'
+      '#require_initial_post' : '$requireInitialPost'
 
     events: _.extend(@::events,
       'click .removeAttachment' : 'removeAttachment'
@@ -76,6 +104,8 @@ define [
       'change #discussion_topic_assignment_points_possible' : 'handlePointsChange'
       'change' : 'onChange'
       'tabsbeforeactivate #discussion-edit-view' : 'onTabChange'
+      'change #allow_todo_date' : 'toggleTodoDateInput'
+      'change #allow_user_comments' : 'updateAllowComments'
     )
 
     messages:
@@ -93,6 +123,17 @@ define [
         @unwatchUnload()
         @redirectAfterSave()
       super
+
+      @lockedItems = options.lockedItems || {}
+      @announcementsLocked = options.announcementsLocked
+      todoDate = @model.get('todo_date')
+      @studentTodoAtDateValue = if todoDate
+        new Date(todoDate)
+      else
+        ''
+
+    setRenderSectionsAutocomplete: (func) =>
+      @renderSectionsAutocomplete = func
 
     redirectAfterSave: ->
       window.location = @locationAfterSave(deparam())
@@ -133,6 +174,10 @@ define [
         isLargeRoster: ENV?.IS_LARGE_ROSTER || false
         threaded: data.discussion_type is "threaded"
         inClosedGradingPeriod: @assignment.inClosedGradingPeriod()
+        lockedItems: @lockedItems
+        allow_todo_date: data.todo_date?
+        unlocked: if data.locked == undefined then !@isAnnouncement() else !data.locked
+        announcementsLocked: @announcementsLocked
       json.assignment = json.assignment.toView()
       json
 
@@ -151,27 +196,29 @@ define [
 
     # also separated for easy stubbing
     loadNewEditor: ($textarea)->
+      return if @lockedItems.content
       RichContentEditor.loadNewEditor($textarea, { focus: true, manageParent: true})
 
     render: =>
       super
-      $textarea = @$('textarea[name=message]').attr('id', _.uniqueId('discussion-topic-message'))
+      $textarea = @$('textarea[name=message]').attr('id', _.uniqueId('discussion-topic-message')).css('display', 'none')
 
-      RichContentEditor.initSidebar()
-      _.defer =>
-        @loadNewEditor($textarea)
-        $('.rte_switch_views_link').click (event) ->
-          event.preventDefault()
-          event.stopPropagation()
-          RichContentEditor.callOnRCE($textarea, 'toggle')
-          # hide the clicked link, and show the other toggle link.
-          # todo: replace .andSelf with .addBack when JQuery is upgraded.
-          $(event.currentTarget).siblings('.rte_switch_views_link').andSelf().toggle()
+      unless @lockedItems.content
+        RichContentEditor.initSidebar()
+        _.defer =>
+          @loadNewEditor($textarea)
+          $('.rte_switch_views_link').click (event) ->
+            event.preventDefault()
+            event.stopPropagation()
+            RichContentEditor.callOnRCE($textarea, 'toggle')
+            # hide the clicked link, and show the other toggle link.
+            # todo: replace .andSelf with .addBack when JQuery is upgraded.
+            $(event.currentTarget).siblings('.rte_switch_views_link').andSelf().toggle()
       if @assignmentGroupCollection
         (@assignmentGroupFetchDfd ||= @assignmentGroupCollection.fetch()).done @renderAssignmentGroupOptions
 
       _.defer(@renderGradingTypeOptions)
-      _.defer(@renderGroupCategoryOptions)
+      _.defer(@renderGroupCategoryOptions) if @permissions.CAN_SET_GROUP
       _.defer(@renderPeerReviewOptions)
       _.defer(@renderPostToSisOptions) if ENV.POST_TO_SIS
       _.defer(@watchUnload)
@@ -181,7 +228,14 @@ define [
 
       @$(".datetime_field").datetime_field()
 
+      if !@model.get('locked')
+        @updateAllowComments()
+
       this
+
+    afterRender: =>
+      @renderStudentTodoAtDate() if ENV.STUDENT_PLANNER_ENABLED && @$todoDateInput.length
+
 
     attachKeyboardShortcuts: =>
         $('.rte_switch_views_link').first().before((new KeyboardShortcuts()).render().$el)
@@ -214,6 +268,7 @@ define [
         fieldLabel: @messages.group_category_field_label
         lockedMessage: @messages.group_locked_message
         inClosedGradingPeriod: @assignment.inClosedGradingPeriod()
+        renderSectionsAutocomplete: @renderSectionsAutocomplete
 
       @groupCategorySelector.render()
 
@@ -246,16 +301,42 @@ define [
         I18n.t('discussion topic'),
         ENV.CONDITIONAL_RELEASE_ENV)
 
+    renderStudentTodoAtDate: =>
+      @toggleTodoDateInput()
+      ReactDOM.render(React.createElement(DueDateCalendarPicker,
+        dateType: 'todo_date'
+        name: 'todo_date'
+        handleUpdate: @handleStudentTodoUpdate
+        rowKey: 'student_todo_at_date'
+        labelledBy: 'student_todo_at_date_label'
+        inputClasses: ''
+        disabled: false
+        isFancyMidnight: true
+        dateValue: @studentTodoAtDateValue
+        labelText: I18n.t('Discussion Topic will show on student to-do list for date')
+        labelClasses: 'screenreader-only'
+      ), @$todoDateInput[0])
+
+    handleStudentTodoUpdate: (newDate) =>
+      @studentTodoAtDateValue = newDate
+      @renderStudentTodoAtDate()
+
+
     getFormData: ->
       data = super
-      for dateField in ['last_reply_at', 'posted_at', 'delayed_post_at', 'lock_at']
+      dateFields = ['last_reply_at', 'posted_at', 'delayed_post_at', 'lock_at']
+      for dateField in dateFields
         data[dateField] = $.unfudgeDateForProfileTimezone(data[dateField])
       data.title ||= I18n.t 'default_discussion_title', 'No Title'
       data.discussion_type = if data.threaded is '1' then 'threaded' else 'side_comment'
       data.podcast_has_student_posts = false unless data.podcast_enabled is '1'
       data.only_graders_can_rate = false unless data.allow_rating is '1'
       data.sort_by_rating = false unless data.allow_rating is '1'
-      unless ENV?.IS_LARGE_ROSTER
+      data.allow_todo_date = '0' if data.assignment?.set_assignment is '1'
+      data.todo_date = @studentTodoAtDateValue if ENV.STUDENT_PLANNER_ENABLED
+      data.todo_date = null unless data.allow_todo_date is '1'
+
+      if @groupCategorySelector && !ENV?.IS_LARGE_ROSTER
         data = @groupCategorySelector.filterFormData data
 
       assign_data = data.assignment
@@ -272,8 +353,8 @@ define [
       if assign_data?.set_assignment is '1'
         data.set_assignment = '1'
         data.assignment = @updateAssignment(assign_data)
-        data.delayed_post_at = ''
-        data.lock_at = ''
+        # code used to set delayed_post_at = locked_at = '', but that broke
+        # saving a locked graded discussion.  Leaving them as they were didn't break anything
       else
         # Announcements don't have assignments.
         # DiscussionTopics get a model created for them in their
@@ -323,7 +404,7 @@ define [
     submit: (event) =>
       event.preventDefault()
       event.stopPropagation()
-      if @dueDateOverrideView.containsSectionsWithoutOverrides()
+      if @gradedChecked() && @dueDateOverrideView.containsSectionsWithoutOverrides()
         sections = @dueDateOverrideView.sectionsWithoutOverrides()
         missingDateDialog = new MissingDateDialog
           validationFn: -> sections
@@ -354,6 +435,14 @@ define [
       @disableWhileLoadingOpts = {}
       super(xhr)
 
+    sectionsAreRequired: ->
+      if !ENV.context_asset_string.startsWith("course")
+        return false
+      isAnnouncement = ENV.DISCUSSION_TOPIC.ATTRIBUTES.is_announcement
+      announcementsFlag = ENV.SECTION_SPECIFIC_ANNOUNCEMENTS_ENABLED
+      discussionsFlag = ENV.SECTION_SPECIFIC_DISCUSSIONS_ENABLED
+      if isAnnouncement then announcementsFlag else discussionsFlag
+
     validateBeforeSave: (data, errors) =>
       if data.delay_posting == "0"
         data.delayed_post_at = null
@@ -369,16 +458,22 @@ define [
       else
         @model.set 'assignment', @model.createAssignment(set_assignment: false)
 
-      if !ENV?.IS_LARGE_ROSTER && @isTopic()
+      if !ENV?.IS_LARGE_ROSTER && @isTopic() && @groupCategorySelector
         errors = @groupCategorySelector.validateBeforeSave(data, errors)
+      if data.allow_todo_date == '1' && data.todo_date == null
+        errors['todo_date'] = [{type: 'date_required_error', message: I18n.t('You must enter a date')}]
+
+      if @sectionsAreRequired() && !data.specific_sections
+        errors['specific_sections'] = [{type: 'specific_sections_required_error', message: I18n.t('You must input a section')}]
 
       if @isAnnouncement()
         unless data.message?.length > 0
-          errors['message'] = [{type: 'message_required_error', message: I18n.t("A message is required")}]
+          unless @lockedItems.content
+            errors['message'] = [{type: 'message_required_error', message: I18n.t("A message is required")}]
+
       if @showConditionalRelease()
         crErrors = @conditionalReleaseEditor.validateBeforeSave()
         errors['conditional_release'] = crErrors if crErrors
-
       errors
 
     _validateTitle: (data, errors) =>
@@ -391,6 +486,7 @@ define [
         postToSIS: post_to_sis
         maxNameLength: max_name_length
         name: data.title
+        maxNameLengthRequired: ENV.MAX_NAME_LENGTH_REQUIRED_FOR_ACCOUNT
       })
 
       if validationHelper.nameTooLong()
@@ -420,14 +516,28 @@ define [
           @conditionalReleaseEditor.focusOnError()
         else
           @$discussionEditView.tabs("option", "active", 0)
+
       super(errors)
 
     toggleGradingDependentOptions: ->
       @toggleAvailabilityOptions()
       @toggleConditionalReleaseTab()
+      @toggleTodoDateBox()
+      @renderSectionsAutocomplete() if @renderSectionsAutocomplete?
+
+    gradedChecked: ->
+      @$useForGrading.is(':checked')
+
+    # Graded discussions and section specific discussions are mutually exclusive
+    disableGradedCheckBox: =>
+      @$useForGrading.prop('disabled', true)
+
+    # Graded discussions and section specific discussions are mutually exclusive
+    enableGradedCheckBox: =>
+      @$useForGrading.prop('disabled', false)
 
     toggleAvailabilityOptions: ->
-      if @$useForGrading.is(':checked')
+      if @gradedChecked()
         @$availabilityOptions.hide()
       else
         @$availabilityOptions.show()
@@ -437,11 +547,28 @@ define [
 
     toggleConditionalReleaseTab: ->
       if @showConditionalRelease()
-        if @$useForGrading.is(':checked')
+        if @gradedChecked()
           @$discussionEditView.tabs("option", "disabled", false)
         else
           @$discussionEditView.tabs("option", "disabled", [1])
           @$discussionEditView.tabs("option", "active", 0)
+
+    toggleTodoDateBox: ->
+      if @gradedChecked()
+        @$todoOptions.hide()
+      else
+        @$todoOptions.show()
+
+    toggleTodoDateInput: ->
+      if @$allowTodoDate.is(':checked')
+        @$todoDateInput.show()
+      else
+        @$todoDateInput.hide()
+
+    updateAllowComments: ->
+      allowsComments = @$allowUserComments.is(':checked') || !@model.get('is_announcement')
+      @$requireInitialPost.prop('disabled', !allowsComments)
+      @model.set('locked', !allowsComments)
 
     onChange: ->
       if @showConditionalRelease() && @assignmentUpToDate

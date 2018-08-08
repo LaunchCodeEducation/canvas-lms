@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2014 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -20,10 +20,10 @@ class ContextController < ApplicationController
   include SearchHelper
   include CustomSidebarLinksHelper
 
-  before_action :require_context, :except => [:inbox, :create_media_object, :kaltura_notifications, :media_object_redirect, :media_object_inline, :media_object_thumbnail, :object_snippet]
+  before_action :require_context, :except => [:inbox, :create_media_object, :media_object_redirect, :media_object_inline, :media_object_thumbnail, :object_snippet]
   before_action :require_user, :only => [:inbox, :report_avatar_image]
   before_action :reject_student_view_student, :only => [:inbox]
-  protect_from_forgery :except => [:kaltura_notifications, :object_snippet], with: :exception
+  protect_from_forgery :except => [:object_snippet], with: :exception
 
   def create_media_object
     @context = Context.find_by_asset_string(params[:context_code])
@@ -59,7 +59,7 @@ class ContextController < ApplicationController
     if config
       redirect_to CanvasKaltura::ClientV3.new.assetSwfUrl(params[:id])
     else
-      render :text => t(:media_objects_not_configured, "Media Objects not configured")
+      render :plain => t(:media_objects_not_configured, "Media Objects not configured")
     end
   end
 
@@ -81,72 +81,8 @@ class ContextController < ApplicationController
                                                       :type => type),
                   :status => 301
     else
-      render :text => t(:media_objects_not_configured, "Media Objects not configured")
+      render :plain => t(:media_objects_not_configured, "Media Objects not configured")
     end
-  end
-
-  def kaltura_notifications
-    request_params = request.request_parameters.to_a.sort_by{|k, v| k }.select{|k, v| k != 'sig' }
-    logger.info('=== KALTURA NOTIFICATON ===')
-    logger.info(request_params.to_yaml)
-    if params[:signed_fields]
-      valid_fields = params[:signed_fields].split(",")
-      request_params = request_params.select{|k, v| valid_fields.include?(k.to_s) }
-    end
-    str = ""
-    request_params.each do |k, v|
-      str += k.to_s + v.to_s
-    end
-    hash = Digest::MD5.hexdigest(CanvasKaltura::ClientV3.config['secret_key'] + str)
-    if hash == params[:sig]
-      notifications = {}
-      if params[:multi_notification] != 'true'
-        notifications[0] = request.request_parameters
-      else
-        request.request_parameters.each do |k, value|
-          key = k.to_s
-          if match = key.match(/\Anot([^_]*)_(.*)\z/)
-            num = match[1].to_s
-            property = match[2].to_s
-            notifications[num] ||= {}
-            notifications[num][property] = value
-          end
-        end
-      end
-      notifications.each do |key, notification|
-        if notification[:notification_type] == 'entry_add'
-          entry_id = notification[:entry_id]
-          mo = MediaObject.where(media_id: entry_id).first_or_initialize
-          if !mo.new_record? || (notification[:partner_data] && !notification[:partner_data].empty?)
-            data = JSON.parse(notification[:partner_data]) rescue nil
-            if data && data['root_account_id'] && data['context_code']
-              context = Context.find_by_asset_string(data['context_code'])
-              context = nil unless context.respond_to?(:is_a_context?) && context.is_a_context?
-              user = User.where(id: data['puser_id'].split("_").first).first if data['puser_id'].present?
-
-              mo.context ||= context
-              mo.user ||= user
-              mo.save!
-              mo.send_later(:retrieve_details)
-            end
-          end
-        elsif notification[:notification_type] == 'entry_delete'
-          entry_id = notification[:entry_id]
-          mo = MediaObject.by_media_id(entry_id).first
-          mo.destroy_without_destroying_attachment
-        end
-      end
-      logger.info(notifications.to_yaml)
-      render :text => "ok"
-    else
-      logger.info("md5 should have been #{hash} but was #{params[:sig]}")
-      render :text => "failure"
-    end
-  rescue => e
-    logger.warn("=== KALTURA NOTIFICATON ERROR ===")
-    logger.warn(e.to_s)
-    logger.warn(e.backtrace.join("\n"))
-    render :text => "failure"
   end
 
   # safely render object and embed tags as part of user content, by using a
@@ -236,7 +172,7 @@ class ContextController < ApplicationController
       end
     elsif @context.is_a?(Group)
       if @context.grants_right?(@current_user, :read_as_admin)
-        @users = @context.participating_users.uniq.order_by_sortable_name
+        @users = @context.participating_users.distinct.order_by_sortable_name
       else
         @users = @context.participating_users_in_context(sort: true).distinct.order_by_sortable_name
       end
@@ -327,6 +263,9 @@ class ContextController < ApplicationController
         @membership = scope.first
         if @membership
           @enrollments = scope.to_a
+          js_env(COURSE_ID: @context.id,
+                 USER_ID: user_id,
+                 LAST_ATTENDED_DATE: @enrollments.first.last_attended_at)
           log_asset_access(@membership, "roster", "roster")
         end
       elsif @context.is_a?(Group)
@@ -344,6 +283,8 @@ class ContextController < ApplicationController
         redirect_to named_context_url(@context, :context_users_url)
         return
       end
+
+      js_env(CONTEXT_USER_DISPLAY_NAME: @user.short_name)
 
       if @domain_root_account.enable_profiles?
         @user_data = profile_data(
@@ -374,17 +315,14 @@ class ContextController < ApplicationController
 
   WORKFLOW_TYPES = [
     :all_discussion_topics, :assignments, :assignment_groups,
-    :enrollments, :rubrics, :collaborations, :quizzes, :context_modules
+    :enrollments, :rubrics, :collaborations, :quizzes, :context_modules, :wiki_pages
   ].freeze
-  ITEM_TYPES = WORKFLOW_TYPES + [
-    :wiki_pages, :attachments
-  ].freeze
+  ITEM_TYPES = WORKFLOW_TYPES + [:attachments].freeze
   def undelete_index
     if authorized_action(@context, @current_user, :manage_content)
       @item_types = WORKFLOW_TYPES.select { |type| @context.class.reflections.key?(type.to_s) }.
           map { |type| @context.association(type).reader }
 
-      @item_types << @context.wiki.wiki_pages if @context.respond_to? :wiki
       @deleted_items = []
       @item_types.each do |scope|
         @deleted_items += scope.where(:workflow_state => 'deleted').limit(25).to_a

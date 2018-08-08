@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import $ from 'jquery'
 import React from 'react'
 import ReactModal from 'react-modal'
@@ -5,10 +23,10 @@ import page from 'page'
 import FilesApp from 'compiled/react_files/components/FilesApp'
 import filesEnv from 'compiled/react_files/modules/filesEnv'
 import I18n from 'i18n!react_files'
-import Breadcrumbs from 'jsx/files/Breadcrumbs'
-import FolderTree from 'jsx/files/FolderTree'
-import FilesUsage from 'jsx/files/FilesUsage'
-import Toolbar from 'jsx/files/Toolbar'
+import Breadcrumbs from '../files/Breadcrumbs'
+import FolderTree from '../files/FolderTree'
+import FilesUsage from '../files/FilesUsage'
+import Toolbar from '../files/Toolbar'
 
   const modalOverrides = {
     overlay : {
@@ -77,13 +95,13 @@ import Toolbar from 'jsx/files/Toolbar'
         </header>
         <div className='ic-app-nav-toggle-and-crumbs ic-app-nav-toggle-and-crumbs--files no-print'>
           <button
-            className='Button Button--link Button--small ic-app-course-nav-toggle'
+            className='Button Button--link ic-app-course-nav-toggle'
             type='button'
             id='courseMenuToggle'
             title={I18n.t("Show and hide courses menu")}
             aria-hidden={true}
           >
-            <i className='icon-hamburger' />
+            <i className='icon-hamburger' aria-hidden='true' />
           </button>
           <div className='ic-app-crumbs'>
             <Breadcrumbs

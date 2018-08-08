@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2011 Instructure, Inc.
+/*
+ * Copyright (C) 2012 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,26 +12,24 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-define([
-  'compiled/util/round',
-  'i18n!submissions',
-  'jquery',
-  'jsx/gradebook/shared/helpers/GradeFormatHelper',
-  'jquery.ajaxJSON' /* ajaxJSON */,
-  'jquery.instructure_forms' /* ajaxJSONFiles */,
-  'jquery.instructure_date_and_time' /* datetimeString */,
-  'jquery.instructure_misc_plugins' /* fragmentChange, showIf */,
-  'jquery.loadingImg' /* loadingImg, loadingImage */,
-  'jquery.templateData' /* fillTemplateData, getTemplateData */,
-  'media_comments' /* mediaComment */,
-  'compiled/jquery/mediaCommentThumbnail',
-  'vendor/jquery.scrollTo', /* /\.scrollTo/ */
-  'rubric_assessment' /*global rubricAssessment*/
-], function (round, I18n, $, GradeFormatHelper) {
+import round from 'compiled/util/round'
+import I18n from 'i18n!submissions'
+import $ from 'jquery'
+import GradeFormatHelper from 'jsx/gradebook/shared/helpers/GradeFormatHelper'
+import './jquery.ajaxJSON'
+import './jquery.instructure_forms' /* ajaxJSONFiles */
+import './jquery.instructure_date_and_time' /* datetimeString */
+import './jquery.instructure_misc_plugins' /* fragmentChange, showIf */
+import './jquery.loadingImg'
+import './jquery.templateData'
+import './media_comments'
+import 'compiled/jquery/mediaCommentThumbnail'
+import './vendor/jquery.scrollTo'
+import './rubric_assessment' /*global rubricAssessment*/
 
   var rubricAssessments = ENV.rubricAssessments;
 
@@ -49,7 +47,7 @@ define([
       if(submission.user_id != ENV.SUBMISSION.user_id) { continue; }
 
       for(var idx in comments) {
-        var comment = comments[idx].submission_comment;
+        var comment = comments[idx].submission_comment || comments[idx];
         if($("#submission_comment_" + comment.id).length > 0) { continue; }
         var $comment = $("#comment_blank").clone(true).removeAttr('id');
         comment.posted_at = $.datetimeString(comment.created_at);
@@ -99,9 +97,26 @@ define([
     return I18n.n(round(value, round.DEFAULT));
   }
   function showGrade (submission) {
-    $('.grading_box').val(callIfSet(submission.grade, GradeFormatHelper.formatGrade));
-    $('.score').text(callIfSet(submission.score, roundAndFormat));
-    $('.published_score').text(callIfSet(submission.published_score, roundAndFormat));
+    if (['pass', 'fail', 'complete', 'incomplete'].indexOf(submission.entered_grade) > -1) {
+      $('.grading_box').val(submission.entered_grade);
+    } else {
+      $('.grading_box').val(callIfSet(submission.entered_grade, GradeFormatHelper.formatGrade));
+    }
+    $('.late_penalty').text(callIfSet(-submission.points_deducted, roundAndFormat));
+    $('.published_grade').text(callIfSet(submission.published_grade, GradeFormatHelper.formatGrade));
+    $('.grade').text(callIfSet(submission.grade, GradeFormatHelper.formatGrade));
+
+    if (submission.excused) {
+      $('.entered_grade').text(I18n.t('Excused'));
+    } else {
+      $('.entered_grade').text(callIfSet(submission.entered_grade, GradeFormatHelper.formatGrade));
+    }
+
+    if (!submission.excused && submission.points_deducted) {
+      $('.late-penalty-display').show();
+    } else {
+      $('.late-penalty-display').hide();
+    }
   }
   function makeRubricAccessible ($rubric) {
     $rubric.show()
@@ -141,6 +156,10 @@ define([
       parentsUntil("#application").siblings().not("#aria_alerts").attr('data-hide_from_rubric', true)
     $rubric.hide()
   }
+  function toggleRubric ($rubric) {
+    var ariaSetting = $rubric.is(":visible");
+    $("#application").find("[data-hide_from_rubric]").attr("aria-hidden", ariaSetting)
+  }
   function closeRubric () {
     $("#rubric_holder").fadeOut(function() {
       toggleRubric($(this));
@@ -153,10 +172,6 @@ define([
       $(this).find('.hide_rubric_link').focus();
     });
   }
-  function toggleRubric ($rubric) {
-    var ariaSetting = $rubric.is(":visible");
-    $("#application").find("[data-hide_from_rubric]").attr("aria-hidden", ariaSetting)
-  }
   function windowResize () {
     var $frame = $("#preview_frame");
     var top = $frame.offset().top;
@@ -165,11 +180,11 @@ define([
     $("#rubric_holder").css({'maxHeight': height - 50, 'overflow': 'auto', 'zIndex': 5});
     $(".comments").height(height);
   };
-  var SubmissionsObj = {};
+
   // This `setup` function allows us to control when the setup is triggered.
   // submissions.coffee requires this file and then immediately triggers it,
   // while submissionsSpec.jsx triggers it after setup is complete.
-  SubmissionsObj.setup = function() {
+  export function setup () {
     $(document).ready(function() {
       $(".comments .comment_list .play_comment_link").mediaCommentThumbnail('small');
       $(window).bind('resize', windowResize).triggerHandler('resize');
@@ -258,11 +273,11 @@ define([
       });
       $(".save_rubric_button").click(function() {
         var $rubric = $(this).parents("#rubric_holder").find(".rubric");
-        var data = rubricAssessment.assessmentData($rubric);
+        var submitted_data = rubricAssessment.assessmentData($rubric);
         var url = $(".update_rubric_assessment_url").attr('href');
         var method = "POST";
         $rubric.loadingImage();
-        $.ajaxJSON(url, method, data, function(data) {
+        $.ajaxJSON(url, method, submitted_data, function(data) {
           $rubric.loadingImage('remove');
           var assessment = data;
           var found = false;
@@ -289,11 +304,16 @@ define([
           $("#rubric_assessment_option_" + assessment.id).text(assessment.assessor_name);
           $("#new_rubric_assessment_option").remove();
           $("#rubric_assessments_list").show();
-          rubricAssessment.populateRubric($rubric, assessment);
-          var submission = assessment.artifact;
-          if (submission) {
-            showGrade(submission);
-          }
+          /* the 500 timeout is due to the fadeOut in the closeRubric function, which defaults to 400.
+          We need to ensure any warning messages are read out after the fadeOut manages the page focus
+          so that any messages are not interrupted in voiceover utilities */
+          setTimeout(function () {
+            rubricAssessment.populateRubric($rubric, assessment, submitted_data);
+            var submission = assessment.artifact;
+            if (submission) {
+              showGrade(submission);
+            }
+          }, 500)
           closeRubric();
         });
       });
@@ -317,7 +337,10 @@ define([
             found = assessment;
           }
         }
-        rubricAssessment.populateRubric($("#rubric_holder .rubric"), found);
+
+        const container = $("#rubric_holder .rubric")
+        rubricAssessment.populateNewRubric(container, found, ENV.rubricAssociation);
+
         var current_user = (!found || found.assessor_id == ENV.RUBRIC_ASSESSMENT.assessor_id);
         $("#rubric_holder .save_rubric_button").showIf(current_user);
       }).change();
@@ -365,7 +388,7 @@ define([
     });
   };
   // necessary for tests
-  SubmissionsObj.teardown = function() {
+  export function teardown () {
     $(window).unbind('resize', windowResize);
     $(document).unbind('comment_change');
     $(document).unbind('grading_change');
@@ -391,5 +414,10 @@ define([
     }, 500);
   };
 
-  return SubmissionsObj;
-});
+  $(document).ready(function() {
+    window.addEventListener('message', function(event) {
+      if (event.data === 'refreshGrades') {
+        INST.refreshGrades();
+      }
+    }, false);
+  });

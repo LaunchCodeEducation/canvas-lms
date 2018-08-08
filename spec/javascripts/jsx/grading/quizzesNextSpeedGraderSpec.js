@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
   'jsx/grading/quizzesNextSpeedGrading'
 ], (quizzesNextSpeedGrading) => {
@@ -20,13 +38,14 @@ define([
     addEventListener: addEventListenerStub
   }
 
-  let refreshSubmissionsToViewStub = sinon.stub()
-  let showGradeStub = sinon.stub()
-  let showDiscussionStub = sinon.stub()
-  let showRubricStub = sinon.stub()
-  let updateStatsInHeaderStub = sinon.stub()
-  let refreshFullRubricStub = sinon.stub()
-  let setGradeReadOnlStub = sinon.stub()
+  const refreshSubmissionsToViewStub = sinon.stub()
+  const showGradeStub = sinon.stub()
+  const showDiscussionStub = sinon.stub()
+  const showRubricStub = sinon.stub()
+  const updateStatsInHeaderStub = sinon.stub()
+  const refreshFullRubricStub = sinon.stub()
+  const setGradeReadOnlStub = sinon.stub()
+  const showSubmissionDetailsStub = sinon.stub()
 
   let fakeEG = {
     refreshSubmissionsToView: refreshSubmissionsToViewStub,
@@ -35,7 +54,8 @@ define([
     showRubric: showRubricStub,
     updateStatsInHeader: updateStatsInHeaderStub,
     refreshFullRubric: refreshFullRubricStub,
-    setGradeReadOnly: setGradeReadOnlStub
+    setGradeReadOnly: setGradeReadOnlStub,
+    showSubmissionDetails: showSubmissionDetailsStub
   }
 
   let resetStubs = function () {
@@ -49,6 +69,7 @@ define([
     updateStatsInHeaderStub.reset()
     refreshFullRubricStub.reset()
     setGradeReadOnlStub.reset()
+    showSubmissionDetailsStub.reset()
   }
 
   QUnit.module("quizzesNextSpeedGrading", {
@@ -104,6 +125,7 @@ define([
     let fns = quizzesNextSpeedGrading(fakeEG, fakeIframeHolder, registerCbStub, refreshGradesCbStub, speedGraderWindow)
     let arbitrarySubmissionData = {}
     fns.postChangeSubmissionMessage(arbitrarySubmissionData)
+    ok(showSubmissionDetailsStub.called)
     ok(postMessageStub.calledWith({
       submission: arbitrarySubmissionData,
       subject: 'canvas.speedGraderSubmissionChange'

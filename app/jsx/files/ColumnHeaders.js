@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import $ from 'jquery'
 import _ from 'underscore'
 import I18n from 'i18n!react_files'
@@ -21,7 +39,8 @@ import ColumnHeaders from 'compiled/react_files/components/ColumnHeaders'
           'ef-usage-rights-col-offset': (column.property === 'usage_rights')
         });
 
-        const href = `${this.props.pathname}?${$.param(this.queryParamsFor(this.props.query, column.property))}`;
+        const encoded_path = this.props.pathname.split('/').map((part) => window.encodeURIComponent(part)).join('/');
+        const href = `${encoded_path}?${$.param(this.queryParamsFor(this.props.query, column.property))}`;
         const linkProps = {
           className: 'ef-plain-link',
           href

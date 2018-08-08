@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011-12 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,7 +17,6 @@
 #
 
 # @API CommMessages
-# @beta
 #
 # API for accessing the messages (emails, sms, twitter, etc) that have
 # been sent to a user.
@@ -64,6 +63,11 @@
 #           "example": "notifications@example.com",
 #           "type": "string"
 #         },
+#         "from_name": {
+#           "description": "The display name for the from address",
+#           "example": "Instructure Canvas",
+#           "type": "string"
+#         },
 #         "to": {
 #           "description": "The address the message was sent to:",
 #           "example": "someone@example.com",
@@ -99,7 +103,7 @@ class CommMessagesApiController < ApplicationController
 
   # @API List of CommMessages for a user
   #
-  # Retrieve messages sent to a user.
+  # Retrieve a paginated list of messages sent to a user.
   #
   # @argument user_id [Required, String]
   #   The user id for whom you want to retrieve CommMessages

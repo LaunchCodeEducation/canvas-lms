@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -200,5 +200,9 @@ YAML
   it "should be able to dump and load these strings in stuff" do
     hash = {:blah => "<<"}
     expect(YAML.load(YAML.dump(hash))).to eq hash
+  end
+
+  it "dumps and loads singletons" do
+    expect(YAML.load(YAML.dump(Mime::NullType.instance))).to eq Mime::NullType.instance
   end
 end

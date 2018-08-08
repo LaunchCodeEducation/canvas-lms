@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../helpers/discussions_common')
 
 describe "threaded discussions" do
@@ -55,7 +72,6 @@ describe "threaded discussions" do
   end
 
   it "should allow edits to entries with replies", priority: "2", test_id: 222520 do
-    skip_if_chrome('Type in tiny fails in chrome')
     edit_text = 'edit message'
     entry       = @topic.discussion_entries.create!(user: @student,
                                                     message: 'new threaded reply from student')
@@ -101,7 +117,6 @@ describe "threaded discussions" do
   end
 
   it "should edit a reply", priority: "1", test_id: 150514 do
-    skip_if_chrome('Type in tiny fails in chrome')
     edit_text = 'edit message'
     entry = @topic.discussion_entries.create!(user: @student, message: "new threaded reply from student")
     get "/courses/#{@course.id}/discussion_topics/#{@topic.id}"
@@ -122,7 +137,6 @@ describe "threaded discussions" do
   end
 
   it "should show a reply time that is different from the creation time", priority: "2", test_id: 113813 do
-    skip_if_chrome('Type in tiny fails in chrome')
     @enrollment.workflow_state = 'active'
     @enrollment.save!
 
@@ -152,6 +166,7 @@ describe "threaded discussions" do
   end
 
   it "should delete a reply", priority: "1", test_id: 150515 do
+    skip_if_safari(:alert)
     entry = @topic.discussion_entries.create!(user: @student, message: "new threaded reply from student")
     get "/courses/#{@course.id}/discussion_topics/#{@topic.id}"
     delete_entry(entry)
@@ -168,7 +183,6 @@ describe "threaded discussions" do
   end
 
   it "should support repeated editing", priority: "2", test_id: 222523 do
-    skip_if_chrome('Type in tiny fails in chrome')
     entry = @topic.discussion_entries.create!(user: @student, message: "new threaded reply from student")
     get "/courses/#{@course.id}/discussion_topics/#{@topic.id}"
     edit_entry(entry, 'New text 1')
@@ -180,7 +194,6 @@ describe "threaded discussions" do
   end
 
   it "should re-render replies after editing", priority: "2", test_id: 222524 do
-    skip_if_chrome('Type in tiny fails in chrome')
     edit_text = 'edit message'
     entry = @topic.discussion_entries.create!(user: @student, message: "new threaded reply from student")
 
@@ -206,5 +219,25 @@ describe "threaded discussions" do
     entry = DiscussionEntry.last
     delete_entry(entry)
     expect(f("#entry-#{entry.id} .discussion-title").text).to match("Deleted by #{@teacher.name} on")
+  end
+
+  context "student tray" do
+
+    before(:each) do
+      @account = Account.default
+      @account.enable_feature!(:student_context_cards)
+    end
+
+    it "discussion page should display student name in tray", priority: "1", test_id: 3022069 do
+      topic = @course.discussion_topics.create!(user: @teacher,
+                                                             title: 'Non threaded discussion',
+                                                             message: 'discussion topic message')
+      topic.discussion_entries.create!(user: @student,
+                                                    message: "new threaded reply from student",
+                                                    parent_entry: DiscussionEntry.last)
+      get "/courses/#{@course.id}/discussion_topics/#{topic.id}"
+      f("a[data-student_id='#{@student.id}']").click
+      expect(f(".StudentContextTray-Header__Name h2 a")).to include_text("student")
+    end
   end
 end

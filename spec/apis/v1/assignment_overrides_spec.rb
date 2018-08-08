@@ -420,7 +420,6 @@ describe AssignmentOverridesController, type: :request do
 
       context "title" do
         before :once do
-          @override = assignment_override_model
           names = ["Adam Aardvark", "Ben Banana", "Chipmunk Charlie", "Donald Duck", "Erik Erikson", "Freddy Frog"]
           @students = names.map do |name|
             student_in_course(course: @course, :user => user_with_pseudonym(name: name)).user
@@ -575,6 +574,7 @@ describe AssignmentOverridesController, type: :request do
       assignment_override_model(:assignment => @assignment)
       @student = student_in_course(:course => @course).user
       @override_student = @override.assignment_override_students.build
+      @override_student.workflow_state = "active"
       @override_student.user = @student
       @override_student.save!
       @user = @teacher
@@ -748,6 +748,12 @@ describe AssignmentOverridesController, type: :request do
         expect(@override.set).to eq [@other_student]
       end
 
+      it "should not change the title when only changing the due date" do
+        api_update_override(@course, @assignment, @override, :assignment_override => { :due_at => 1.day.from_now })
+        @override.reload
+        expect(@override.title).to eq @title
+      end
+
       it "should relock modules when changing overrides" do
         # but only for the students they affect
         @assignment.only_visible_to_overrides = true
@@ -769,7 +775,7 @@ describe AssignmentOverridesController, type: :request do
         expect(new_prog).to be_completed # since they can't see the assignment yet
 
         other_prog = mod.evaluate_for(@other_student)
-        other_prog.any_instantiation.expects(:evaluate!).never
+        expect_any_instantiation_of(other_prog).to receive(:evaluate!).never
 
         api_update_override(@course, @assignment, @override, :assignment_override => { :student_ids => [@new_student.id] })
 
@@ -800,6 +806,20 @@ describe AssignmentOverridesController, type: :request do
 
       end
 
+      it "runs DueDateCacher after changing overrides" do
+        always_override_student = @student
+        remove_override_student = student_in_course(:course => @course).user
+        @override.assignment_override_students.create!(user: remove_override_student)
+        @override.reload
+
+        expect(DueDateCacher).to receive(:recompute).with(@assignment, hash_including(update_grades: false))
+        api_update_override(@course, @assignment, @override,
+          :assignment_override => { :student_ids => [always_override_student.id] })
+
+        @override.reload
+        expect(@override.assignment_override_students.map(&:user_id)).to eq([always_override_student.id])
+      end
+
       it "should allow changing the title" do
         @new_title = "new #{@title}"
         api_update_override(@course, @assignment, @override, :assignment_override => { :title => @new_title })
@@ -813,6 +833,7 @@ describe AssignmentOverridesController, type: :request do
         assignment_override_model(:assignment => @assignment)
         @student = student_in_course(:course => @course).user
         @override_student = @override.assignment_override_students.build
+        @override_student.workflow_state = "active"
         @override_student.user = @student
         @override_student.save!
         @user = @teacher

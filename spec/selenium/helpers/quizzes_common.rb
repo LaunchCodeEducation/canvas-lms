@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module QuizzesCommon
 
   def create_quiz_with_due_date(opts={})
@@ -5,8 +22,8 @@ module QuizzesCommon
     @quiz = quiz_model
     @quiz.generate_quiz_data
     @quiz.due_at = opts.fetch(:due_at, default_time_for_due_date(Time.zone.now))
-    @quiz.lock_at = opts.fetch(:lock_at, default_time_for_lock_date(Time.zone.now.advance(days:4)))
-    @quiz.unlock_at = opts.fetch(:unlock_at, default_time_for_unlock_date(Time.zone.now.advance(days:-2)))
+    @quiz.lock_at = opts.fetch(:lock_at, default_time_for_lock_date(4.days.from_now))
+    @quiz.unlock_at = opts.fetch(:unlock_at, default_time_for_unlock_date(1.week.ago))
     @quiz.save!
     @quiz
   end
@@ -50,7 +67,10 @@ module QuizzesCommon
     set_question_comment(".question_incorrect_comment", "You know what they say - study long study wrong.")
     set_question_comment(".question_neutral_comment", "Pass or fail you are a winner!")
 
-    submit_form(question)
+    button_locator = "//button[contains(.,'Update Question') and not(contains(.,'Create'))]"
+    update_question_button=driver.find_element(:xpath,button_locator)
+    scroll_to(update_question_button)
+    update_question_button.click
     wait_for_ajaximations
   end
 
@@ -250,7 +270,8 @@ module QuizzesCommon
 
   def click_questions_tab
     wait_for_ajaximations
-    fj('#quiz_tabs ul:first a:eq(1)').click
+    dismiss_flash_messages_if_present
+    f("a[href='#questions_tab']").click
   end
 
   # Locate an anchor using its text() node value. The anchor is expected to
@@ -287,6 +308,11 @@ module QuizzesCommon
     /(?:#{label}\s*){2}/
   end
 
+  def click_new_quiz_button
+    f('.new-quiz-link').click
+    wait_for_new_page_load
+  end
+
   def click_new_question_button
     find_accessible_link('New Question').click
   end
@@ -304,6 +330,18 @@ module QuizzesCommon
     quiz_model
     open_quiz_edit_form
     click_questions_tab
+    click_new_question_button
+    wait_for_ajaximations
+    Quizzes::Quiz.last
+  end
+
+  def rcs_start_quiz_question
+    @context = @course
+    quiz_model
+    open_quiz_edit_form
+    wait_for_ajaximations
+    click_questions_tab
+    wait_for_ajaximations
     click_new_question_button
     wait_for_ajaximations
     Quizzes::Quiz.last
@@ -821,25 +859,23 @@ module QuizzesCommon
 
   def verify_quiz_submission_late_status(late)
     open_student_quiz_submission
-    submission_page_info = fj('.submission_details', '#not_right_side')
-    late_status = '(late)'
+    submission_page_info = f('.submission_details', f('#not_right_side'))
 
     if late
-      expect(submission_page_info).to include_text late_status
+      expect(submission_page_info).to contain_css('.submission-late-pill')
     else
-      expect(submission_page_info).not_to include_text late_status
+      expect(submission_page_info).not_to contain_css('.submission-late-pill')
     end
   end
 
   def verify_quiz_submission_status_in_speedgrader(late)
     open_quiz_in_speedgrader
-    speedgrader_submission_details = fj('#submission_details', '.right_side_content')
-    late_note = 'Note: This submission was LATE'
+    speedgrader_submission_details = f('#submission_details', f('.right_side_content'))
 
     if late
-      expect(speedgrader_submission_details).to include_text late_note
+      expect(speedgrader_submission_details).to contain_css('.submission-late-pill')
     else
-      expect(speedgrader_submission_details).not_to include_text late_note
+      expect(speedgrader_submission_details).not_to contain_css('.submission-late-pill')
     end
   end
 

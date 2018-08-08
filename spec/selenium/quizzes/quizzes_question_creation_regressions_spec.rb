@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative '../common'
 require_relative '../helpers/quizzes_common'
 
@@ -65,10 +82,11 @@ describe 'quizzes question creation' do
       replace_content(answers[1].find_element(:css, '.select_answer input'), 'b')
 
       # save the question
-      submit_form(question)
+      driver.execute_script("$('.question_form:visible button[type=\"submit\"]').click();")
       wait_for_ajax_requests
 
       # check to see if the questions displays correctly
+      dismiss_flash_messages_if_present
       move_to_click('label[for=show_question_details]')
       quiz.reload
       finished_question = f("#question_#{quiz.quiz_questions[0].id}")
@@ -80,6 +98,7 @@ describe 'quizzes question creation' do
     end
 
     it 'respects character limits on short answer questions', priority: "2", test_id: 197493 do
+      skip_if_safari(:alert)
       question = fj('.question_form:visible')
       click_option('.question_form:visible .question_type', 'Fill In the Blank')
 
@@ -144,6 +163,7 @@ describe 'quizzes question creation' do
 
     it 'should show errors for graded quizzes', priority: "1", test_id: 197491 do
       open_quiz_edit_form
+      dismiss_flash_messages
       click_questions_tab
       edit_first_question
       delete_first_multiple_choice_answer
@@ -154,6 +174,7 @@ describe 'quizzes question creation' do
     it 'should not show errors for surveys', priority: "1", test_id: 197491 do
       @quiz.update_attribute :quiz_type, "graded_survey"
       open_quiz_edit_form
+      dismiss_flash_messages
       click_questions_tab
       edit_and_save_first_multiple_choice_answer 'instructure!'
       expect(error_displayed?).to be_falsey

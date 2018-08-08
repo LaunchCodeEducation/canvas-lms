@@ -1,4 +1,22 @@
 <%
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+%>
+
+<%
   login_handle_name = @domain_root_account.login_handle_name_with_inference
   # disable form submission when previewing from theme editor
   if params[:previewing_from_themeeditor]
@@ -26,10 +44,10 @@
         </div>
 
         <div class="ic-Login__body">
-          <%= form_for :pseudonym_session, :url => url_for({ action: :create }.merge(params.slice(:id))), :html => {:id => "login_form"} do |f| %>
-            <h2 class="ui-helper-hidden-accessible">
+          <%= form_for :pseudonym_session, :url => url_for({ action: :create }.merge(params.slice(:id).to_unsafe_h)), :html => {:id => "login_form"} do |f| %>
+            <h1 class="ui-helper-hidden-accessible">
               <%= t('log_in', 'Log In') %>
-            </h2>
+            </h1>
             <% login_inner_dialog = yield :login_inner_dialog %>
             <%= login_inner_dialog if login_inner_dialog && !login_inner_dialog.strip.empty? %>
             <input type="hidden" name="redirect_to_ssl" value="1"/>
@@ -39,7 +57,7 @@
             </div>
             <div class="ic-Form-control ic-Form-control--login">
               <%= f.label :password, :en => "Password", :class => "ic-Label" %>
-              <%= f.password_field :password, :class => "ic-Input text" %>
+              <%= f.password_field :password, :class => "ic-Input text", :role => "textbox" %>
             </div>
             <div class="ic-Login__actions">
               <div class="ic-Login__actions-timeout">
@@ -90,13 +108,10 @@
               <%= t('open_source_learning_management_system', 'Open Source LMS') %>
             </a>
           <% end %>
-          <a target="_blank" href="http://eepurl.com/1LSkT">
-            <%= t('User Research', 'User Research') %>
-          </a>
           <%= help_link %>
           <%= render :partial => 'shared/footer_links' %>
         </div>
-        <a href="http://www.instructure.com" class="ic-Login-footer__logo-link">
+        <a href="http://www.instructure.com" class="ic-Login-footer__logo-link" aria-label="By Instructure">
           <%= render "login/canvas/instructure_logo.svg" %>
         </a>
     </footer>

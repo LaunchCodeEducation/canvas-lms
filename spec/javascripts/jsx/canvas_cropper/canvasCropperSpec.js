@@ -1,39 +1,56 @@
-define([
-  'react',
-  'react-dom',
-  'react-addons-test-utils',
-  'jsx/canvas_cropper/cropper'
-], (React, ReactDOM, TestUtils, Cropper) => {
-  let file = null;
-  let component = null;
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
-  QUnit.module('CanvasCropper', {
-    setup () {
-      const blob = dataURItoBlob(filedata)  // eslint-disable-line no-use-before-define
-      file = new File([blob], 'test.jpg', {type: 'image/jpeg', lastModified: Date.now()});
-    },
-    teardown () {
-    }
-  });
+import React from 'react'
+import {shallow, mount} from 'enzyme'
+import TestUtils from 'react-addons-test-utils'
+import Cropper from 'jsx/canvas_cropper/cropper'
+
+let file, wrapper
+
+QUnit.module('CanvasCropper', hooks => {
+  hooks.beforeEach(() => {
+    const blob = dataURItoBlob(filedata)
+    file = new File([blob], 'test.jpg', {
+      type: 'image/jpeg',
+      lastModified: Date.now()
+    })
+    wrapper = mount(<Cropper imgFile={file} width={100} height={100} />)
+  })
 
   test('renders the component', () => {
-    component = TestUtils.renderIntoDocument(<Cropper imgFile={file} width={100} height={100} />);
-    const cropper = TestUtils.findRenderedDOMComponentWithClass(component, 'CanvasCropper');
-    ok(cropper, 'cropper is in the DOM');
-  });
+    ok(wrapper.find('.CanvasCropper').exists(), 'cropper is in the DOM')
+  })
 
   test('renders the image', () => {
-    const img = TestUtils.findRenderedDOMComponentWithClass(component, 'Cropper-image');
-    ok(img, 'cropper image is in the DOM');
-  });
+    ok(wrapper.find('.Cropper-image').exists(), 'cropper image is in the DOM')
+  })
 
-  asyncTest('getImage returns cropped image object', 1, () => {
-    component.crop().then((image) => {
-      ok(image instanceof Blob, 'image object is a blob');
-      start();
-    });
-  });
-});
+  test('getImage returns cropped image object', assert => {
+    assert.expect(1)
+    const done = assert.async()
+
+    wrapper.instance().crop().then((image) => {
+      ok(image instanceof Blob, 'image object is a blob')
+      done()
+    })
+  })
+})
 
 function dataURItoBlob (dataURI) {
   // convert base64 to raw binary data held in a string

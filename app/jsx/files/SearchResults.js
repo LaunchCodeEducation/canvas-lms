@@ -1,13 +1,31 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import I18n from 'i18n!react_files'
 import _ from 'underscore'
 import React from 'react'
 import SearchResults from 'compiled/react_files/components/SearchResults'
-import NoResults from 'jsx/files/NoResults'
-import ColumnHeaders from 'jsx/files/ColumnHeaders'
+import NoResults from '../files/NoResults'
+import ColumnHeaders from '../files/ColumnHeaders'
 import Folder from 'compiled/models/Folder'
-import FolderChild from 'jsx/files/FolderChild'
-import LoadingIndicator from 'jsx/files/LoadingIndicator'
-import FilePreview from 'jsx/files/FilePreview'
+import FolderChild from '../files/FolderChild'
+import LoadingIndicator from '../files/LoadingIndicator'
+import FilePreview from '../files/FilePreview'
 import page from 'page'
 import FocusStore from 'compiled/react_files/modules/FocusStore'
 

@@ -1,12 +1,30 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
 import ReactDOM from 'react-dom'
 import page from 'page'
-import Root from 'jsx/external_apps/components/Root'
-import AppList from 'jsx/external_apps/components/AppList'
-import AppDetails from 'jsx/external_apps/components/AppDetails'
-import Configurations from 'jsx/external_apps/components/Configurations'
-import AppCenterStore from 'jsx/external_apps/lib/AppCenterStore'
-import regularizePathname from 'jsx/external_apps/lib/regularizePathname'
+import Root from '../external_apps/components/Root'
+import AppList from '../external_apps/components/AppList'
+import AppDetails from '../external_apps/components/AppDetails'
+import Configurations from '../external_apps/components/Configurations'
+import AppCenterStore from '../external_apps/lib/AppCenterStore'
+import regularizePathname from '../external_apps/lib/regularizePathname'
 
   const currentPath = window.location.pathname;
   const re = /(.*\/settings|.*\/details)/;
@@ -45,13 +63,17 @@ import regularizePathname from 'jsx/external_apps/lib/regularizePathname'
   };
 
   const renderConfigurations = (ctx) => {
-    ReactDOM.render(
-      <Root>
-        <Configurations
-          pathname={ctx.pathname}
-          env={window.ENV} />
-      </Root>
-    , targetNodeToRenderIn);
+    // router.start is only called when loading the Apps tab
+    // so we don't want to try anything here that hasn't happened.
+    if (targetNodeToRenderIn) {
+      ReactDOM.render(
+        <Root>
+          <Configurations
+            pathname={ctx.pathname}
+            env={window.ENV} />
+        </Root>
+      , targetNodeToRenderIn);
+    }
   }
 
   /**

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -12,8 +12,8 @@
 # A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
 # details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with this program. If not, see <http://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
 class CrocodocSessionsController < ApplicationController
@@ -34,7 +34,8 @@ class CrocodocSessionsController < ApplicationController
       crocodoc = attachment.crocodoc_document
       url = crocodoc.session_url(:user => @current_user,
                                  :annotations => annotations,
-                                 :crocodoc_ids => blob["crocodoc_ids"])
+                                 :enable_annotations => blob["enable_annotations"],
+                                 :moderated_grading_whitelist => blob["moderated_grading_whitelist"])
 
       # For the purposes of reporting student viewership, we only
       # care if the original attachment owner is looking

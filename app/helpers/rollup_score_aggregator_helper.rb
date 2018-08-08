@@ -1,6 +1,25 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module RollupScoreAggregatorHelper
   def aggregate_score
-    (scores.sum.to_f / scores.size).round(2)
+    scores = score_sets.pluck(:score)
+    agg_score = (scores.sum.to_f / scores.size).round(2)
+    {score: agg_score, results: score_sets.pluck(:result)}
   end
 
   private
@@ -25,7 +44,8 @@ module RollupScoreAggregatorHelper
 
   def retrieve_scores(results)
     results.map do |result|
-      quiz_score?(result) ? scaled_score_from_result(result) : result_score(result)
+      score = quiz_score?(result) ? scaled_score_from_result(result) : result_score(result)
+      {score: score, result: result}
     end
   end
 
@@ -41,7 +61,12 @@ module RollupScoreAggregatorHelper
     @outcome_results.reduce({total: 0.0, weighted: 0.0}) do |aggregate, lor|
       if is_match?(result, lor) && lor.possible
         aggregate[:total] += lor.possible
-        aggregate[:weighted] += lor.possible * lor.percent
+        begin
+          aggregate[:weighted] += lor.possible * lor.percent
+        rescue NoMethodError, TypeError => e
+          Canvas::Errors.capture_exception(:missing_percent_or_points_possible, e)
+          raise e
+        end
       end
       aggregate
     end
@@ -49,7 +74,8 @@ module RollupScoreAggregatorHelper
 
   def alignment_aggregate_score(result_aggregates)
     return if result_aggregates[:total] == 0
-    (result_aggregates[:weighted] / result_aggregates[:total]) * @outcome.rubric_criterion[:points_possible]
+    possible = @points_possible > 0 ? @points_possible : @mastery_points
+    (result_aggregates[:weighted] / result_aggregates[:total]) * possible
   end
 
   def is_match?(current_result, compared_result)
@@ -60,18 +86,22 @@ module RollupScoreAggregatorHelper
 
   def result_score(result)
     return result.score unless result.try(:percent)
-    result.percent * @points_possible
+    if @points_possible > 0
+      result.percent * @points_possible
+    else
+      result.percent * @mastery_points
+    end
   end
 
-  def scores
-    @scores || begin
+  def score_sets
+    @score_sets || begin
       case @calculation_method
       when 'decaying_average'
-        @scores = retrieve_scores(@aggregate ? @outcome_results : sorted_results)
+        @score_sets = retrieve_scores(@aggregate ? @outcome_results : sorted_results)
       when 'n_mastery', 'highest'
-        @scores = retrieve_scores(@outcome_results)
+        @score_sets = retrieve_scores(@outcome_results)
       when 'latest'
-        @scores = retrieve_scores(@aggregate ? @outcome_results : [sorted_results.last])
+        @score_sets = retrieve_scores(@aggregate ? @outcome_results : [sorted_results.last])
       end
     end
   end

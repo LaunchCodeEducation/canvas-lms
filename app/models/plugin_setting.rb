@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -46,9 +46,9 @@ class PluginSetting < ActiveRecord::Base
   def validate_posted_settings
     if @posted_settings
       plugin = Canvas::Plugin.find(name.to_s)
+      @posted_settings.transform_values(&:strip!)
       result = plugin.validate_settings(self, @posted_settings)
-      throw :abort if !CANVAS_RAILS4_2 && result == false
-      result
+      throw :abort if result == false
     end
   end
 

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2017 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module Lti
   class AssignmentSubscriptionsHelper
     attr_accessor :assignment, :tool_proxy
@@ -6,7 +23,11 @@ module Lti
     end
 
     SUBMISSION_EVENT_ID = 'vnd.Canvas.SubmissionEvent'.freeze
-    EVENT_TYPES = %w(submission_created plagiarism_resubmit submission_updated).freeze
+    EVENT_TYPES = %w(submission_created
+                     plagiarism_resubmit
+                     submission_updated
+                     assignment_updated
+                     assignment_created).freeze
 
     def initialize(tool_proxy, assignment = nil)
       @assignment = assignment
@@ -55,10 +76,7 @@ module Lti
 
     def submission_event_service
       @_submission_event_service ||= begin
-        tp = IMS::LTI::Models::ToolProxy.from_json(tool_proxy.raw_data)
-        tp.tool_profile&.service_offered&.find do |s|
-          s.id.include?(SUBMISSION_EVENT_ID) && s.action.include?("POST")
-        end
+        tool_proxy.find_service(SUBMISSION_EVENT_ID, 'POST')
       end
     end
 

@@ -1,10 +1,34 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import I18n from 'i18n!shared.flash_notices'
 import $ from 'jquery'
 import _ from 'underscore'
-import preventDefault from 'compiled/fn/preventDefault'
 import htmlEscape from 'str/htmlEscape'
 import 'jqueryui/effects/drop'
-import 'vendor/jquery.cookie'
+import 'jquery.cookie'
+
+function updateAriaLive ({ polite } = { polite: false }) {
+  if (this.screenreaderHolderReady()) {
+    const value = polite ? 'polite' : 'assertive';
+    $(this.screenreader_holder).attr('aria-live', value);
+  }
+}
 
   class RailsFlashNotificationsHelper {
     constructor() {
@@ -96,8 +120,9 @@ import 'vendor/jquery.cookie'
       return this.screenreader_holder != null;
     }
 
-    createScreenreaderNode(content, closable = true) {
+    createScreenreaderNode (content, closable = true) {
       if (this.screenreaderHolderReady()) {
+        updateAriaLive.call(this, { polite: false });
         const node = $(this.generateScreenreaderNodeHTML(content, closable));
         node.appendTo($(this.screenreader_holder));
 
@@ -136,11 +161,11 @@ import 'vendor/jquery.cookie'
       }
     }
 
-    createScreenreaderNodeExclusive(content) {
+    createScreenreaderNodeExclusive (content, polite = false) {
       if (this.screenreaderHolderReady()) {
+        updateAriaLive.call(this, { polite });
         this.screenreader_holder.innerHTML = '';
-
-        let node = $(this.generateScreenreaderNodeHTML(content, false));
+        const node = $(this.generateScreenreaderNodeHTML(content, false));
         node.appendTo($(this.screenreader_holder));
       }
     }

@@ -1,6 +1,6 @@
 # encoding: UTF-8
 #
-# Copyright (C) 2014 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -29,7 +29,9 @@ describe Utf8Cleaner do
         "hai\xfba" => "haia",
         "hai\xfbab" => "haiab",
         "hai\xfbabc" => "haiabc",
-        "hai\xfbabcd" => "haiabcd"
+        "hai\xfbabcd" => "haiabcd",
+        "o\bhai" => "ohai",
+        "\x7Fohai" => "ohai"
     }
 
     test_strings.each do |input, output|

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2013 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -113,6 +113,12 @@ describe Api do
       expect(Account.site_admin).to eq TestApiInstance.new(account, nil).api_find(Account, 'site_admin')
     end
 
+    it 'should find group_category with sis_id' do
+      account = Account.create!
+      gc = GroupCategory.create(sis_source_id: 'gc_sis', account: account, name: 'gc')
+      expect(gc).to eq TestApiInstance.new(account, nil).api_find(GroupCategory, 'sis_group_category_id:gc_sis')
+    end
+
     it 'should find term id "default"' do
       account = Account.create!
       expect(TestApiInstance.new(account, nil).api_find(account.enrollment_terms, 'default')).to eq account.default_enrollment_term
@@ -183,6 +189,17 @@ describe Api do
       account.save!
       expect(@api.api_find(Account, "lti_context_id:#{account.lti_context_id}")).to eq account
     end
+
+    it "should find user by uuid" do
+      expect(@api.api_find(User, "uuid:#{@user.uuid}")).to eq @user
+    end
+
+    it "should find course by uuid" do
+      lti_course = course_factory
+      lti_course.uuid = Canvas::Security.hmac_sha1(lti_course.asset_string.to_s, 'key')
+      lti_course.save!
+      expect(@api.api_find(Course, "uuid:#{lti_course.uuid}")).to eq lti_course
+    end
   end
 
   context 'api_find_all' do
@@ -197,6 +214,10 @@ describe Api do
 
     it 'should find a simple record' do
       expect(@api.api_find_all(User, [@user.id])).to eq [@user]
+    end
+
+    it 'should find a simple record with uuid' do
+      expect(@api.api_find_all(User, ["uuid:#{@user.uuid}"])).to eq [@user]
     end
 
     it 'should not find a missing record' do
@@ -252,7 +273,7 @@ describe Api do
     end
 
     it "should not hit the database if no valid conditions were found" do
-      collection = mock()
+      collection = double()
       allow(collection).to receive(:table_name).and_return("courses")
       expect(collection).to receive(:none).once
       relation = @api.api_find_all(collection, ["sis_invalid:1"])
@@ -267,6 +288,23 @@ describe Api do
         @shard2.activate { @user3 = User.create! }
 
         expect(@api.api_find_all(User, [@user2.id, @user3.id]).sort_by(&:global_id)).to eq [@user2, @user3].sort_by(&:global_id)
+      end
+
+      it 'find users from other shards via SIS ID' do
+        @shard1.activate do
+          @account = Account.create(name: 'new')
+          @user = user_with_pseudonym username: "sis_user_1@example.com", account: @account
+        end
+        expect(Api).to receive(:sis_parse_id).
+          with("root_account:school:sis_login_id:sis_user_1@example.com", anything, anything, anything).
+          twice.
+          and_return(['LOWER(pseudonyms.unique_id)', [QuotedValue.new("LOWER('sis_user_1@example.com')"), @account]])
+        expect(@api.api_find(User, "root_account:school:sis_login_id:sis_user_1@example.com")).to eq @user
+        # works through an association, too
+        account2 = Account.create!
+        course = account2.courses.create!
+        course.enroll_student(@user)
+        expect(@api.api_find(course.students, "root_account:school:sis_login_id:sis_user_1@example.com")).to eq @user
       end
     end
   end
@@ -330,9 +368,9 @@ describe Api do
     end
 
     it 'should try and make params when non-ar_id columns have returned with ar_id columns' do
-      collection = mock()
+      collection = double()
       pluck_result = ["thing2", "thing3"]
-      relation_result = mock(eager_load_values: nil, pluck: pluck_result)
+      relation_result = double(eager_load_values: nil, pluck: pluck_result)
       expect(Api).to receive(:sis_find_sis_mapping_for_collection).with(collection).and_return({:lookups => {"id" => "test-lookup"}})
       expect(Api).to receive(:sis_parse_ids).with("test-ids", {"id" => "test-lookup"}, anything, root_account: "test-root-account").
           and_return({"test-lookup" => ["thing1", "thing2"], "other-lookup" => ["thing2", "thing3"]})
@@ -341,9 +379,9 @@ describe Api do
     end
 
     it 'should try and make params when non-ar_id columns have returned without ar_id columns' do
-      collection = mock()
+      collection = double()
       pluck_result = ["thing2", "thing3"]
-      relation_result = mock(eager_load_values: nil, pluck: pluck_result)
+      relation_result = double(eager_load_values: nil, pluck: pluck_result)
       expect(Api).to receive(:sis_find_sis_mapping_for_collection).with(collection).and_return({:lookups => {"id" => "test-lookup"}})
       expect(Api).to receive(:sis_parse_ids).with("test-ids", {"id" => "test-lookup"}, anything, root_account: "test-root-account").
           and_return({"other-lookup" => ["thing2", "thing3"]})
@@ -352,7 +390,7 @@ describe Api do
     end
 
     it 'should not try and make params when no non-ar_id columns have returned with ar_id columns' do
-      collection = mock()
+      collection = double()
       expect(Api).to receive(:sis_find_sis_mapping_for_collection).with(collection).and_return({:lookups => {"id" => "test-lookup"}})
       expect(Api).to receive(:sis_parse_ids).with("test-ids", {"id" => "test-lookup"}, anything, root_account: "test-root-account").
           and_return({"test-lookup" => ["thing1", "thing2"]})
@@ -361,9 +399,9 @@ describe Api do
     end
 
     it 'should not try and make params when no non-ar_id columns have returned without ar_id columns' do
-      collection = mock()
-      object1 = mock()
-      object2 = mock()
+      collection = double()
+      object1 = double()
+      object2 = double()
       expect(Api).to receive(:sis_find_sis_mapping_for_collection).with(collection).and_return({:lookups => {"id" => "test-lookup"}})
       expect(Api).to receive(:sis_parse_ids).with("test-ids", {"id" => "test-lookup"}, anything, root_account: "test-root-account").
           and_return({})
@@ -424,6 +462,11 @@ describe Api do
       expect(Api.sis_parse_id("\t10\n", @lookups)).to eq ["users.id", 10]
       expect(Api.sis_parse_id("  hex:sis_login_id:7369737573657233406578616d706c652e636f6d     ", @lookups)).to eq ["LOWER(pseudonyms.unique_id)", "LOWER('sisuser3@example.com')"]
       expect(Api.sis_parse_id("  sis_login_id:sisuser3@example.com\t", @lookups)).to eq ["LOWER(pseudonyms.unique_id)", "LOWER('sisuser3@example.com')"]
+    end
+
+    it 'should handle user uuid' do
+      expect(Api.sis_parse_id("uuid:tExtjERcuxGKFLO6XxwIBCeXZvZXLdXzs8LV0gK0", @lookups)).to \
+        eq ["users.uuid", "tExtjERcuxGKFLO6XxwIBCeXZvZXLdXzs8LV0gK0"]
     end
   end
 
@@ -553,6 +596,8 @@ describe Api do
       expect(Api.sis_parse_id("sis_account_id:1", lookups)).to eq [nil, nil]
       expect(Api.sis_parse_id("sis_section_id:1", lookups)).to eq [nil, nil]
       expect(Api.sis_parse_id("1", lookups)).to eq ["users.id", 1]
+      expect(Api.sis_parse_id("uuid:tExtjERcuxGKFLO6XxwIBCeXZvZXLdXzs8LV0gK0", lookups)).to \
+        eq ["users.uuid", "tExtjERcuxGKFLO6XxwIBCeXZvZXLdXzs8LV0gK0"]
     end
 
     it 'should correctly capture account lookups' do
@@ -569,6 +614,18 @@ describe Api do
     it 'should correctly capture course_section lookups' do
       lookups = Api.sis_find_sis_mapping_for_collection(CourseSection)[:lookups]
       expect(Api.sis_parse_id("sis_section_id:1", lookups)).to eq ["sis_source_id", "1"]
+      expect(Api.sis_parse_id("sis_course_id:1", lookups)).to eq [nil, nil]
+      expect(Api.sis_parse_id("sis_term_id:1", lookups)).to eq [nil, nil]
+      expect(Api.sis_parse_id("sis_user_id:1", lookups)).to eq [nil, nil]
+      expect(Api.sis_parse_id("sis_login_id:1", lookups)).to eq [nil, nil]
+      expect(Api.sis_parse_id("sis_account_id:1", lookups)).to eq [nil, nil]
+      expect(Api.sis_parse_id("1", lookups)).to eq ["id", 1]
+    end
+
+    it 'should correctly capture group_categories lookups' do
+      lookups = Api.sis_find_sis_mapping_for_collection(GroupCategory)[:lookups]
+      expect(Api.sis_parse_id("sis_group_category_id:1", lookups)).to eq ["sis_source_id", "1"]
+      expect(Api.sis_parse_id("sis_section_id:1", lookups)).to eq [nil, nil]
       expect(Api.sis_parse_id("sis_course_id:1", lookups)).to eq [nil, nil]
       expect(Api.sis_parse_id("sis_term_id:1", lookups)).to eq [nil, nil]
       expect(Api.sis_parse_id("sis_user_id:1", lookups)).to eq [nil, nil]
@@ -691,6 +748,35 @@ describe Api do
         allow(@k).to receive(:mobile_device?).and_return(true)
         res = @k.api_user_content(@html, @course, @student)
         expect(res).to eq "<p>a</p><p>b</p>"
+      end
+    end
+
+    context "sharding" do
+      specs_require_sharding
+
+      it 'transposes ids in urls' do
+        @shard1.activate do
+          a = Account.create!
+          student_in_course(account: a)
+        end
+        html = <<-HTML
+<img src="/courses/34/files/2082/download?wrap=1" data-api-returntype="File" data-api-endpoint="https://canvas.vanity.edu/api/v1/courses/34/files/2082">
+<a href="/courses/34/pages/module-1" data-api-returntype="Page" data-api-endpoint="https://canvas.vanity.edu/api/v1/courses/34/pages/module-1">link</a>
+        HTML
+
+        @k = klass.new
+        @k.instance_variable_set(:@domain_root_account, Account.default)
+        @k.extend Rails.application.routes.url_helpers
+        @k.extend ActionDispatch::Routing::UrlFor
+        allow(@k).to receive(:request).and_return(nil)
+        allow(@k).to receive(:get_host_and_protocol_from_request).and_return(['school.instructure.com', 'https'])
+        allow(@k).to receive(:url_options).and_return({})
+
+        res = @k.api_user_content(html, @course, @student)
+        expect(res).to eq <<-HTML
+<img src="https://school.instructure.com/courses/#{@shard1.id}~34/files/#{@shard1.id}~2082/download?wrap=1" data-api-returntype="File" data-api-endpoint="https://school.instructure.com/api/v1/courses/#{@shard1.id}~34/files/#{@shard1.id}~2082">
+<a href="https://school.instructure.com/courses/#{@shard1.id}~34/pages/module-1" data-api-returntype="Page" data-api-endpoint="https://school.instructure.com/api/v1/courses/#{@shard1.id}~34/pages/module-1">link</a>
+        HTML
       end
     end
   end

@@ -1,5 +1,5 @@
-
-# Copyright (C) 2011 Instructure, Inc.
+#
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -22,7 +22,8 @@ module CC
       scope = @course.discussion_topics.active
       DiscussionTopic::ScopedToUser.new(@course, @user, scope).scope.each do |topic|
         next unless export_object?(topic) || export_object?(topic.assignment)
-        next if @user && topic.locked_for?(@user, check_policies: true)
+        lock_info = topic.locked_for?(@user, check_policies: true)
+        next if @user && lock_info && !lock_info[:can_view]
 
         title = topic.title || I18n.t('course_exports.unknown_titles.topic', "Unknown topic")
 
@@ -127,6 +128,8 @@ module CC
       doc.allow_rating topic.allow_rating
       doc.only_graders_can_rate topic.only_graders_can_rate
       doc.sort_by_rating topic.sort_by_rating
+      doc.todo_date topic.todo_date
+      doc.locked 'true' if topic.locked
       if topic.assignment && !topic.assignment.deleted?
         assignment_migration_id = create_key(topic.assignment)
         doc.assignment(:identifier=>assignment_migration_id) do |a|

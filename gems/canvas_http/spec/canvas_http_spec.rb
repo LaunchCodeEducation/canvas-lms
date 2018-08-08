@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -23,6 +23,25 @@ require 'tempfile'
 describe "CanvasHttp" do
 
   include WebMock::API
+
+  describe ".post" do
+    it "allows you to send a body" do
+      url = "www.example.com/a"
+      body = "abc"
+      stub_request(:post, url).with(body: "abc").
+        to_return(status: 200)
+      expect(CanvasHttp.post(url, body: body).code).to eq "200"
+    end
+
+    it "allows you to set a content_type" do
+      url = "www.example.com/a"
+      body = "abc"
+      content_type = "plain/text"
+      stub_request(:post, url).with(body: "abc", :headers => {'Content-Type'=>content_type}).
+        to_return(status: 200)
+      expect(CanvasHttp.post(url, body: body, content_type: content_type).code).to eq "200"
+    end
+  end
 
   describe ".get" do
     it "should return response objects" do
@@ -98,6 +117,25 @@ describe "CanvasHttp" do
       expect(res.body).to eq("Hello")
     end
 
+    it "should check host before running" do
+      res = nil
+      stub_request(:get, "http://www.example.com/a/b").
+        to_return(body: "Hello", headers: { 'Content-Length' => 5 })
+      expect(CanvasHttp).to receive(:insecure_host?).with("www.example.com").and_return(true)
+      expect{ CanvasHttp.get("http://www.example.com/a/b") }.to raise_error(CanvasHttp::InsecureUriError)
+    end
+  end
+
+  describe '#insecure_host?' do
+    it "should check for insecure hosts" do
+      CanvasHttp.blocked_ip_filters = -> { ['127.0.0.1/8', '42.42.42.42/16']}
+      expect(CanvasHttp.insecure_host?('www.example.com')).to eq false
+      expect(CanvasHttp.insecure_host?('localhost')).to eq true
+      expect(CanvasHttp.insecure_host?('127.0.0.1')).to eq true
+      expect(CanvasHttp.insecure_host?('42.42.42.42')).to eq true
+      expect(CanvasHttp.insecure_host?('42.42.1.1')).to eq true
+      expect(CanvasHttp.insecure_host?('42.1.1.1')).to eq false
+    end
   end
 
   describe ".tempfile_for_url" do

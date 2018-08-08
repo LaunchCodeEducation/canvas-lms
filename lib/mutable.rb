@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module Mutable
 
   attr_accessor :recently_unmuted
@@ -59,6 +76,14 @@ module Mutable
         StreamItemInstance.where(:stream_item_id => stream_items, :user_id => user_ids_subset).
             update_all_with_invalidation(stream_item_contexts, :hidden => true)
       end
+
+      # Teachers want to hide their submission comments if they mute
+      # the assignment after leaving them.
+      instructor_ids = self.context.instructors.pluck(:id)
+      visible_comment_sub_ids =
+        SubmissionComment.where(hidden: false, submission_id: submission_ids, author_id: instructor_ids).
+          pluck(:submission_id)
+      update_submission_comments_and_count(visible_comment_sub_ids, hidden: true, instructor_ids: instructor_ids) if visible_comment_sub_ids.any?
     end
   end
 
@@ -75,14 +100,21 @@ module Mutable
             update_all_with_invalidation(stream_item_contexts, :hidden => false)
       end
 
-      hidden_comment_sub_ids = SubmissionComment.where(:hidden => true, :submission_id => submission_ids).pluck(:submission_id)
-      if hidden_comment_sub_ids.any?
-        SubmissionComment.where(:hidden => true, :submission_id => hidden_comment_sub_ids).update_all(:hidden => false)
-        Submission.where(:id => hidden_comment_sub_ids).
-          update_all(["submission_comments_count = (SELECT COUNT(*) FROM #{SubmissionComment.quoted_table_name} WHERE
+      hidden_comment_sub_ids = SubmissionComment.where(hidden: true, submission_id: submission_ids).pluck(:submission_id)
+      update_submission_comments_and_count(hidden_comment_sub_ids, hidden: false) if hidden_comment_sub_ids.any?
+    end
+  end
+
+  def update_submission_comments_and_count(submission_ids, hidden: false, instructor_ids: nil)
+    submission_ids.each_slice(100) do |submission_id_slice|
+      submission_comment_scope = SubmissionComment.where(hidden: !hidden, submission_id: submission_id_slice)
+      submission_comment_scope = submission_comment_scope.where(author_id: instructor_ids) if instructor_ids.present?
+      submission_comment_scope.update_all(:hidden => hidden)
+
+      Submission.where(:id => submission_id_slice).
+        update_all(["submission_comments_count = (SELECT COUNT(*) FROM #{SubmissionComment.quoted_table_name} WHERE
             submissions.id = submission_comments.submission_id AND submission_comments.hidden = ? AND
             submission_comments.draft IS NOT TRUE AND submission_comments.provisional_grade_id IS NULL)", false])
-      end
     end
   end
 end

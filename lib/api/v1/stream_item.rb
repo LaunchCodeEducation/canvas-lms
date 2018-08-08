@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -83,7 +83,10 @@ module Api::V1::StreamItem
         hash['notification_category'] = data.notification_category
         hash['html_url'] = hash['url'] = data.url
       when 'Submission'
-        json = submission_json(stream_item.asset, stream_item.asset.assignment, current_user, session, nil, ['submission_comments', 'assignment', 'course', 'html_url', 'user'])
+        submission = stream_item.asset
+        assignment = submission.assignment
+        includes = %w|submission_comments assignment course html_url user|
+        json = submission_json(submission, assignment, current_user, session, nil, includes, params)
         json.delete('id')
         hash.merge! json
         hash['submission_id'] = stream_item.asset_id
@@ -129,7 +132,7 @@ module Api::V1::StreamItem
             scope = scope.joins("INNER JOIN #{Submission.quoted_table_name} ON submissions.id=asset_id")
             # just because there are comments doesn't mean the user can see them.
             # we still need to filter after the pagination :(
-            scope = scope.where("submissions.submission_comments_count>0")
+            scope = scope.where("submissions.workflow_state <> 'deleted' AND submissions.submission_comments_count>0")
             scope = scope.where("submissions.user_id=?", opts[:submission_user_id]) if opts.has_key?(:submission_user_id)
           end
         end
@@ -153,7 +156,7 @@ module Api::V1::StreamItem
         si_scope = si_scope.joins("INNER JOIN #{Submission.quoted_table_name} ON submissions.id=asset_id")
         # just because there are comments doesn't mean the user can see them.
         # we still need to filter after the pagination :(
-        si_scope = si_scope.where("submissions.submission_comments_count>0")
+        si_scope = si_scope.where("submissions.workflow_state <> 'deleted' AND submissions.submission_comments_count>0")
         si_scope = si_scope.where("submissions.user_id=?", opts[:submission_user_id]) if opts.has_key?(:submission_user_id)
         filtered_ids += si_scope.pluck(:id).map{|id| Shard.relative_id_for(id, Shard.current, @current_user.shard)}
       end

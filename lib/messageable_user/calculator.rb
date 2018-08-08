@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -823,7 +823,7 @@ class MessageableUser
       @shard_caches[key] ||=
         begin
           by_shard = {}
-          Shard.with_each_shard(@user.associated_shards) do
+          Shard.with_each_shard(@user.in_region_associated_shards) do
             shard_key = [@user, 'messageable_user', key]
             methods.each do |method|
               canonical = send(method).cache_key

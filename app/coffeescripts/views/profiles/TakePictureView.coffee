@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -19,9 +19,9 @@
 define [
   'jquery'
   'underscore'
-  'compiled/views/profiles/AvatarUploadBaseView'
+  './AvatarUploadBaseView'
   'jst/profiles/takePictureView'
-  'compiled/util/BlobFactory'
+  '../../util/BlobFactory'
 ], ($, _, BaseView, template, BlobFactory) ->
 
   class TakePictureView extends BaseView
@@ -61,7 +61,8 @@ define [
 
     displayMedia: (@stream) =>
       @$video.removeClass('pending')
-      @$video.attr('src', window.URL.createObjectURL(@stream))
+      try @$video.get(0).srcObject = @stream
+      catch err then @$video.attr('src', window.URL.createObjectURL(@stream))
       @$video.on('onloadedmetadata loadedmetadata', _.once(@onMediaMetadata).bind(this))
 
     onMediaMetadata: (e) ->

@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2011 Instructure, Inc.
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,8 +12,8 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 // There's technically a security vulnerability here.  Since we let
@@ -25,29 +25,27 @@
 // settings on their own personal eportfolio, they can't
 // affect anyone else
 
-define([
-  'i18n!eportfolio',
-  'jquery' /* $ */,
-  'react',
-  'react-dom',
-  'compiled/userSettings',
-  'jsx/shared/rce/RichContentEditor',
-  'jsx/eportfolios/MoveToDialog',
-  'eportfolios/eportfolio_section',
-  'jquery.ajaxJSON' /* ajaxJSON */,
-  'jquery.inst_tree' /* instTree */,
-  'jquery.instructure_forms' /* formSubmit, getFormData, formErrors, errorBox */,
-  'jqueryui/dialog',
-  'compiled/jquery/fixDialogButtons' /* fix dialog formatting */,
-  'compiled/jquery.rails_flash_notifications' /* $.screenReaderFlashMessageExclusive */,
-  'jquery.instructure_misc_helpers' /* replaceTags, scrollSidebar */,
-  'jquery.instructure_misc_plugins' /* confirmDelete, showIf */,
-  'jquery.loadingImg' /* loadingImage */,
-  'jquery.templateData' /* fillTemplateData, getTemplateData */,
-  'vendor/jquery.scrollTo' /* /\.scrollTo/ */,
-  'jqueryui/progressbar' /* /\.progressbar/ */,
-  'jqueryui/sortable' /* /\.sortable/ */
-], function(I18n, $, React, ReactDOM, userSettings, RichContentEditor, MoveToDialog, EportfolioSection) {
+import I18n from 'i18n!eportfolio'
+import $ from 'jquery'
+import React from 'react'
+import ReactDOM from 'react-dom'
+import userSettings from 'compiled/userSettings'
+import RichContentEditor from 'jsx/shared/rce/RichContentEditor'
+import MoveToDialog from 'jsx/eportfolios/MoveToDialog'
+import {fetchContent} from 'eportfolios/eportfolio_section'
+import './jquery.ajaxJSON'
+import './jquery.inst_tree' /* instTree */
+import './jquery.instructure_forms' /* formSubmit, getFormData, formErrors, errorBox */
+import 'jqueryui/dialog'
+import 'compiled/jquery/fixDialogButtons'
+import 'compiled/jquery.rails_flash_notifications' /* $.screenReaderFlashMessageExclusive */
+import './jquery.instructure_misc_helpers' /* replaceTags, scrollSidebar */
+import './jquery.instructure_misc_plugins' /* confirmDelete, showIf */
+import './jquery.loadingImg'
+import './jquery.templateData' /* fillTemplateData, getTemplateData */
+import './vendor/jquery.scrollTo'
+import 'jqueryui/progressbar'
+import 'jqueryui/sortable'
 
   // optimization so user isn't waiting on RCS to
   // respond when they hit edit
@@ -75,7 +73,7 @@ define([
       if(section_type == "rich_text" || section_type == "html" || $section.hasClass('read_only')) {
         idx++;
         var name = "section_" + idx;
-        var sectionContent = EportfolioSection.fetchContent($section, section_type, name)
+        var sectionContent = fetchContent($section, section_type, name)
         data = $.extend(data, sectionContent)
       }
     });
@@ -215,7 +213,7 @@ define([
           $preview.html($section.find(".edit_section").val());
           $section.find(".section_content").after($preview);
         } else if (section_type == "rich_text") {
-          var $richText = $section.find('.edit_section)');
+          var $richText = $section.find('.edit_section');
           var editorContent = RichContentEditor.callOnRCE($richText, "get_code");
           if (editorContent){ $preview.html($.raw(editorContent)) }
           $section.find(".section_content").after($preview);
@@ -454,13 +452,12 @@ define([
           return false;
         }
       },
-      success: function(data) {
+      success: function(attachment) {
         var $section = $(this).data('section');
-        var attachment = data.attachment;
         $section.find(".attachment_id").text(attachment.id);
         var url = $(".eportfolio_download_url").attr('href');
         url = $.replaceTags(url, 'uuid', attachment.uuid);
-        if(attachment.content_type.indexOf("image") != -1) {
+        if(attachment['content-type'].indexOf("image") != -1) {
           var $image = $("#eportfolio_view_image").clone(true).removeAttr('id');
           $image.find(".eportfolio_image").attr('src', url).attr('alt', attachment.display_name);
           $image.find(".eportfolio_download").attr('href', url);
@@ -1119,4 +1116,3 @@ define([
       });
     });
   });
-});

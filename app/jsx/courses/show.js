@@ -1,10 +1,29 @@
-import CourseHomeDialog from 'jsx/courses/CourseHomeDialog'
-import HomePagePromptContainer from 'jsx/courses/HomePagePromptContainer'
-import createStore from 'jsx/shared/helpers/createStore'
+/*
+ * Copyright (C) 2017 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+import CourseHomeDialog from '../courses/CourseHomeDialog'
+import HomePagePromptContainer from '../courses/HomePagePromptContainer'
+import createStore from '../shared/helpers/createStore'
 import $ from 'jquery'
 import I18n from 'i18n!courses_show'
 import axios from 'axios'
 import React from 'react'
+import PropTypes from 'prop-types'
 import ReactDOM from 'react-dom'
 
 const defaultViewStore = createStore({
@@ -28,29 +47,35 @@ $('#course_status_form').submit((e) => {
     e.preventDefault()
 
     const defaultView = defaultViewStore.getState().savedDefaultView
-    axios.get(`/api/v1/courses/${ENV.COURSE.id}/modules`)
-    .then(({data: modules}) => {
-      if (defaultView === 'modules' && modules.length === 0) {
-        ReactDOM.render(
-          <HomePagePromptContainer
-            forceOpen
-            store={defaultViewStore}
-            courseId={ENV.COURSE.id}
-            wikiFrontPageTitle={ENV.COURSE.front_page_title}
-            wikiUrl={ENV.COURSE.pages_url}
-            returnFocusTo={$(".btn-publish").get(0)}
-            onSubmit={() => {
-              if (defaultViewStore.getState().savedDefaultView !== 'modules') {
-                publishCourse()
-              }
-            }}
-          />,
-          document.getElementById('choose_home_page_not_modules')
-        )
-      } else {
-        publishCourse()
-      }
-    })
+    const container = document.getElementById('choose_home_page_not_modules');
+    if (!!container) {
+      axios.get(`/api/v1/courses/${ENV.COURSE.id}/modules`)
+        .then(({data: modules}) => {
+          if (defaultView === 'modules' && modules.length === 0) {
+            ReactDOM.render(
+              <HomePagePromptContainer
+                forceOpen
+                store={defaultViewStore}
+                courseId={ENV.COURSE.id}
+                wikiFrontPageTitle={ENV.COURSE.front_page_title}
+                wikiUrl={ENV.COURSE.pages_url}
+                returnFocusTo={$(".btn-publish").get(0)}
+                onSubmit={() => {
+                  if (defaultViewStore.getState().savedDefaultView !== 'modules') {
+                    publishCourse()
+                  }
+                }}
+              />,
+              container
+            )
+          } else {
+            publishCourse()
+          }
+        })
+    } else {
+      // we don't have the ability to change to change the course home page so just publish it
+      publishCourse()
+    }
   }
 })
 
@@ -60,7 +85,7 @@ class ChooseHomePageButton extends React.Component {
   }
 
   static propTypes = {
-    store: React.PropTypes.object.isRequired,
+    store: PropTypes.object.isRequired,
   }
 
   render() {

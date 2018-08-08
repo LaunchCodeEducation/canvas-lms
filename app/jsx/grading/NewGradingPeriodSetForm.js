@@ -1,21 +1,38 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
-import _ from 'underscore'
-import $ from 'jquery'
-import Button from 'instructure-ui/lib/components/Button'
-import Checkbox from 'instructure-ui/lib/components/Checkbox'
+import PropTypes from 'prop-types'
+import Button from '@instructure/ui-buttons/lib/components/Button'
+import Checkbox from '@instructure/ui-forms/lib/components/Checkbox'
 import I18n from 'i18n!grading_periods'
 import setsApi from 'compiled/api/gradingPeriodSetsApi'
-import EnrollmentTermInput from 'jsx/grading/EnrollmentTermInput'
-import 'compiled/jquery.rails_flash_notifications'
+import EnrollmentTermInput from '../grading/EnrollmentTermInput'
+import { showFlashAlert } from '../shared/FlashAlert';
 
   let NewGradingPeriodSetForm = React.createClass({
     propTypes: {
-      enrollmentTerms:         React.PropTypes.array.isRequired,
-      closeForm:               React.PropTypes.func.isRequired,
-      addGradingPeriodSet:     React.PropTypes.func.isRequired,
-      readOnly:                React.PropTypes.bool.isRequired,
-      urls:                    React.PropTypes.shape({
-        gradingPeriodSetsURL:  React.PropTypes.string.isRequired
+      enrollmentTerms:         PropTypes.array.isRequired,
+      closeForm:               PropTypes.func.isRequired,
+      addGradingPeriodSet:     PropTypes.func.isRequired,
+      readOnly:                PropTypes.bool.isRequired,
+      urls:                    PropTypes.shape({
+        gradingPeriodSetsURL:  PropTypes.string.isRequired
       }).isRequired
     },
 
@@ -43,7 +60,7 @@ import 'compiled/jquery.rails_flash_notifications'
       if(this.state.title.trim() !== '') {
         return true;
       } else {
-        $.flashError(I18n.t("A name for this set is required"));
+        showFlashAlert({ type: 'error', message: I18n.t('A name for this set is required') });
         return false;
       }
     },
@@ -72,12 +89,12 @@ import 'compiled/jquery.rails_flash_notifications'
     },
 
     submitSucceeded(set) {
-      $.flashMessage(I18n.t("Successfully created a set"));
+      showFlashAlert({ type: 'success', message: I18n.t('Successfully created a set') });
       this.props.addGradingPeriodSet(set, this.state.selectedEnrollmentTermIDs);
     },
 
     submitFailed() {
-      $.flashError(I18n.t("There was a problem submitting your set"));
+      showFlashAlert({ type: 'error', message: I18n.t('There was a problem submitting your set') });
       this.setState({ buttonsDisabled: false });
     },
 

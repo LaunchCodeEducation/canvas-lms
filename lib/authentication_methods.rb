@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2013 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -35,6 +35,9 @@ module AuthenticationMethods
   class AccessTokenError < Exception
   end
 
+  class AccessTokenScopeError < StandardError
+  end
+
   class LoggedOutError < Exception
   end
 
@@ -58,20 +61,19 @@ module AuthenticationMethods
     begin
       services_jwt = Canvas::Security::ServicesJwt.new(token_string)
       @current_user = User.find(services_jwt.user_global_id)
-      @current_pseudonym = @current_user.find_pseudonym_for_account(@domain_root_account, true)
+      @current_pseudonym = SisPseudonym.for(@current_user, @domain_root_account, type: :implicit, require_sis: false)
       unless @current_user && @current_pseudonym
         raise AccessTokenError
       end
       if services_jwt.masquerading_user_global_id
         @real_current_user = User.find(services_jwt.masquerading_user_global_id)
-        @real_current_pseudonym = @real_current_user.find_pseudonym_for_account(@domain_root_account, true)
+        @real_current_pseudonym = SisPseudonym.for(@real_current_user, @domain_root_account, type: :implicit, require_sis: false)
         logger.warn "#{@real_current_user.name}(#{@real_current_user.id}) impersonating #{@current_user.name} on page #{request.url}"
       end
       @authenticated_with_jwt = true
     rescue JSON::JWT::InvalidFormat,             # definitely not a JWT
            Canvas::Security::TokenExpired,       # it could be a JWT, but it's expired if so
-           Canvas::Security::InvalidToken,       # Looks like garbage
-           Canvas::DynamicSettings::ConsulError  # no config present for talking to consul
+           Canvas::Security::InvalidToken       # Looks like garbage
       # these will happen for some configurations (no consul)
       # and for some normal use cases (old token, access token),
       # so we can return and move on
@@ -83,8 +85,26 @@ module AuthenticationMethods
     end
   end
 
+  def validate_scopes
+    if @access_token && @domain_root_account.feature_enabled?(:developer_key_management_and_scoping)
+      developer_key = @access_token.developer_key
+      request_method = request.method.casecmp('HEAD') == 0 ? 'GET' : request.method.upcase
+
+      if developer_key.try(:require_scopes)
+        if @access_token.url_scopes_for_method(request_method).any? { |scope| scope =~ request.path }
+          params.delete :include
+          params.delete :includes
+        else
+          raise AccessTokenScopeError
+        end
+      end
+    end
+  end
+
   def load_pseudonym_from_access_token
-    return unless api_request? || (params[:controller] == 'oauth2_provider' && params[:action] == 'destroy')
+    return unless api_request? ||
+      (params[:controller] == 'oauth2_provider' && params[:action] == 'destroy') ||
+      (params[:controller] == 'login' && params[:action] == 'session_token')
 
     token_string = AuthenticationMethods.access_token(request)
 
@@ -94,20 +114,30 @@ module AuthenticationMethods
         raise AccessTokenError
       end
 
-      if !@access_token.authorized_for_account?(@domain_root_account)
-        raise AccessTokenError
-      end
+      account = access_token_account(@domain_root_account, @access_token)
+      raise AccessTokenError unless @access_token.authorized_for_account?(account)
 
       @current_user = @access_token.user
-      @current_pseudonym = @current_user.find_pseudonym_for_account(@domain_root_account, true)
+      @current_pseudonym = SisPseudonym.for(@current_user, @domain_root_account, type: :implicit, require_sis: false)
 
       unless @current_user && @current_pseudonym
         raise AccessTokenError
       end
+      validate_scopes
       @access_token.used!
 
       RequestContextGenerator.add_meta_header('at', @access_token.global_id)
       RequestContextGenerator.add_meta_header('dk', @access_token.global_developer_key_id) if @access_token.developer_key_id
+    end
+  end
+
+  def access_token_account(domain_root_account, access_token)
+    dev_key_account_id = access_token.dev_key_account_id
+    if dev_key_account_id.blank? || domain_root_account.id == dev_key_account_id
+      domain_root_account
+    else
+      get_context
+      (@context && Context.get_account(@context)) || domain_root_account
     end
   end
 
@@ -205,7 +235,7 @@ module AuthenticationMethods
         params_without_become = params.dup
         params_without_become.delete_if {|k,v| [ 'become_user_id', 'become_teacher', 'become_student', 'me' ].include? k }
         params_without_become[:only_path] = true
-        session[:masquerade_return_to] = url_for(params_without_become.to_hash)
+        session[:masquerade_return_to] = url_for(params_without_become.to_unsafe_h)
         return redirect_to user_masquerade_url(request_become_user.id)
       end
     end
@@ -221,7 +251,7 @@ module AuthenticationMethods
         @real_current_user = @current_user
         @current_user = user
         @real_current_pseudonym = @current_pseudonym
-        @current_pseudonym = @current_user.find_pseudonym_for_account(@domain_root_account, true)
+        @current_pseudonym = SisPseudonym.for(@current_user, @domain_root_account, type: :implicit, require_sis: false)
         logger.warn "#{@real_current_user.name}(#{@real_current_user.id}) impersonating #{@current_user.name} on page #{request.url}"
       elsif api_request?
         # fail silently for UI, but not for API
@@ -322,11 +352,4 @@ module AuthenticationMethods
     reset_session
     saved.each_pair { |k, v| session[k] = v }
   end
-
-  # this really belongs on Login::Shared, but is left here for plugins that
-  # have always overridden it here
-  def delegated_auth_redirect_uri(uri)
-    uri
-  end
-
 end

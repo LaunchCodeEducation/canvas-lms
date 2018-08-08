@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require 'spec_helper'
 
 describe ModeratedGrading::ProvisionalGrade do
@@ -6,7 +23,7 @@ describe ModeratedGrading::ProvisionalGrade do
       grade.scorer = scorer
     end
   end
-  let(:submission) { assignment.submissions.create!(user: student) }
+  let(:submission) { assignment.submissions.find_by!(user: student) }
   let(:assignment) { course.assignments.create! submission_types: 'online_text_entry' }
   let(:account) { a = account_model; a}
   let(:course) { c = account.courses.create!; c  }
@@ -38,6 +55,8 @@ describe ModeratedGrading::ProvisionalGrade do
         'graded_at' => nil,
         'scorer_id' => provisional_grade.scorer_id,
         'graded_anonymously' => nil,
+        'entered_grade' => 'A',
+        'entered_score' => 100.0,
         'final' => false,
         'grade_matches_current_submission' => true
       })
@@ -207,8 +226,8 @@ describe ModeratedGrading::ProvisionalGrade do
       expect(sub.grade).to be_nil
       expect(sub.graded_anonymously).to be_nil
 
-      pg.expects(:publish_submission_comments!).once
-      pg.expects(:publish_rubric_assessments!).once
+      expect(pg).to receive(:publish_submission_comments!).once
+      expect(pg).to receive(:publish_rubric_assessments!).once
       pg.publish!
 
       sub.reload
@@ -219,6 +238,22 @@ describe ModeratedGrading::ProvisionalGrade do
       expect(sub.score).to eq 80
       expect(sub.grade).not_to be_nil
       expect(sub.graded_anonymously).to eq true
+    end
+
+    context 'for a moderated assignment' do
+      before(:each) do
+        assignment.update!(moderated_grading: true, grader_count: 2)
+      end
+
+      it 'publishes a provisional grade' do
+        sub = submission_model(assignment: assignment, user: student)
+        provisional_grade = sub.find_or_create_provisional_grade!(scorer, score: 80, graded_anonymously: true)
+
+        provisional_grade.publish!
+        sub.reload
+
+        expect(sub.workflow_state).to eq 'graded'
+      end
     end
   end
 
@@ -277,16 +312,22 @@ describe ModeratedGrading::ProvisionalGrade do
 
       test_copy_to_final_mark
 
-      expect(RubricAssessment.find_by_id(fa)).to be_nil
-      expect(SubmissionComment.find_by_id(fc)).to be_nil
+      expect(RubricAssessment.find_by(id: fa.id)).to be_nil
+      expect(SubmissionComment.find_by(id: fc.id)).to be_nil
     end
 
-    it "generates crocodoc_attachment_info with all participants" do
-      att = stub(:id => 100, :crocodoc_available? => true)
-      crocodoc_ids = [@sub.user, @moderator, @scorer].map(&:crocodoc_id!)
-      att.expects(:crocodoc_url).with(@moderator, crocodoc_ids).returns('fake_url')
+    it "generates attachment_info with all participants" do
+      att = double(:id => 100, :crocodoc_available? => true, :canvadoc_available? => true)
+      whitelist = [@sub.user, @moderator, @scorer].map { |u| u.moderated_grading_ids(true) }
+      url_opts = {enable_annotations: true, moderated_grading_whitelist: whitelist}
+      expect(att).to receive(:crocodoc_url).with(@moderator, url_opts).and_return('fake_url')
+      expect(att).to receive(:canvadoc_url).with(@moderator, url_opts).and_return('fake_canvadoc_url')
       final_mark = @pg.copy_to_final_mark!(@moderator)
-      expect(final_mark.crocodoc_attachment_info(@moderator, att)).to eq({:attachment_id => 100, :crocodoc_url => 'fake_url'})
+      expect(final_mark.attachment_info(@moderator, att)).to eq({
+        attachment_id: 100,
+        crocodoc_url: 'fake_url',
+        canvadoc_url: 'fake_canvadoc_url'
+      })
     end
   end
 end
@@ -319,9 +360,22 @@ describe ModeratedGrading::NullProvisionalGrade do
   end
 
   it "should return the original submission's submission comments" do
-    sub = stub
-    comments = stub
-    sub.expects(:submission_comments).returns(comments)
+    sub = double
+    comments = double
+    expect(sub).to receive(:submission_comments).and_return(comments)
     expect(ModeratedGrading::NullProvisionalGrade.new(sub, 1, false).submission_comments).to eq(comments)
+  end
+
+  describe 'scorer' do
+    it 'returns the associated scorer if scorer_id is present' do
+      scorer = user_factory(active_user: true)
+      scored_grade = ModeratedGrading::NullProvisionalGrade.new(nil, scorer.id, true)
+      expect(scored_grade.scorer).to eq scorer
+    end
+
+    it 'returns nil if scorer_id is nil' do
+      scored_grade = ModeratedGrading::NullProvisionalGrade.new(nil, nil, true)
+      expect(scored_grade.scorer).to be nil
+    end
   end
 end

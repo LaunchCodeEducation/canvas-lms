@@ -1,36 +1,57 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
+  'react'
+  'react-dom'
   'INST'
   'i18n!assignment'
-  'compiled/views/ValidatedFormView'
+  '../ValidatedFormView'
   'underscore'
   'jquery'
   'jsx/shared/helpers/numberHelper'
-  'compiled/util/round'
+  '../../util/round'
   'jsx/shared/rce/RichContentEditor'
   'jst/assignments/EditView'
-  'compiled/userSettings'
-  'compiled/models/TurnitinSettings'
-  'compiled/models/VeriCiteSettings'
-  'compiled/views/assignments/TurnitinSettingsDialog'
-  'compiled/fn/preventDefault'
-  'compiled/views/calendar/MissingDateDialogView'
-  'compiled/views/assignments/AssignmentGroupSelector'
-  'compiled/views/assignments/GroupCategorySelector'
-  'compiled/jquery/toggleAccessibly'
-  'compiled/views/editor/KeyboardShortcuts'
+  '../../userSettings'
+  '../../models/TurnitinSettings'
+  '../../models/VeriCiteSettings'
+  './TurnitinSettingsDialog'
+  '../../fn/preventDefault'
+  '../calendar/MissingDateDialogView'
+  './AssignmentGroupSelector'
+  './GroupCategorySelector'
+  '../../jquery/toggleAccessibly'
+  '../editor/KeyboardShortcuts'
   'jsx/shared/conditional_release/ConditionalRelease'
-  'compiled/util/deparam'
-  'compiled/util/SisValidationHelper'
+  '../../util/deparam'
+  '../../util/SisValidationHelper'
   'jsx/assignments/AssignmentConfigurationTools'
+  'jsx/assignments/ModeratedGradingFormFieldGroup'
   'jqueryui/dialog'
   'jquery.toJSON'
-  'compiled/jquery.rails_flash_notifications'
-  'compiled/behaviors/tooltip'
-], (INST, I18n, ValidatedFormView, _, $, numberHelper, round, RichContentEditor, EditViewTemplate,
-  userSettings, TurnitinSettings, VeriCiteSettings, TurnitinSettingsDialog,
-  preventDefault, MissingDateDialog, AssignmentGroupSelector,
-  GroupCategorySelector, toggleAccessibly, RCEKeyboardShortcuts,
-  ConditionalRelease, deparam, SisValidationHelper, SimilarityDetectionTools) ->
+  '../../jquery.rails_flash_notifications'
+  '../../behaviors/tooltip'
+], (React, ReactDOM, INST, I18n, ValidatedFormView, _, $, numberHelper, round,
+  RichContentEditor, EditViewTemplate, userSettings, TurnitinSettings,
+  VeriCiteSettings, TurnitinSettingsDialog, preventDefault, MissingDateDialog,
+  AssignmentGroupSelector, GroupCategorySelector, toggleAccessibly,
+  RCEKeyboardShortcuts, ConditionalRelease, deparam, SisValidationHelper,
+  SimilarityDetectionTools, ModeratedGradingFormFieldGroup) ->
 
   RichContentEditor.preloadRemoteModule()
 
@@ -46,6 +67,7 @@ define [
     ONLINE_SUBMISSION_TYPES = '#assignment_online_submission_types'
     NAME = '[name="name"]'
     ALLOW_FILE_UPLOADS = '#assignment_online_upload'
+    ALLOW_TEXT_ENTRY = '#assignment_text_entry'
     RESTRICT_FILE_UPLOADS = '#assignment_restrict_file_extensions'
     RESTRICT_FILE_UPLOADS_OPTIONS = '#restrict_file_extensions_container'
     ALLOWED_EXTENSIONS = '#allowed_extensions_container'
@@ -68,9 +90,9 @@ define [
     PEER_REVIEWS_BOX = '#assignment_peer_reviews'
     INTRA_GROUP_PEER_REVIEWS = '#intra_group_peer_reviews_toggle'
     GROUP_CATEGORY_BOX = '#has_group_category'
-    MODERATED_GRADING_BOX = '#assignment_moderated_grading'
     CONDITIONAL_RELEASE_TARGET = '#conditional_release_target'
     SIMILARITY_DETECTION_TOOLS = '#similarity_detection_tools'
+    ANONYMOUS_GRADING_BOX = '#assignment_anonymous_grading'
 
     els: _.extend({}, @::els, do ->
       els = {}
@@ -97,10 +119,10 @@ define [
       els["#{EXTERNAL_TOOLS_CONTENT_ID}"] = '$externalToolsContentId'
       els["#{ASSIGNMENT_POINTS_POSSIBLE}"] = '$assignmentPointsPossible'
       els["#{ASSIGNMENT_POINTS_CHANGE_WARN}"] = '$pointsChangeWarning'
-      els["#{MODERATED_GRADING_BOX}"] = '$moderatedGradingBox'
       els["#{CONDITIONAL_RELEASE_TARGET}"] = '$conditionalReleaseTarget'
       els["#{SIMILARITY_DETECTION_TOOLS}"] = '$similarityDetectionTools'
       els["#{SECURE_PARAMS}"] = '$secureParams'
+      els["#{ANONYMOUS_GRADING_BOX}"] = '$anonymousGradingBox'
       els
     )
 
@@ -117,9 +139,9 @@ define [
       events["change #{ALLOW_FILE_UPLOADS}"] = 'toggleRestrictFileUploads'
       events["click #{EXTERNAL_TOOLS_URL}_find"] = 'showExternalToolsDialog'
       events["change #assignment_points_possible"] = 'handlePointsChange'
-      events["change #{PEER_REVIEWS_BOX}"] = 'handleModeratedGradingChange'
-      events["change #{MODERATED_GRADING_BOX}"] = 'handleModeratedGradingChange'
+      events["change #{PEER_REVIEWS_BOX}"] = 'togglePeerReviewsAndGroupCategoryEnabled'
       events["change #{GROUP_CATEGORY_BOX}"] = 'handleGroupCategoryChange'
+      events["change #{ANONYMOUS_GRADING_BOX}"] = 'handleAnonymousGradingChange'
       if ENV.CONDITIONAL_RELEASE_SERVICE_ENABLED
         events["change"] = 'onChange'
       events
@@ -185,25 +207,38 @@ define [
 
     handleGroupCategoryChange: ->
       isGrouped = @$groupCategoryBox.prop('checked')
+      isAnonymous = @$anonymousGradingBox.prop('checked')
+
+      if isAnonymous
+        @$groupCategoryBox.prop('checked', false)
+      else if isGrouped
+        @disableCheckbox(@$anonymousGradingBox, I18n.t('Anonymous grading cannot be enabled for group assignments'))
+      else
+        @enableCheckbox(@$anonymousGradingBox)
+
       @$intraGroupPeerReviews.toggleAccessibly(isGrouped)
-      @handleModeratedGradingChange()
+      @togglePeerReviewsAndGroupCategoryEnabled()
 
-    handleModeratedGradingChange: =>
-      if !ENV?.HAS_GRADED_SUBMISSIONS
-        if @$moderatedGradingBox.prop('checked')
-          @disableCheckbox(@$peerReviewsBox, I18n.t("Peer reviews cannot be enabled for moderated assignments"))
-          @disableCheckbox(@$groupCategoryBox, I18n.t("Group assignments cannot be enabled for moderated assignments"))
-          @enableCheckbox(@$moderatedGradingBox)
-        else
-          if @$groupCategoryBox.prop('checked')
-            @disableCheckbox(@$moderatedGradingBox,  I18n.t("Moderated grading cannot be enabled for group assignments"))
-          else if @$peerReviewsBox.prop('checked')
-            @disableCheckbox(@$moderatedGradingBox, I18n.t("Moderated grading cannot be enabled for peer reviewed assignments"))
-          else
-            @enableCheckbox(@$moderatedGradingBox)
+    handleAnonymousGradingChange: ->
+      isGrouped = @$groupCategoryBox.prop('checked')
+      isAnonymous = !isGrouped && @$anonymousGradingBox.prop('checked')
+      @assignment.anonymousGrading(isAnonymous)
 
-          @enableCheckbox(@$peerReviewsBox)
-          @enableCheckbox(@$groupCategoryBox)
+      if isGrouped
+        @$anonymousGradingBox.prop('checked', false)
+      else if @assignment.anonymousGrading() || @assignment.gradersAnonymousToGraders()
+        @disableCheckbox(@$groupCategoryBox, I18n.t('Group assignments cannot be enabled for anonymously graded assignments'))
+      else if !@assignment.moderatedGrading()
+        @enableCheckbox(@$groupCategoryBox)
+
+    togglePeerReviewsAndGroupCategoryEnabled: =>
+      if @assignment.moderatedGrading()
+        @disableCheckbox(@$peerReviewsBox, I18n.t("Peer reviews cannot be enabled for moderated assignments"))
+        @disableCheckbox(@$groupCategoryBox, I18n.t("Group assignments cannot be enabled for moderated assignments"))
+      else
+        @enableCheckbox(@$peerReviewsBox)
+        @enableCheckbox(@$groupCategoryBox)
+      @renderModeratedGradingFormFieldGroup()
 
     setDefaultsIfNew: =>
       if @assignment.isNew()
@@ -275,7 +310,8 @@ define [
         @handleOnlineSubmissionTypeChange()
 
     handleOnlineSubmissionTypeChange: (env) =>
-      showConfigTools = @$onlineSubmissionTypes.find(ALLOW_FILE_UPLOADS).attr('checked')
+      showConfigTools = @$onlineSubmissionTypes.find(ALLOW_FILE_UPLOADS).attr('checked') ||
+        @$onlineSubmissionTypes.find(ALLOW_TEXT_ENTRY).attr('checked')
       @$similarityDetectionTools.toggleAccessibly showConfigTools && ENV.PLAGIARISM_DETECTION_PLATFORM
 
     afterRender: =>
@@ -283,22 +319,27 @@ define [
       @$peerReviewsBox = $("#{PEER_REVIEWS_BOX}")
       @$intraGroupPeerReviews = $("#{INTRA_GROUP_PEER_REVIEWS}")
       @$groupCategoryBox = $("#{GROUP_CATEGORY_BOX}")
+      @$anonymousGradingBox = $("#{ANONYMOUS_GRADING_BOX}")
+      @renderModeratedGradingFormFieldGroup()
+      @$graderCommentsVisibleToGradersBox = $('#assignment_grader_comment_visibility')
+      @$gradersAnonymousToGradersLabel = $('label[for="assignment_graders_anonymous_to_graders"]')
 
       @similarityDetectionTools = SimilarityDetectionTools.attach(
             @$similarityDetectionTools.get(0),
             parseInt(ENV.COURSE_ID),
             @$secureParams.val(),
             parseInt(ENV.SELECTED_CONFIG_TOOL_ID),
-            ENV.SELECTED_CONFIG_TOOL_TYPE)
+            ENV.SELECTED_CONFIG_TOOL_TYPE,
+            ENV.REPORT_VISIBILITY_SETTING)
 
       @_attachEditorToDescription()
       @addTinyMCEKeyboardShortcuts()
-      @handleModeratedGradingChange()
+      @togglePeerReviewsAndGroupCategoryEnabled()
       @handleOnlineSubmissionTypeChange()
       @handleSubmissionTypeChange()
+      @handleGroupCategoryChange()
+      @handleAnonymousGradingChange()
 
-      if ENV?.HAS_GRADED_SUBMISSIONS
-        @disableCheckbox(@$moderatedGradingBox, I18n.t("Moderated grading setting cannot be changed if graded submissions exist"))
       if ENV.CONDITIONAL_RELEASE_SERVICE_ENABLED
         @conditionalReleaseEditor = ConditionalRelease.attach(
           @$conditionalReleaseTarget.get(0),
@@ -317,10 +358,9 @@ define [
         postToSISEnabled: ENV?.POST_TO_SIS or false
         postToSISName: ENV.SIS_NAME
         isLargeRoster: ENV?.IS_LARGE_ROSTER or false
-        submissionTypesFrozen: _.include(data.frozenAttributes, 'submission_types')
         conditionalReleaseServiceEnabled: ENV?.CONDITIONAL_RELEASE_SERVICE_ENABLED or false
         lockedItems: @lockedItems
-
+        anonymousGradingEnabled: ENV?.ANONYMOUS_GRADING_ENABLED or false
 
     _attachEditorToDescription: =>
       return if @lockedItems.content
@@ -458,6 +498,8 @@ define [
       errors = @_validateSubmissionTypes data, errors
       errors = @_validateAllowedExtensions data, errors
       errors = @assignmentGroupSelector.validateBeforeSave(data, errors)
+      Object.assign(errors, @validateFinalGrader(data))
+      Object.assign(errors, @validateGraderCount(data))
       unless ENV?.IS_LARGE_ROSTER
         errors = @groupCategorySelector.validateBeforeSave(data, errors)
       errors = @_validatePointsPossible(data, errors)
@@ -472,6 +514,24 @@ define [
         errors['conditional_release'] = crErrors if crErrors
       errors
 
+    validateFinalGrader: (data) =>
+      errors = {}
+      if data.moderated_grading == 'on' and !data.final_grader_id
+        errors.final_grader_id = [{ message: I18n.t('Grader is required') }]
+
+      errors
+
+    validateGraderCount: (data) =>
+      errors = {}
+      return errors unless data.moderated_grading == 'on'
+
+      if !data.grader_count
+        errors.grader_count = [{ message: I18n.t('Grader count is required') }]
+      else if data.grader_count == '0'
+        errors.grader_count = [{ message: I18n.t('Grader count cannot be 0') }]
+
+      errors
+
     _validateTitle: (data, errors) =>
       return errors if _.contains(@model.frozenAttributes(), "title")
 
@@ -484,6 +544,7 @@ define [
         postToSIS: post_to_sis
         maxNameLength: max_name_length
         name: data.name
+        maxNameLengthRequired: ENV.MAX_NAME_LENGTH_REQUIRED_FOR_ACCOUNT
       })
 
       if !data.name or $.trim(data.name.toString()).length == 0
@@ -541,7 +602,7 @@ define [
       errors
 
     _validateExternalTool: (data, errors) =>
-      if data.submission_type == 'external_tool' and $.trim(data.external_tool_tag_attributes?.url?.toString()).length == 0
+      if data.submission_type == 'external_tool' && data.grading_type != 'not_graded' && $.trim(data.external_tool_tag_attributes?.url?.toString()).length == 0
         errors["external_tool_tag_attributes[url]"] = [
           message: I18n.t 'External Tool URL cannot be left blank'
         ]
@@ -599,3 +660,46 @@ define [
       $(this).change (event) ->
         this.value = lockedValue
         event.stopPropagation()
+
+    handleModeratedGradingChanged: (isModerated) =>
+      @assignment.moderatedGrading(isModerated)
+      @togglePeerReviewsAndGroupCategoryEnabled()
+
+      if isModerated
+        @$gradersAnonymousToGradersLabel.show() if @assignment.graderCommentsVisibleToGraders()
+      else
+        @uncheckAndHideGraderAnonymousToGraders()
+
+    handleGraderCommentsVisibleToGradersChanged: (commentsVisible) =>
+      @assignment.graderCommentsVisibleToGraders(commentsVisible)
+      if commentsVisible
+        @$gradersAnonymousToGradersLabel.show()
+      else
+        @uncheckAndHideGraderAnonymousToGraders()
+
+    uncheckAndHideGraderAnonymousToGraders: =>
+      @assignment.gradersAnonymousToGraders(false)
+      $('#assignment_graders_anonymous_to_graders').prop('checked', false)
+      @$gradersAnonymousToGradersLabel.hide()
+
+    renderModeratedGradingFormFieldGroup: ->
+      return if !ENV.MODERATED_GRADING_ENABLED || @assignment.isQuizLTIAssignment()
+
+      props =
+        availableModerators: ENV.AVAILABLE_MODERATORS
+        currentGraderCount: @assignment.get('grader_count')
+        finalGraderID: @assignment.get('final_grader_id')
+        graderCommentsVisibleToGraders: @assignment.graderCommentsVisibleToGraders()
+        graderNamesVisibleToFinalGrader: !!@assignment.get('grader_names_visible_to_final_grader')
+        gradedSubmissionsExist: ENV.HAS_GRADED_SUBMISSIONS
+        isGroupAssignment: !!@$groupCategoryBox.prop('checked')
+        isPeerReviewAssignment: !!@$peerReviewsBox.prop('checked')
+        locale: ENV.LOCALE
+        moderatedGradingEnabled: @assignment.moderatedGrading()
+        maxGraderCount: ENV.MODERATED_GRADING_MAX_GRADER_COUNT
+        onGraderCommentsVisibleToGradersChange: @handleGraderCommentsVisibleToGradersChanged
+        onModeratedGradingChange: @handleModeratedGradingChanged
+
+      formFieldGroup = React.createElement(ModeratedGradingFormFieldGroup, props)
+      mountPoint = document.querySelector("[data-component='ModeratedGradingFormFieldGroup']")
+      ReactDOM.render(formFieldGroup, mountPoint)

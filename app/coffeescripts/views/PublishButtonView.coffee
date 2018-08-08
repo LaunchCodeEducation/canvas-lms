@@ -1,7 +1,24 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18n!publish_btn_module'
   'jquery'
-  'compiled/fn/preventDefault'
+  '../fn/preventDefault'
   'Backbone'
   'str/htmlEscape'
   'jquery.instructure_forms'
@@ -13,9 +30,16 @@ define [
     publishedClass: 'btn-published'
     unpublishClass: 'btn-unpublish'
 
+    # This value allows the text to include the item title
+    @optionProperty 'title'
+
     # These values allow the default text to be overridden if necessary
     @optionProperty 'publishText'
     @optionProperty 'unpublishText'
+
+    # This indicates that the button is disabled specifically because it is
+    # associated with an assignment that the current user cannot moderate
+    @optionProperty 'disabledForModeration'
 
     tagName:   'button'
     className: 'btn'
@@ -118,6 +142,16 @@ define [
       @$icon.removeClass 'icon-publish icon-unpublish icon-unpublished'
       @$el.removeAttr 'aria-label'
 
+    publishLabel: ->
+      return @publishText if @publishText
+      return I18n.t('Unpublished.  Click to publish %{title}.', title: @title) if @title
+      I18n.t('Unpublished.  Click to publish.')
+
+    unpublishLabel: ->
+      return @unpublishText if @unpublishText
+      return I18n.t('Published.  Click to unpublish %{title}.', title: @title) if @title
+      I18n.t('Published.  Click to unpublish.')
+
     # render
 
     render: ->
@@ -138,16 +172,16 @@ define [
     renderPublish: ->
       @renderState
         text:        I18n.t 'buttons.publish', 'Publish'
-        label:       @publishText || I18n.t 'Unpublished. Click to publish.'
+        label:       @publishLabel()
         buttonClass: @publishClass
         iconClass:   'icon-unpublish'
 
     renderPublished: ->
       @renderState
         text:        I18n.t 'buttons.published', 'Published'
-        label:       @unpublishText || I18n.t 'Published. Click to unpublish.'
+        label:       @unpublishLabel()
         buttonClass: @publishedClass
-        iconClass:   'icon-publish'
+        iconClass:   'icon-publish icon-Solid'
 
     renderUnpublish: ->
       text = I18n.t 'buttons.unpublish', 'Unpublish'
@@ -162,7 +196,7 @@ define [
       @renderState
         text:        text
         buttonClass: @publishClass
-        iconClass:   'icon-publish'
+        iconClass:   'icon-publish icon-Solid'
 
     renderUnpublishing: ->
       @disable()
@@ -180,8 +214,12 @@ define [
 
       @$text.html "&nbsp;#{htmlEscape(options.text)}"
 
-      # unpublishable
-      if !@model.get('unpublishable')? or @model.get('unpublishable')
+      # uneditable because the current user cannot moderate
+      if @model.get('disabledForModeration')
+        @disableWithMessage('You are not the selected moderator for this assignment')
+
+      # unpublishable (i.e., able to be unpublished)
+      else if !@model.get('unpublishable')? or @model.get('unpublishable')
         @enable()
         @$el.attr 'title', options.text
 
@@ -189,9 +227,12 @@ define [
         if options.label
           @addAriaLabel(options.label)
 
-      # disabled
+      # editable, but cannot be unpublished because submissions exist
       else
-        @disable()
-        @$el.attr 'aria-disabled', true
-        @$el.attr 'title', @model.disabledMessage()
-        @addAriaLabel(@model.disabledMessage())
+        @disableWithMessage(@model.disabledMessage())
+
+    disableWithMessage: (message) ->
+      @disable()
+      @$el.attr 'aria-disabled', true
+      @$el.attr 'title', message
+      @addAriaLabel(message)

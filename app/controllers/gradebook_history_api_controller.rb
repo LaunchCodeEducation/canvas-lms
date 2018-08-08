@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,7 +17,6 @@
 #
 
 # @API Gradebook History
-# @beta
 #
 # API for accessing the versioned history of student submissions along with their
 # grade changes, organized by the date of the submission.

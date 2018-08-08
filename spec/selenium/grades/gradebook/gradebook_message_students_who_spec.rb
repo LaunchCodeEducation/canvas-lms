@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative '../../helpers/gradebook_common'
 require_relative '../../helpers/groups_common'
 
@@ -75,7 +92,7 @@ describe "gradebook - message students who" do
     get "/courses/#{@course.id}/gradebook"
     # set grade for first student, 3rd assignment
     # l4 because the the first two columns are part of the same grid
-    edit_grade('#gradebook_grid .container_1 .slick-row:nth-child(1) .l4', 0)
+    edit_grade('#gradebook_grid .container_1 .slick-row:nth-child(1) .b4', 0)
     open_assignment_options(2)
 
     # expect dialog to show 1 more student with the "Haven't been graded" option

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module Services
   class AddressBook
     # regarding these methods' parameters or options, generally:
@@ -40,9 +57,17 @@ module Services
       [response.user_ids, response.common_contexts]
     end
 
-    # how many users does the sender know in the context?
-    def self.count_in_context(sender, context, ignore_result=false)
-      count_recipients(sender: sender, context: context, ignore_result: ignore_result)
+    # how many users does the sender know in each of the contexts?
+    def self.count_in_contexts(sender, contexts, ignore_result=false)
+      counts = count_recipients(sender: sender, contexts: contexts, ignore_result: ignore_result)
+      # map back from normalized to argument
+      contexts.each do |ctx|
+        serialized = serialize_context(ctx)
+        if serialized != ctx
+          counts[ctx] = counts.delete(serialized)
+        end
+      end
+      counts
     end
 
     # of the users who are not in `exclude_ids` and whose name matches the
@@ -80,11 +105,12 @@ module Services
     end
 
     def self.count_recipients(params)
-      fetch("/recipients/count", query_params(params))['count'] || 0
+      return {} if params[:contexts].blank?
+      fetch("/recipients/counts", query_params(params))['counts'] || {}
     end
 
     def self.jwt # public only for testing, should not be used directly
-      Canvas::Security.create_jwt({ iat: Time.now.to_i }, nil, jwt_secret)
+      Canvas::Security.create_jwt({ iat: Time.now.to_i }, nil, jwt_secret, :HS512)
     rescue StandardError => e
       Canvas::Errors.capture_exception(:address_book, e)
       nil
@@ -93,8 +119,7 @@ module Services
     class << self
       private
       def setting(key)
-        settings = Canvas::DynamicSettings.from_cache("address-book", expires_in: 5.minutes)
-        settings[key]
+        Canvas::DynamicSettings.find("address-book", default_ttl: 5.minutes)[key]
       rescue Imperium::TimeoutError => e
         Canvas::Errors.capture_exception(:address_book, e)
         nil
@@ -148,6 +173,10 @@ module Services
           query_params[:restricted_course_ids] = serialize_list(restricted_courses) unless restricted_courses.empty?
         end
         query_params[:in_context] = serialize_context(params[:context]) if params[:context]
+        if params[:contexts]
+          contexts = params[:contexts].map{ |ctx| serialize_context(ctx) }
+          query_params[:in_contexts] = contexts.join(',')
+        end
         query_params[:user_ids] = serialize_list(params[:user_ids]) if params[:user_ids]
         query_params[:exclude_ids] = serialize_list(params[:exclude_ids]) if params[:exclude_ids]
         query_params[:weak_checks] = 1 if params[:weak_checks]

@@ -1,6 +1,26 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import $ from 'jquery'
 import React from 'react'
+import PropTypes from 'prop-types'
 import I18n from 'i18n!course_nickname_edit'
+import TextInput from '@instructure/ui-forms/lib/components/TextInput'
 
   var CourseNicknameEdit = React.createClass({
 
@@ -11,8 +31,8 @@ import I18n from 'i18n!course_nickname_edit'
     displayName: 'CourseNicknameEdit',
 
     propTypes: {
-      nicknameInfo: React.PropTypes.object.isRequired,
-      onEnter: React.PropTypes.func
+      nicknameInfo: PropTypes.object.isRequired,
+      onEnter: PropTypes.func
     },
 
     // ===============
@@ -68,22 +88,16 @@ import I18n from 'i18n!course_nickname_edit'
 
     render () {
       return (
-        <div className='ic-Form-control'>
-          <label htmlFor='NicknameInput' className='ic-Label'>
-            {I18n.t('Nickname:')}
-          </label>
-          <input
-            id="NicknameInput"
-            type="text"
-            ref={(c) => { this.nicknameInput = c; }}
-            className="ic-Input"
-            maxLength="59"
-            placeholder={this.props.nicknameInfo.originalName}
-            value={this.state.nickname}
-            onChange={this.handleChange}
-            onKeyPress={this.onKeyPress}
-          />
-        </div>
+        <TextInput
+          id="NicknameInput"
+          label={ I18n.t('Nickname') }
+          placeholder={this.props.nicknameInfo.originalName}
+          value={this.state.nickname}
+          onChange={this.handleChange}
+          onKeyPress={this.onKeyPress}
+          inputRef={(c) => { this.nicknameInput = c }}
+          size="small"
+        />
       );
     }
 

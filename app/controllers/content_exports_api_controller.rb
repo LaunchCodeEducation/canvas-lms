@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,7 +17,6 @@
 #
 
 # @API Content Exports
-# @beta
 #
 # API for exporting courses and course content
 #
@@ -48,7 +47,7 @@
 #           }
 #         },
 #         "attachment": {
-#           "description": "attachment api object for the export package (not present until the export completes)",
+#           "description": "attachment api object for the export package (not present before the export completes or after it becomes unavailable for download.)",
 #           "example": {"url": "https://example.com/api/v1/attachments/789?download_frd=1&verifier=bG9sY2F0cyEh"},
 #           "$ref": "File"
 #         },
@@ -84,8 +83,8 @@ class ContentExportsApiController < ApplicationController
 
   # @API List content exports
   #
-  # List the past and pending content export jobs for a course, group, or user.
-  # Exports are returned newest first.
+  # A paginated list of the past and pending content export jobs for a course,
+  # group, or user. Exports are returned newest first.
   #
   # @returns [ContentExport]
   def index
@@ -129,6 +128,19 @@ class ContentExportsApiController < ApplicationController
   # @argument skip_notifications [Optional, Boolean]
   #   Don't send the notifications about the export to the user. Default: false
   #
+  # @argument select [Optional, Hash, "folders"|"files"|"attachments"|"quizzes"|"assignments"|"announcements"|"calendar_events"|"discussion_topics"|"modules"|"module_items"|"pages"|"rubrics"]
+  #   The select parameter allows exporting specific data. The keys are object types like 'files',
+  #   'folders', 'pages', etc. The value for each key is a list of object ids. An id can be an
+  #   integer or a string.
+  #
+  #   Multiple object types can be selected in the same call. However, not all object types are
+  #   valid for every export_type. Common Cartridge supports all object types. Zip and QTI only
+  #   support the object types as described below.
+  #
+  #   "folders":: Also supported for zip export_type.
+  #   "files":: Also supported for zip export_type.
+  #   "quizzes":: Also supported for qti export_type.
+  #
   # @returns ContentExport
   def create
     if authorized_action(@context, @current_user, :read)
@@ -141,7 +153,7 @@ class ContentExportsApiController < ApplicationController
       export.settings[:skip_notifications] = true if value_to_boolean(params[:skip_notifications])
 
       # ZipExporter accepts unhashed asset strings, to avoid having to instantiate all the files and folders
-      selected_content = ContentMigration.process_copy_params(params[:select]&.to_hash, true, params[:export_type] == ContentExport::ZIP) if params[:select]
+      selected_content = ContentMigration.process_copy_params(params[:select]&.to_unsafe_h, true, params[:export_type] == ContentExport::ZIP) if params[:select]
       case params[:export_type]
       when 'qti'
         export.export_type = ContentExport::QTI
@@ -167,7 +179,7 @@ class ContentExportsApiController < ApplicationController
       # recheck, since the export type influences permissions (e.g., students can download zips of non-locked files, but not common cartridges)
       return unless authorized_action(export, @current_user, :create)
 
-      opts = params.slice(:version).to_hash.with_indifferent_access
+      opts = params.permit(:version).to_unsafe_h
       export.progress = 0
       if export.save
         export.queue_api_job(opts)

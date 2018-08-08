@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 // this is responsible for gluing all the calendar parts together into a complete page
 // the only thing on the erb page should be `calendarApp.init(<contexts>, <manageContexts>);`
 import $ from 'jquery'
@@ -5,12 +23,12 @@ import Calendar from 'compiled/calendar/Calendar'
 import ReactDOM from 'react-dom'
 import React from 'react'
 import MiniCalendar from 'compiled/calendar/MiniCalendar'
-import FindAppointment from 'jsx/calendar/scheduler/components/FindAppointment'
+import FindAppointment from '../calendar/scheduler/components/FindAppointment'
 import CalendarHeader from 'compiled/views/calendar/CalendarHeader'
 import drawSidebar from 'compiled/calendar/sidebar'
 import EventDataSource from 'compiled/calendar/EventDataSource'
 import UndatedEventsList from 'compiled/calendar/UndatedEventsList'
-import configureSchedulerStore from 'jsx/calendar/scheduler/store/configureStore'
+import configureSchedulerStore from '../calendar/scheduler/store/configureStore'
 import 'compiled/jquery.kylemenu'
 
 const eventDataSource = new EventDataSource(ENV.CALENDAR.CONTEXTS)

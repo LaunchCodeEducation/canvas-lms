@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2014 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -93,13 +93,13 @@ module Lti
       if @user
         context_roles = course_enrollments.each_with_object(Set.new) { |role, set| set.add([*role_map[role.class]].join(",")) }
 
-        institution_roles = @user.roles(@root_account).map { |role| role_map[role] }
+        institution_roles = @user.roles(@root_account, true).map { |role| role_map[role] }
         if Account.site_admin.account_users_for(@user).present?
           institution_roles << role_map['siteadmin']
         end
         (context_roles + institution_roles).to_a.compact.uniq.sort.join(',')
       else
-        [role_none]
+        role_none
       end
     end
 
@@ -117,7 +117,7 @@ module Lti
       unless @current_account_enrollments
         @current_account_enrollments = []
         if @user && @context.respond_to?(:account_chain) && !@context.account_chain.empty?
-          @current_account_enrollments = AccountUser.where(user_id: @user, account_id: @context.account_chain).shard(@context.shard)
+          @current_account_enrollments = AccountUser.active.where(user_id: @user, account_id: @context.account_chain).shard(@context.shard)
         end
       end
       @current_account_enrollments
@@ -153,6 +153,10 @@ module Lti
       previous_course_ids_and_context_ids.map(&:lti_context_id).compact.join(',')
     end
 
+    def recursively_fetch_previous_lti_context_ids
+      recursively_fetch_previous_course_ids_and_context_ids.map(&:lti_context_id).compact.join(',')
+    end
+
     def previous_course_ids
       previous_course_ids_and_context_ids.map(&:id).sort.join(',')
     end
@@ -175,7 +179,8 @@ module Lti
 
     def email
       # we are using sis_email for lti2 tools, or if the 'prefer_sis_email' extension is set for LTI 1
-      e = if !lti1? || @tool&.extension_setting(nil, :prefer_sis_email)&.downcase == "true"
+      e = if !lti1? || (@tool&.extension_setting(nil, :prefer_sis_email)&.downcase ||
+            @tool&.extension_setting(:tool_configuration, :prefer_sis_email)&.downcase) == "true"
             sis_email
           end
       e || @user.email
@@ -194,5 +199,20 @@ module Lti
       ).select("id, lti_context_id")
     end
 
+    def recursively_fetch_previous_course_ids_and_context_ids
+      return [] unless @context.is_a?(Course)
+
+      # now find all parents for locked folders
+      Course.where(
+        "EXISTS (?)", ContentMigration.where(workflow_state: :imported).where("context_id = ? OR context_id IN (
+            WITH RECURSIVE t AS (
+              SELECT context_id, source_course_id FROM #{ContentMigration.quoted_table_name} WHERE context_id = ?
+              UNION
+              SELECT content_migrations.context_id, content_migrations.source_course_id FROM #{ContentMigration.quoted_table_name} INNER JOIN t ON content_migrations.context_id=t.source_course_id
+            )
+            SELECT DISTINCT context_id FROM t
+          )", @context.id, @context.id).where("content_migrations.source_course_id = courses.id")
+      ).select("id, lti_context_id")
+    end
   end
 end

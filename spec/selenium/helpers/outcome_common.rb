@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../common')
 require File.expand_path(File.dirname(__FILE__) + '/../../spec_helper')
 
@@ -16,6 +33,7 @@ module OutcomeCommon
     end
     driver.switch_to.alert.accept
     wait_for_ajaximations
+    run_jobs
   end
 
   def traverse_nested_outcomes(outcome)
@@ -112,6 +130,7 @@ module OutcomeCommon
     ## when
     # create outcome
     f('.add_outcome_link').click
+    wait_for_tiny(f('.outcomes-content textarea[name=description]'))
     outcome_name = 'first new outcome'
     outcome_description = 'new learning outcome'
     replace_content f('.outcomes-content input[name=title]'), outcome_name
@@ -154,6 +173,7 @@ module OutcomeCommon
     ## when
     # create group
     f('.add_outcome_group').click
+    wait_for_tiny(f('.outcomes-content textarea[name=description]'))
     group_title = 'my group'
     replace_content f('.outcomes-content input[name=title]'), group_title
     # submit
@@ -197,7 +217,9 @@ module OutcomeCommon
 
     fj('.outcomes-sidebar .outcome-level:first li').click
     wait_for_ajaximations
-    driver.execute_script("$('.edit_button').click()")
+    f('.edit_button').click
+    wait_for_ajaximations
+    wait_for_tiny(f('.outcomes-content textarea[name=description]'))
 
     ## when
     # edit title
@@ -210,7 +232,7 @@ module OutcomeCommon
     replace_content f('input[name="ratings[0][points]"]'), '1'
     replace_content f('input[name="mastery_points"]'), '1'
     # submit
-    driver.execute_script "$('.submit_button').click()"
+    f('.submit_button').click
     wait_for_ajaximations
 
     ## expect
@@ -253,6 +275,7 @@ module OutcomeCommon
   def should_validate_decaying_average_range
     get outcome_url
     f('.add_outcome_link').click
+    wait_for_tiny(f('.outcomes-content textarea[name=description]'))
     below_range = 0
     above_range = 100
     replace_content(f('.outcomes-content input[name=title]'), 'Decaying Average')
@@ -261,19 +284,22 @@ module OutcomeCommon
     replace_content(f('input[name=calculation_int]'), below_range)
     f('.submit_button').click
     wait_for_ajaximations
-    expect(f('.error_box')).to be_present
-    expect(fj('.error_text div').text).to include("'#{below_range}' is not a valid value")
+    error_box = f('.errorBox:not(#error_box_template)')
+    expect(error_box).to be_present
+    expect(error_box).to include_text("'#{below_range}' is not a valid value")
     # enter invalid number above range
     replace_content(f('input[name=calculation_int]'), above_range)
     f('.submit_button').click
     wait_for_ajaximations
-    expect(f('.error_box')).to be_present
-    expect(fj('.error_text div').text).to include("'#{above_range}' is not a valid value")
+    error_box = f('.errorBox:not(#error_box_template)')
+    expect(error_box).to be_present
+    expect(error_box).to include_text("'#{above_range}' is not a valid value")
   end
 
   def should_validate_n_mastery_range
     get outcome_url
     f('.add_outcome_link').click
+    wait_for_tiny(f('.outcomes-content textarea[name=description]'))
     below_range = 0
     above_range = 6
     replace_content(f('.outcomes-content input[name=title]'), 'n Number of Times')
@@ -282,14 +308,16 @@ module OutcomeCommon
     replace_content(f('input[name=calculation_int]'), below_range)
     f('.submit_button').click
     wait_for_ajaximations
-    expect(f('.error_box')).to be_present
-    expect(fj('.error_text div').text).to include("'#{below_range}' is not a valid value")
+    error_box = f('.errorBox:not(#error_box_template)')
+    expect(error_box).to be_present
+    expect(error_box).to include_text("'#{below_range}' is not a valid value")
     # enter invalid number above range
     replace_content(f('input[name=calculation_int]'), above_range)
     f('.submit_button').click
     wait_for_ajaximations
-    expect(f('.error_box')).to be_present
-    expect(fj('.error_text div').text).to include("'#{above_range}' is not a valid value")
+    error_box = f('.errorBox:not(#error_box_template)')
+    expect(error_box).to be_present
+    expect(error_box).to include_text("'#{above_range}' is not a valid value")
   end
 
   def should_create_an_outcome_group_root_level
@@ -298,6 +326,7 @@ module OutcomeCommon
     ## when
     # create group
     f('.add_outcome_group').click
+    wait_for_tiny(f('.outcomes-content textarea[name=description]'))
     group_title = 'my group'
     replace_content f('.outcomes-content input[name=title]'), group_title
     # submit
@@ -321,17 +350,21 @@ module OutcomeCommon
     ## when
     # create group
     f('.add_outcome_group').click
+    wait_for_tiny(f('.outcomes-content textarea[name=description]'))
     group_title = 'my group'
     replace_content f('.outcomes-content input[name=title]'), group_title
+    wait_for_animations
     # submit
     f(".submit_button").click
     wait_for_ajaximations
-    dismiss_flash_messages
+    dismiss_flash_messages_if_present
 
     # create nested group
     f('.add_outcome_group').click
+    wait_for_tiny(f('.outcomes-content textarea[name=description]'))
     nested_group_title = 'my nested group'
     replace_content f('.outcomes-content input[name=title]'), nested_group_title
+    wait_for_animations
     # submit
     f(".submit_button").click
     wait_for_ajaximations
@@ -363,13 +396,14 @@ module OutcomeCommon
     outcome_group_model
     get outcome_url
 
-
     fj('.outcomes-sidebar .outcome-level:first li.outcome-group').click
 
     f('.edit_button').click
+    wait_for_tiny(f('.outcomes-content textarea[name=description]'))
     expect(f('.outcomes-content input[name=title]')).to be_displayed
 
     replace_content f('.outcomes-content input[name=title]'), edited_title
+    wait_for_animations
     f('.submit_button').click
     wait_for_ajaximations
 

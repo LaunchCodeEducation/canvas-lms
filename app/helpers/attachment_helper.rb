@@ -1,32 +1,39 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
-# Canvas is free software: you can redistribute it and/or modify it under the
-# terms of the GNU Affero General Public License as published by the Free
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
 # Software Foundation, version 3 of the License.
 #
 # Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
-# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
 # details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with this program. If not, see <http://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
 module AttachmentHelper
   # returns a string of html attributes suitable for use with $.loadDocPreview
   def doc_preview_attributes(attachment, attrs={})
+    url_opts = {
+      anonymous_instructor_annotations: attrs.delete(:anonymous_instructor_annotations),
+      enable_annotations: attrs.delete(:enable_annotations),
+      moderated_grading_whitelist: attrs[:moderated_grading_whitelist]
+    }
+    url_opts[:enrollment_type] = attrs.delete(:enrollment_type) if url_opts[:enable_annotations]
+
     if attachment.crocodoc_available?
       begin
-        attrs[:crocodoc_session_url] = attachment.crocodoc_url(@current_user, attrs[:crocodoc_ids])
+        attrs[:crocodoc_session_url] = attachment.crocodoc_url(@current_user, url_opts)
       rescue => e
         Canvas::Errors.capture_exception(:crocodoc, e)
       end
     elsif attachment.canvadocable?
-      attrs[:canvadoc_session_url] = attachment.canvadoc_url(@current_user)
+      attrs[:canvadoc_session_url] = attachment.canvadoc_url(@current_user, url_opts)
     end
     attrs[:attachment_id] = attachment.id
     attrs[:mimetype] = attachment.mimetype
@@ -57,18 +64,20 @@ module AttachmentHelper
     }
   end
 
-  def render_or_redirect_to_stored_file(attachment:, verifier: nil, inline: false, redirect_to_s3: false)
-    set_cache_header(attachment)
+  def render_or_redirect_to_stored_file(attachment:, verifier: nil, inline: false)
+    set_cache_header(attachment, inline)
     if safer_domain_available?
       redirect_to safe_domain_file_url(attachment, @safer_domain_host, verifier, !inline)
-    elsif Attachment.local_storage?
+    elsif attachment.stored_locally?
       @headers = false if @files_domain
       send_file(attachment.full_filename, :type => attachment.content_type_with_encoding, :disposition => (inline ? 'inline' : 'attachment'), :filename => attachment.display_name)
-    elsif redirect_to_s3
-      redirect_to(inline ? attachment.inline_url : attachment.download_url)
-    else
+    elsif inline && attachment.can_be_proxied?
       send_file_headers!( :length=> attachment.s3object.content_length, :filename=>attachment.filename, :disposition => 'inline', :type => attachment.content_type_with_encoding)
-      render :status => 200, :text => attachment.s3object.get.body.read
+      render body: attachment.s3object.get.body.read
+    elsif inline
+      redirect_to authenticated_inline_url(attachment)
+    else
+      redirect_to authenticated_download_url(attachment)
     end
   end
 
@@ -83,12 +92,21 @@ module AttachmentHelper
     !!@safer_domain_host
   end
 
-  def set_cache_header(attachment)
-    unless attachment.content_type.match(/\Atext/) || attachment.extension == '.html' || attachment.extension == '.htm'
+  def set_cache_header(attachment, inline)
+    # TODO [RECNVS-73]
+    # instfs JWTs cannot be shared across users, so we cannot cache them across
+    # users. while most browsers will only service one user and caching
+    # independent of user would not be detrimental, we cannot guarantee that.
+    # so we can't let the browser cache the instfs redirect. we should still
+    # investigate opportunities to reuse JWTs when the same user requests the
+    # same file within a reasonable window of time, so that the URL redirected
+    # too can still take advantage of browser caching.
+    unless attachment.instfs_hosted? || attachment.content_type.match(/\Atext/) || attachment.extension == '.html' || attachment.extension == '.htm'
       cancel_cache_buster
-      #set cache to expoire in 1 day, max-age take seconds, and Expires takes a date
-      response.headers["Cache-Control"] = "private, max-age=86400"
-      response.headers["Expires"] = 1.day.from_now.httpdate
+      # set cache to expire whenever the s3 url does (or one day if local or inline proxy), max-age take seconds, and Expires takes a date
+      ttl = attachment.stored_locally? || (inline && attachment.can_be_proxied?) ? 1.day : attachment.url_ttl
+      response.headers["Cache-Control"] = "private, max-age=#{ttl.seconds.to_s}"
+      response.headers["Expires"] = ttl.from_now.httpdate
     end
   end
 

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -24,6 +24,12 @@ class AnnouncementsController < ApplicationController
   before_action :require_context, :except => :public_feed
   before_action { |c| c.active_tab = "announcements" }
 
+  def announcements_locked?
+    return true if @context.account.lock_all_announcements[:locked]
+    return false unless @context.is_a?(Course)
+    @context.lock_all_announcements?
+  end
+
   def index
     return unless authorized_action(@context, @current_user, :read)
     return if @context.class.const_defined?('TAB_ANNOUNCEMENTS') && !tab_enabled?(@context.class::TAB_ANNOUNCEMENTS)
@@ -34,16 +40,17 @@ class AnnouncementsController < ApplicationController
         add_crumb(t(:announcements_crumb, "Announcements"))
         can_create = @context.announcements.temp_record.grants_right?(@current_user, session, :create)
         js_env :permissions => {
-          :create => can_create,
+          create: can_create,
           manage_content: @context.grants_right?(@current_user, session, :manage_content),
-          :moderate => can_create
+          moderate: can_create
         }
-        js_env :is_showing_announcements => true
-        js_env :atom_feed_url => feeds_announcements_format_path((@context_enrollment || @context).feed_code, :atom)
+        js_env is_showing_announcements: true
+        js_env atom_feed_url: feeds_announcements_format_path((@context_enrollment || @context).feed_code, :atom)
+        js_env(COURSE_ID: @context.id.to_s) if @context.is_a?(Course)
+        js_env ANNOUNCEMENTS_LOCKED: announcements_locked?
 
-        if @context.is_a?(Course) && @context.grants_right?(@current_user, session, :read) && !@js_env[:COURSE_ID].present?
-          js_env :COURSE_ID => @context.id.to_s
-        end
+        js_bundle :announcements_index_v2
+        css_bundle :announcements_index
 
         set_tutorial_js_env
       end
@@ -56,7 +63,7 @@ class AnnouncementsController < ApplicationController
 
   def public_feed
     return unless get_feed_context
-    announcements = @context.announcements.active.order('posted_at DESC').limit(15).
+    announcements = @context.announcements.published.order('posted_at DESC').limit(15).
       select{|a| a.visible_for?(@current_user) }
 
     respond_to do |format|

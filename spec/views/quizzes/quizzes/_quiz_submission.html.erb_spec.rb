@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -65,7 +65,7 @@ describe "/quizzes/quizzes/_quiz_submission" do
       course_with_teacher course: @course, active_all: true
       view_context
 
-      Quizzes::Quiz.stubs(:lockdown_browser_plugin_enabled?).returns(true)
+      allow(Quizzes::Quiz).to receive(:lockdown_browser_plugin_enabled?).and_return(true)
       quiz = @course.quizzes.create!
       quiz.require_lockdown_browser = true
       quiz.require_lockdown_browser_for_results = true

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016 - 2017 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -20,28 +20,32 @@ define [
   'i18n!gradezilla'
   'jquery'
   'underscore'
+  'react'
+  'react-dom'
   'Backbone'
   'vendor/slickgrid'
-  'compiled/gradezilla/OutcomeGradebookGrid'
-  'compiled/views/gradezilla/CheckboxView'
-  'compiled/views/gradezilla/SectionMenuView'
+  '../../gradezilla/OutcomeGradebookGrid'
+  '../gradezilla/CheckboxView'
+  '../gradebook/SectionMenuView'
+  'jsx/gradezilla/default_gradebook/components/SectionFilter'
   'jst/gradezilla/outcome_gradebook'
   'vendor/jquery.ba-tinypubsub'
+  '../../jquery.rails_flash_notifications'
   'jquery.instructure_misc_plugins'
-], (I18n, $, _, {View}, Slick, Grid, CheckboxView, SectionMenuView, template, cellTemplate) ->
+], (I18n, $, _, React, ReactDOM, {View}, Slick, Grid, CheckboxView, SectionMenuView, SectionFilter, template, cellTemplate) ->
 
   Dictionary =
     exceedsMastery:
-      color : '#6a843f'
+      color : '#127A1B'
       label : I18n.t('Exceeds Mastery')
     mastery:
-      color : '#8aac53'
+      color : if ENV.use_high_contrast then '#127A1B' else '#00AC18'
       label : I18n.t('Meets Mastery')
     nearMastery:
-      color : '#e0d773'
+      color : if ENV.use_high_contrast then '#C23C0D' else '#FC5E13'
       label : I18n.t('Near Mastery')
     remedial:
-      color : '#df5b59'
+      color : '#EE0612'
       label : I18n.t('Well Below Mastery')
 
   class OutcomeGradebookView extends View
@@ -57,11 +61,14 @@ define [
     hasOutcomes: $.Deferred()
 
     # child views rendered using the {{view}} helper in the template
-    checkboxes:
-      'exceeds':         new CheckboxView(Dictionary.exceedsMastery)
-      mastery:           new CheckboxView(Dictionary.mastery)
-      'near-mastery':    new CheckboxView(Dictionary.nearMastery)
-      remedial:          new CheckboxView(Dictionary.remedial)
+    checkboxes: [
+      new CheckboxView(Dictionary.exceedsMastery),
+      new CheckboxView(Dictionary.mastery),
+      new CheckboxView(Dictionary.nearMastery),
+      new CheckboxView(Dictionary.remedial)
+    ]
+
+    ratings: []
 
     events:
       'click .sidebar-toggle': 'onSidebarToggle'
@@ -69,6 +76,9 @@ define [
     constructor: (options) ->
       super
       @_validateOptions(options)
+      if ENV.GRADEBOOK_OPTIONS.outcome_proficiency?.ratings
+        @ratings = ENV.GRADEBOOK_OPTIONS.outcome_proficiency.ratings
+        @checkboxes = @ratings.map (rating) -> new CheckboxView({color: "\##{rating.color}", label: rating.description})
 
     # Public: Show/hide the sidebar.
     #
@@ -121,10 +131,10 @@ define [
     #
     # Returns nothing.
     _attachEvents: ->
-      view.on('togglestate', @_createFilter(name)) for name, view of @checkboxes
+      view.on('togglestate', @_createFilter("rating_#{i}")) for view, i in @checkboxes
       $.subscribe('currentSection/change', Grid.Events.sectionChangeFunction(@grid))
       $.subscribe('currentSection/change', @updateExportLink)
-      @updateExportLink(@gradebook.sectionToShow)
+      @updateExportLink(@gradebook.getFilterRowsBySetting('sectionId'))
 
     # Internal: Listen for events on grid.
     #
@@ -138,7 +148,7 @@ define [
     #
     # Returns an object.
     toJSON: ->
-      _.extend({}, @checkboxes)
+      _.extend({}, checkboxes: @checkboxes)
 
     # Public: Render the view once all needed data is loaded.
     #
@@ -146,7 +156,7 @@ define [
     render: ->
       $.when(@gradebook.hasSections)
         .then(=> super)
-        .then(@_drawSectionMenu)
+        .then(@renderSectionMenu)
       $.when(@hasOutcomes).then(@renderGrid)
       this
 
@@ -156,11 +166,13 @@ define [
     #
     # Returns nothing.
     renderGrid: (response) =>
+      Grid.filter = _.range(@checkboxes.length).map (i) -> "rating_#{i}"
+      Grid.ratings = @ratings
       Grid.Util.saveOutcomes(response.linked.outcomes)
       Grid.Util.saveStudents(response.linked.users)
       Grid.Util.saveOutcomePaths(response.linked.outcome_paths)
       Grid.Util.saveSections(@gradebook.sections) # might want to put these into the api results at some point
-      [columns, rows] = Grid.Util.toGrid(response, column: { formatter: Grid.View.cell }, row: { section: @menu.currentSection })
+      [columns, rows] = Grid.Util.toGrid(response, column: { formatter: Grid.View.cell }, row: { section: @gradebook.getFilterRowsBySetting('sectionId') })
       @grid = new Slick.Grid(
         '.outcome-gradebook-wrapper',
         rows,
@@ -180,6 +192,28 @@ define [
       })
       $(".post-grades-button-placeholder").hide();
 
+    # Internal: Render Section selector.
+    # Returns nothing.
+    renderSectionMenu: =>
+      sectionList = @gradebook.sectionList()
+      mountPoint = document.querySelector('[data-component="SectionFilter"]')
+      if sectionList.length > 1
+        selectedSectionId = @gradebook.getFilterRowsBySetting('sectionId') || '0'
+        props =
+          items: sectionList
+          onSelect: @updateCurrentSection
+          selectedItemId: selectedSectionId
+          disabled: false
+
+        component = React.createElement(SectionFilter, props)
+        @sectionFilterMenu = ReactDOM.render(component, mountPoint)
+
+    updateCurrentSection: (sectionId) =>
+      @gradebook.updateCurrentSection(sectionId)
+      Grid.Events.sectionChangeFunction(@grid)(sectionId)
+      @updateExportLink(sectionId)
+      @renderSectionMenu()
+
     # Public: Load all outcome results from API.
     #
     # Returns nothing.
@@ -198,7 +232,9 @@ define [
     #
     # Returns nothing.
     _loadPage: (url, outcomes) ->
-      dfd  = $.getJSON(url)
+      dfd  = $.getJSON(url).fail((e) ->
+        $.flashError(I18n.t('There was an error fetching outcome results'))
+      )
       dfd.then (response, status, xhr) =>
         outcomes = @_mergeResponses(outcomes, response)
         if response.meta.pagination.next
@@ -224,18 +260,6 @@ define [
       response.rollups = a.rollups.concat(b.rollups)
       response
 
-    # Internal: Initialize the child SectionMenuView. This happens here because
-    #   the menu needs to wait for relevant course sections to load.
-    #
-    # Returns nothing.
-    _drawSectionMenu: =>
-      @menu = new SectionMenuView(
-        sections: @gradebook.sectionList()
-        currentSection: @gradebook.sectionToShow
-        el: $('.section-button-placeholder'),
-      )
-      @menu.render()
-
     # Internal: Create an event listener function used to filter SlickGrid results.
     #
     # name - The class name to toggle on/off (e.g. 'mastery', 'remedial').
@@ -251,5 +275,5 @@ define [
 
     updateExportLink: (section) =>
       url = "#{ENV.GRADEBOOK_OPTIONS.context_url}/outcome_rollups.csv"
-      url += "?section_id=#{section}" if section
+      url += "?section_id=#{section}" if section and section != '0'
       $('.export-content').attr('href', url)

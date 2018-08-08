@@ -1,4 +1,22 @@
 <%
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+%>
+
+<%
   content_for :page_title, @assignment.new_record? ? t(:new_assignment, "New Assignment") : @assignment.title
   content_for :right_side, render(:partial => "assignment_sidebar")
 %>
@@ -35,13 +53,16 @@
           data-id='<%= @assignment.id %>'
           class='btn <%= "published" if @assignment.published? %> <%= "disabled" unless assignment_publishing_enabled?(@assignment, @current_user) %>'>
         </button>
-        <% if can_do(@assignment, @current_user, :update) %>
-          <a href="<%= edit_polymorphic_path([@context, @assignment]) %>" class='btn edit_assignment_link'>
+        <% if @context.grants_right?(@current_user, :manage_assignments) %>
+          <a href="<%= edit_polymorphic_path([@context, @assignment]) %>" class='btn edit_assignment_link<%= ' disabled' unless can_do(@assignment, @current_user, :update) %>'>
             <i class='icon-edit'></i> <%= t('links.edit', 'Edit') %>
+            <% unless can_do(@assignment, @current_user, :update) %>
+              <span class="screenreader-only">You are not the selected moderator for this assignment</span>
+            <% end %>
           </a>
         <% end %>
         <%= assignment_submission_button(@assignment, @current_user, @current_user_submission) %>
-        <% if @assignment.moderated_grading? && can_do(@context, @current_user, :moderate_grades) %>
+        <% if show_moderation_link %>
           <a
             href='<%= course_assignment_moderate_url(@context, @assignment) %>'
             id="moderated_grading_button"
@@ -54,8 +75,7 @@
 
         <% if @assignment_menu_tools.present? %>
           <a class="al-trigger btn" role="button" aria-haspopup="true" aria-owns="toolbar-1" href="#">
-            <i class="icon-settings"></i>
-            <i class="icon-mini-arrow-down"></i>
+            <i class="icon-more" aria-hidden="true"></i>
             <span class="screenreader-only"><%= t('manage', 'Manage') %></span>
           </a>
           <ul id="toolbar-1" class="al-options" role="menu" tabindex="0" aria-hidden="true" aria-expanded="false">
@@ -73,9 +93,7 @@
         </h1>
       </div>
       <div class='assignment-buttons'>
-        <span style="display: inline-block">
-          <%= render "shared/mark_as_done" %>
-        </span>
+        <%= render "shared/mark_as_done" %>
         <%= assignment_submission_button(@assignment, @current_user, @current_user_submission) %>
       </div>
     </div>
@@ -127,7 +145,7 @@
 
   <div class="clear"></div>
 
-  <% description = !@assignment.description.blank? ? user_content(@assignment.description) : t('defaults.no_content', "No Content") %>
+  <% description = !@assignment.description.blank? ? public_user_content(@assignment.description) : t('defaults.no_content', "No Content") %>
   <div class="description user_content <%= can_do(@context, @current_user, :read_as_admin) ? "teacher-version" : "student-version" %>"><%= description %></div>
 
   <% if can_do(@context, @current_user, :read_as_admin) %>
@@ -216,37 +234,8 @@
 
 <% end %>
 
-<% if can_do(@assignment, @current_user, :submit) && !@locked %>
-  <%= render :partial => "submit_assignment" %>
+<% if !@locked && can_do(@assignment, @current_user, :submit) %>
+  <%= render :partial => "submit_assignment", locals: { eula_url: eula_url }%>
 <% end %>
 
-<% js_bundle :edit_rubric %>
-<% css_bundle :learning_outcomes %>
-
-<% if can_do(@assignment, @current_user, :update) %>
-  <%# HACK! this is here because edit_rubric.js expects there to be a #add_rubric_url on the page and sets it's <form action="..."> to it %>
-  <a href="<%= context_url(@context, :context_rubrics_url) %>" id="add_rubric_url" style="display: none;"></a>
-<% end %>
-
-<div id="rubrics" style="margin-bottom: 10px;">
-  <% if @assignment.rubric_association && @assignment.rubric_association.rubric %>
-    <%= render :partial => "shared/rubric", :object => @assignment.rubric_association.rubric, :locals => {:association => @assignment, :rubric_association => @assignment.rubric_association, :editable => can_do(@assignment, @current_user, :update), :has_assessments => !@assignment.rubric_association.rubric_assessments.empty?, :edit_view => can_do(@assignment, @current_user, :update) } %>
-  <% end %>
-  <div style="display: none;" id="rubric_parameters">
-    <input type="hidden" name="rubric_association[association_type]" value="Assignment"/>
-    <input type="hidden" name="rubric_association[association_id]" value="<%= @assignment.id %>"/>
-    <input type="hidden" name="rubric_association[purpose]" value="grading"/>
-  </div>
-  <% if can_do(@assignment, @current_user, :update) %>
-    <%= render :partial => "shared/rubric_dialog", :locals => {:assignment => @assignment, :rubric => @assignment.rubric_association && @assignment.rubric_association.rubric} %>
-  <% end %>
-  <%= render :partial => "shared/rubric_criterion_dialog" %>
-</div>
-<%= render :partial => "shared/rubric", :object => nil, :locals => {:association => @assignment, :editable => can_do(@assignment, @current_user, :update), :has_assessments => false, :edit_view => true} %>
-<% if can_do(@assignment, @current_user, :update) %>
-  <div style="text-align: center; font-size: 1.2em; margin-top: 10px; display: none;">
-    <a href="<%= context_url(@context, :context_rubrics_url) %>" class="add_rubric_link rubric" style="<%= hidden if @assignment.rubric_association %>"><%= t 'links.assign_rubric', 'Assign Rubric' %></a>
-  </div>
-  <%= render :partial => "shared/rubric_forms" %>
-<% end %>
-<%= render :partial => "shared/sequence_footer", :locals => {:asset => @assignment} if !@assignment.context_module_tags.empty? %>
+<%= render partial: "shared/rubrics_component" %>

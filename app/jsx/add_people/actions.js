@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import { createActions } from 'redux-actions'
 import api from './api_client'
 import resolveValidationIssues from './resolveValidationIssues'
@@ -111,7 +129,7 @@ import {parseNameList, findEmailInEntry} from './helpers'
     dispatch(actions.enrollUsersStart());
     const state = getState();
     const courseId = state.courseParams.courseId;
-    const users = state.usersToBeEnrolled.map(u => u.user_id);
+    const user_tokens = state.usersToBeEnrolled.map(u => u.user_token);
     const role = state.inputParams.role
           || (state.courseParams.roles && state.courseParams.roles.length && state.courseParams.roles[0].id)
           || '';
@@ -119,7 +137,7 @@ import {parseNameList, findEmailInEntry} from './helpers'
           || (state.courseParams.sections && state.courseParams.sections.length && state.courseParams.sections[0].id)
           || '';
     const limitPrivilege = state.inputParams.limitPrivilege || false;
-    api.enrollUsers({ courseId, users, role, section, limitPrivilege })
+    api.enrollUsers({ courseId, user_tokens, role, section, limitPrivilege })
       .then(res => dispatch(actions.enrollUsersSuccess(res.data)))
       .catch(err => dispatch(actions.enrollUsersError(err)));
   };

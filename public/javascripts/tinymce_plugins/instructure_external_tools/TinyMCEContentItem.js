@@ -1,4 +1,22 @@
-define(['jquery'], function ($){
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+import $ from 'jquery'
   var LTI_MIME_TYPES = [ 'application/vnd.ims.lti.v1.ltilink', 'application/vnd.ims.lti.v1.launch+json'];
 
   function exportPropsToSelf(properties, keyMethod) {
@@ -27,6 +45,14 @@ define(['jquery'], function ($){
     exportPropsToSelf.call(this, properties);
   }
 
+  function linkText (tinyMCEContentItem) {
+    const editorSelection = window.tinyMCE && window.tinyMCE.activeEditor.selection;
+    const selectedText = editorSelection && editorSelection.getContent();
+    return selectedText ||
+           (tinyMCEContentItem.text && tinyMCEContentItem.text.trim()) ||
+           (tinyMCEContentItem.title && tinyMCEContentItem.title.trim());
+  }
+
   ContentItem.fromJSON = function (obj) {
     return new ContentItem(obj)
   };
@@ -40,6 +66,9 @@ define(['jquery'], function ($){
         webkitallowfullscreen: 'true',
         mozallowfullscreen: 'true'
       }).css({
+        width: tinyMCEContentItem.placementAdvice.displayWidth,
+        height: tinyMCEContentItem.placementAdvice.displayHeight
+      }).attr({
         width: tinyMCEContentItem.placementAdvice.displayWidth,
         height: tinyMCEContentItem.placementAdvice.displayHeight
       })).html();
@@ -60,9 +89,6 @@ define(['jquery'], function ($){
     },
 
     link: function (tinyMCEContentItem) {
-      var editorSelection = window.tinyMCE && window.tinyMCE.activeEditor && window.tinyMCE.activeEditor.contentDocument.getSelection();
-      var selectedText = editorSelection && editorSelection.anchorNode && editorSelection.anchorNode.data;
-
       var $linkContainer = $("<div/>"),
         $link = $("<a/>", {
           href: tinyMCEContentItem.url,
@@ -82,14 +108,16 @@ define(['jquery'], function ($){
           width: tinyMCEContentItem.thumbnail.width || 48,
           alt: tinyMCEContentItem.text
         }))
+      } else if (window.tinyMCE.activeEditor.selection.getContent()) {
+          $link[0].innerHTML = linkText(tinyMCEContentItem);
       } else {
-        $link.text(selectedText || tinyMCEContentItem.text);
+        // don't inject tool provided content into the page HTML
+        $link.text(linkText(tinyMCEContentItem));
       }
 
       return $linkContainer.html();
     }
   };
-
 
   function TinyMCEContentItem(contentItem) {
     this.contentItem = contentItem;
@@ -163,5 +191,4 @@ define(['jquery'], function ($){
     return new TinyMCEContentItem(contentItem);
   }
 
-  return TinyMCEContentItem;
-});
+  export default TinyMCEContentItem;

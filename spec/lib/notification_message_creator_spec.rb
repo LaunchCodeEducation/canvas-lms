@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -12,8 +12,8 @@
 # A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
 # details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with this program. If not, see <http://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
 require File.expand_path(File.dirname(__FILE__) + '/../sharding_spec_helper.rb')
@@ -36,7 +36,7 @@ end
 describe NotificationMessageCreator do
   context 'create_message' do
     before(:each) do
-      Message.any_instance.stubs(:get_template).returns('template')
+      allow_any_instance_of(Message).to receive(:get_template).and_return('template')
     end
 
     it "should only send dashboard messages for users with non-validated channels" do
@@ -308,7 +308,7 @@ describe NotificationMessageCreator do
       notification_set
       expect(NotificationPolicy.count).to eq 1
       Rails.cache.delete(['recent_messages_for', @user.id].cache_key)
-      User.stubs(:max_messages_per_day).returns(1)
+      allow(User).to receive(:max_messages_per_day).and_return(1)
       User.max_messages_per_day.times do
         messages = NotificationMessageCreator.new(@notification, @assignment, :to_list => @user).create_message
         expect(messages.select{|m| m.to != 'dashboard'}).not_to be_empty
@@ -392,7 +392,7 @@ describe NotificationMessageCreator do
   context "localization" do
     before(:each) do
       notification_set
-      Message.any_instance.stubs(:body).returns('template')
+      allow_any_instance_of(Message).to receive(:body).and_return('template')
     end
 
     it "should translate ERB in the notification" do
@@ -400,13 +400,13 @@ describe NotificationMessageCreator do
       messages.each {|m| expect(m.subject).to eql("This is 5!")}
     end
 
-    it "should respect browser locales" do
+    it "should disrespect browser locales" do
       I18n.backend.stub(piglatin: {messages: {test_name: {email: {subject: "Isthay isay ivefay!"}}}}) do
         I18n.config.available_locales_set.merge([:piglatin, 'piglatin'])
         @user.browser_locale = 'piglatin'
         @user.save(validate: false) # the validation was declared before :piglatin was added, so we skip it
         messages = NotificationMessageCreator.new(@notification, @assignment, :to_list => @user).create_message
-        messages.each {|m| expect(m.subject).to eql("Isthay isay ivefay!")}
+        messages.each {|m| expect(m.subject).to eql("This is 5!")}
         expect(I18n.locale).to eql(:en)
       end
     end
@@ -452,7 +452,7 @@ describe NotificationMessageCreator do
 
     it "should create the message on the user's shard" do
       notification_set
-      Message.any_instance.stubs(:get_template).returns('template')
+      allow_any_instance_of(Message).to receive(:get_template).and_return('template')
       @shard1.activate do
         account = Account.create!
         user_with_pseudonym(:active_all => 1, :account => account)
@@ -469,7 +469,7 @@ describe NotificationMessageCreator do
         @cc.confirm!
       end
       notification_model(category: 'TestWeekly')
-      Message.any_instance.stubs(:get_template).returns('template')
+      allow_any_instance_of(Message).to receive(:get_template).and_return('template')
       expect(@cc.notification_policies).to be_empty
       expect(@cc.delayed_messages).to be_empty
       NotificationMessageCreator.new(@notification, @user, :to_list => @user).create_message
@@ -518,7 +518,7 @@ describe NotificationMessageCreator do
           :frequency => @notification.default_frequency
         )
       end
-      Message.any_instance.stubs(:get_template).returns('template')
+      allow_any_instance_of(Message).to receive(:get_template).and_return('template')
       expect(@cc.notification_policies.reload.count).to eq 1
       NotificationMessageCreator.new(@notification, @user, :to_list => @user).create_message
       expect(@cc.notification_policies.reload.count).to eq 1

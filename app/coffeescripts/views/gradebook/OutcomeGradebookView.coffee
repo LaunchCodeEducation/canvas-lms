@@ -1,29 +1,47 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18n!gradebook'
   'jquery'
   'underscore'
   'Backbone'
   'vendor/slickgrid'
-  'compiled/gradebook/OutcomeGradebookGrid'
-  'compiled/views/gradebook/CheckboxView'
-  'compiled/views/gradebook/SectionMenuView'
+  '../../gradebook/OutcomeGradebookGrid'
+  '../gradebook/CheckboxView'
+  '../gradebook/SectionMenuView'
   'jst/gradebook/outcome_gradebook'
   'vendor/jquery.ba-tinypubsub'
+  '../../jquery.rails_flash_notifications'
   'jquery.instructure_misc_plugins'
 ], (I18n, $, _, {View}, Slick, Grid, CheckboxView, SectionMenuView, template, cellTemplate) ->
 
   Dictionary =
     exceedsMastery:
-      color : '#6a843f'
+      color : '#127A1B'
       label : I18n.t('Exceeds Mastery')
     mastery:
-      color : '#8aac53'
+      color : if ENV.use_high_contrast then '#127A1B' else '#00AC18'
       label : I18n.t('Meets Mastery')
     nearMastery:
-      color : '#e0d773'
+      color : if ENV.use_high_contrast then '#C23C0D' else '#FC5E13'
       label : I18n.t('Near Mastery')
     remedial:
-      color : '#df5b59'
+      color : '#EE0612'
       label : I18n.t('Well Below Mastery')
 
   class OutcomeGradebookView extends View
@@ -39,11 +57,14 @@ define [
     hasOutcomes: $.Deferred()
 
     # child views rendered using the {{view}} helper in the template
-    checkboxes:
-      'exceeds':         new CheckboxView(Dictionary.exceedsMastery)
-      mastery:           new CheckboxView(Dictionary.mastery)
-      'near-mastery':    new CheckboxView(Dictionary.nearMastery)
-      remedial:          new CheckboxView(Dictionary.remedial)
+    checkboxes: [
+      new CheckboxView(Dictionary.exceedsMastery),
+      new CheckboxView(Dictionary.mastery),
+      new CheckboxView(Dictionary.nearMastery),
+      new CheckboxView(Dictionary.remedial)
+    ]
+
+    ratings: []
 
     events:
       'click .sidebar-toggle': 'onSidebarToggle'
@@ -51,6 +72,9 @@ define [
     constructor: (options) ->
       super
       @_validateOptions(options)
+      if ENV.GRADEBOOK_OPTIONS.outcome_proficiency?.ratings
+        @ratings = ENV.GRADEBOOK_OPTIONS.outcome_proficiency.ratings
+        @checkboxes = @ratings.map (rating) -> new CheckboxView({color: "\##{rating.color}", label: rating.description})
 
     # Public: Show/hide the sidebar.
     #
@@ -103,7 +127,7 @@ define [
     #
     # Returns nothing.
     _attachEvents: ->
-      view.on('togglestate', @_createFilter(name)) for name, view of @checkboxes
+      view.on('togglestate', @_createFilter("rating_#{i}")) for view, i in @checkboxes
       $.subscribe('currentSection/change', Grid.Events.sectionChangeFunction(@grid))
       $.subscribe('currentSection/change', @updateExportLink)
       @updateExportLink(@gradebook.sectionToShow)
@@ -120,7 +144,7 @@ define [
     #
     # Returns an object.
     toJSON: ->
-      _.extend({}, @checkboxes)
+      _.extend({}, checkboxes: @checkboxes)
 
     # Public: Render the view once all needed data is loaded.
     #
@@ -138,6 +162,8 @@ define [
     #
     # Returns nothing.
     renderGrid: (response) =>
+      Grid.filter = _.range(@checkboxes.length).map (i) -> "rating_#{i}"
+      Grid.ratings = @ratings
       Grid.Util.saveOutcomes(response.linked.outcomes)
       Grid.Util.saveStudents(response.linked.users)
       Grid.Util.saveOutcomePaths(response.linked.outcome_paths)
@@ -180,7 +206,9 @@ define [
     #
     # Returns nothing.
     _loadPage: (url, outcomes) ->
-      dfd  = $.getJSON(url)
+      dfd  = $.getJSON(url).fail((e) ->
+        $.flashError(I18n.t('There was an error fetching outcome results'))
+      )
       dfd.then (response, status, xhr) =>
         outcomes = @_mergeResponses(outcomes, response)
         if response.meta.pagination.next

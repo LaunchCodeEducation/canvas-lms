@@ -1,12 +1,33 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
   'jquery',
   'submissions',
+  'helpers/fakeENV',
+  'jsx/gradebook/shared/helpers/GradeFormatHelper',
   'jquery.ajaxJSON'
-  ], ($, submissions) => {
+  ], ($, submissions, fakeENV, GradeFormatHelper) => {
 
   QUnit.module("submissions", {
     setup() {
       sinon.spy($, 'ajaxJSON');
+      fakeENV.setup();
       ENV.SUBMISSION = {
         user_id: 1,
         assignment_id: 27,
@@ -19,7 +40,7 @@ define([
         "  <div class='save_rubric_button'>"                  +
         "  </div>"                                            +
         "  <a class='update_submission_url'"                  +
-        "   href='my_url.com' title='POST'></a>"              +
+        "   href='submission_data_url.com' title='POST'></a>" +
         "  <textarea class='grading_value'>A</textarea>"      +
         "  <div class='submission_header'>"                   +
         "  </div>"                                            +
@@ -33,6 +54,7 @@ define([
         "  </div>"                                            +
         "  <textarea class='grading_comment'>"                +
         "  Hello again.</textarea>"                           +
+        "  <input type='checkbox' id='submission_group_comment' checked>" +
         "  <div class='save_comment_button'>"                 +
         "  </div>"                                            +
         "</div>"
@@ -43,6 +65,7 @@ define([
     teardown() {
       $.ajaxJSON.restore();
       submissions.teardown();
+      fakeENV.teardown();
       $("#fixtures").html("");
     }
   });
@@ -50,7 +73,7 @@ define([
   test('comment_change posts to update_submission_url', ()=>{
     $(".grading_comment").val('Hello again.');
     $(document).triggerHandler('comment_change');
-    equal($.ajaxJSON.getCall(0).args[0], 'my_url.com');
+    equal($.ajaxJSON.getCall(0).args[0], 'submission_data_url.com');
     equal($.ajaxJSON.getCall(0).args[1], 'POST');
   });
 
@@ -61,6 +84,7 @@ define([
     equal($.ajaxJSON.getCall(0).args[2]['submission[assignment_id]'], 27);
     equal($.ajaxJSON.getCall(0).args[2]['submission[comment]'], 'Hello again.');
     equal($.ajaxJSON.getCall(0).args[2]['submission[grade]'], undefined);
+    equal($.ajaxJSON.getCall(0).args[2]['submission[group_comment]'], '1');
   });
 
   test('comment_change does not submit if no comment', ()=>{
@@ -71,7 +95,7 @@ define([
 
   test('grading_change posts to update_submission_url', ()=>{
     $(document).triggerHandler('grading_change');
-    equal($.ajaxJSON.getCall(0).args[0], 'my_url.com');
+    equal($.ajaxJSON.getCall(0).args[0], 'submission_data_url.com');
     equal($.ajaxJSON.getCall(0).args[1], 'POST');
   });
 

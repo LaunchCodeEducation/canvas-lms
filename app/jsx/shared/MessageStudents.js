@@ -1,32 +1,50 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
+import PropTypes from 'prop-types'
 import I18n from 'i18n!message_students'
 import axios from 'axios'
-import Button from 'instructure-ui/lib/components/Button'
-import TextInput from 'instructure-ui/lib/components/TextInput'
-import TextArea from 'instructure-ui/lib/components/TextArea'
-import Modal, { ModalHeader, ModalBody, ModalFooter } from 'instructure-ui/lib/components/Modal'
-import Heading from 'instructure-ui/lib/components/Heading'
-import FormField from 'instructure-ui/lib/components/FormField'
-import Alert from 'instructure-ui/lib/components/Alert'
+import Button from '@instructure/ui-buttons/lib/components/Button'
+import TextInput from '@instructure/ui-forms/lib/components/TextInput'
+import TextArea from '@instructure/ui-forms/lib/components/TextArea'
+import Modal, { ModalBody, ModalFooter } from './components/InstuiModal'
+import FormField from '@instructure/ui-forms/lib/components/FormField'
+import Alert from '@instructure/ui-alerts/lib/components/Alert'
 
   class MessageStudents extends React.Component {
     static propTypes = {
       // Data for endpoint
-      body: React.PropTypes.string,
-      bulkMessage: React.PropTypes.bool,
-      contextCode: React.PropTypes.string.isRequired,
-      groupConversation: React.PropTypes.bool,
-      mode: React.PropTypes.string,
-      recipients: React.PropTypes.array,
-      subject: React.PropTypes.string,
+      body: PropTypes.string,
+      bulkMessage: PropTypes.bool,
+      contextCode: PropTypes.string.isRequired,
+      groupConversation: PropTypes.bool,
+      mode: PropTypes.string,
+      recipients: PropTypes.array,
+      subject: PropTypes.string,
 
       // Form display
-      title: React.PropTypes.string,
-      children: React.PropTypes.element,
+      title: PropTypes.string,
+      children: PropTypes.element,
 
       // Callbacks
-      onExited: React.PropTypes.func,
-      onRequestClose: React.PropTypes.func,
+      onExited: PropTypes.func,
+      onRequestClose: PropTypes.func,
     }
 
     static defaultProps = {
@@ -195,15 +213,16 @@ import Alert from 'instructure-ui/lib/components/Alert'
       if (shouldRender() && !this.state.hideAlert) {
         return (
           <div className="MessageStudents__Alert">
-            <Alert variant={variant}
+            <Alert 
+              variant={variant}
               closeButtonLabel={I18n.t('Close')}
-              isDismissable
-              onClose={this.handleAlertClose}
+              onDismiss={this.handleAlertClose}
+              transition="none"
             >
               {message}
             </Alert>
           </div>
-        )
+        );
       } else { return null }
     }
 
@@ -225,17 +244,13 @@ import Alert from 'instructure-ui/lib/components/Alert'
       return (
         <div className="MessageStudents">
           <Modal
-            isOpen={this.state.open}
+            open={this.state.open}
             transition="fade"
             label={this.props.title}
-            onRequestClose={this.props.onRequestClose}
-            closeButtonLabel={I18n.t('Close')}
+            onDismiss={this.props.onRequestClose}
             size='medium'
             onExited={this.props.onExited}
           >
-            <ModalHeader>
-              <Heading>{I18n.t('Send Message')}</Heading>
-            </ModalHeader>
             <ModalBody>
               {this.renderAlert(I18n.t("Your message was sent!"), 'success', () => {
                 return this.state.success
@@ -286,7 +301,7 @@ import Alert from 'instructure-ui/lib/components/Alert'
             </ModalFooter>
           </Modal>
         </div>
-      )
+      );
     }
   }
 

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -31,6 +31,7 @@ class SubmissionComment < ActiveRecord::Base
   validates_length_of :comment, :minimum => 1, :allow_nil => true, :allow_blank => true
 
   before_save :infer_details
+  before_save :set_edited_at
   after_save :update_participation
   after_save :check_for_media_object
   after_update :publish_other_comments_in_this_group
@@ -41,7 +42,7 @@ class SubmissionComment < ActiveRecord::Base
 
   scope :visible, -> { where(:hidden => false) }
   scope :draft, -> { where(draft: true) }
-  scope :published, -> { where("submission_comments.draft IS NOT TRUE") }
+  scope :published, -> { where(draft: false) }
   scope :after, lambda { |date| where("submission_comments.created_at>?", date) }
   scope :for_final_grade, -> { where(:provisional_grade_id => nil) }
   scope :for_provisional_grade, ->(id) { where(:provisional_grade_id => id) }
@@ -52,7 +53,7 @@ class SubmissionComment < ActiveRecord::Base
   end
 
   def publish_other_comments_in_this_group
-    return unless draft_changed?
+    return unless saved_change_to_draft?
     update_other_comments_in_this_group do |comment|
       comment.update_attributes(draft: draft)
     end
@@ -87,7 +88,7 @@ class SubmissionComment < ActiveRecord::Base
   end
 
   def check_for_media_object
-    if self.media_comment? && self.media_comment_id_changed?
+    if self.media_comment? && self.saved_change_to_media_comment_id?
       MediaObject.ensure_media_object(self.media_comment_id, {
         :user => self.author,
         :context => self.author,
@@ -130,7 +131,7 @@ class SubmissionComment < ActiveRecord::Base
     p.whenever {|record|
       # allows broadcasting when this record is initially saved (assuming draft == false) and also when it gets updated
       # from draft to final
-      (!record.draft? && (record.just_created || record.draft_changed?)) &&
+      (!record.draft? && (record.just_created || record.saved_change_to_draft?)) &&
       record.provisional_grade_id.nil? &&
       record.submission.assignment &&
       record.submission.assignment.context.available? &&
@@ -142,7 +143,7 @@ class SubmissionComment < ActiveRecord::Base
     p.dispatch :submission_comment_for_teacher
     p.to { submission.assignment.context.instructors_in_charge_of(author_id) - [author] }
     p.whenever {|record|
-      (!record.draft? && (record.just_created || record.draft_changed?)) &&
+      (!record.draft? && (record.just_created || record.saved_change_to_draft?)) &&
       record.provisional_grade_id.nil? &&
       record.submission.user_id == record.author_id
     }
@@ -165,14 +166,16 @@ class SubmissionComment < ActiveRecord::Base
     elsif !message || message.empty?
       raise "Message body cannot be blank"
     else
-      SubmissionComment.create!({
-        :comment => message,
-        :submission_id => self.submission_id,
-        :author => user,
-        :context_id => self.context_id,
-        :context_type => self.context_type,
-        :provisional_grade_id => self.provisional_grade_id
-      })
+      self.shard.activate do
+        SubmissionComment.create!({
+          :comment => message,
+          :submission_id => self.submission_id,
+          :author => user,
+          :context_id => self.context_id,
+          :context_type => self.context_type,
+          :provisional_grade_id => self.provisional_grade_id
+        })
+      end
     end
   end
 
@@ -258,9 +261,13 @@ class SubmissionComment < ActiveRecord::Base
     methods
   end
 
+  def publishable_for?(user)
+    draft? && author_id == user.id
+  end
+
   def update_participation
     # id_changed? because new_record? is false in after_save callbacks
-    if id_changed? || (hidden_changed? && !hidden?)
+    if saved_change_to_id? || (saved_change_to_hidden? && !hidden?)
       return if submission.user_id == author_id
       return if submission.assignment.deleted? || submission.assignment.muted?
       return if provisional_grade_id.present?
@@ -285,5 +292,11 @@ class SubmissionComment < ActiveRecord::Base
   private
   def skip_group_callbacks?
     !!@skip_group_callbacks
+  end
+
+  def set_edited_at
+    if comment_changed? && comment_was.present?
+      self.edited_at = Time.zone.now
+    end
   end
 end

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 class CourseForMenuPresenter
   include I18nUtilities
   include Rails.application.routes.url_helpers
@@ -24,12 +41,16 @@ class CourseForMenuPresenter
       originalName: course.name,
       courseCode: course.course_code,
       assetString: course.asset_string,
-      href: course_path(course, :invitation => course.read_attribute(:invitation)),
+      href: course_path(course, invitation: course.read_attribute(:invitation)),
+      informStudentsOfOverdueSubmissions: course.feature_enabled?(:new_gradebook),
       term: term || nil,
       subtitle: subtitle,
       id: course.id,
       image: course.feature_enabled?(:course_card_images) ? course.image : nil,
       imagesEnabled: course.feature_enabled?(:course_card_images),
+      rights: {
+        can_manage: course.grants_right?(@user, :read_as_admin)
+      },
       position: (@context && @context.feature_enabled?(:dashcard_reordering)) ? @user.dashboard_positions[course.asset_string] : nil,
       links: available_section_tabs.map do |tab|
         presenter = SectionTabPresenter.new(tab, course)

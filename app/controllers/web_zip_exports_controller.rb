@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016 Instructure, Inc.
+# Copyright (C) 2016 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,7 +17,6 @@
 #
 
 # API Web Zip Exports
-# @beta
 #
 # API for viewing offline exports for a course
 #
@@ -107,7 +106,7 @@ class WebZipExportsController < ApplicationController
 
   # @API List all web zip exports in a course
   #
-  # Lists all web zip exports in a course for the current user
+  # A paginated list of all web zip exports in a course for the current user
   #
   # @example_request
   #

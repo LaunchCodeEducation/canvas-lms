@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/common')
 
 describe "course settings" do
@@ -178,6 +195,16 @@ describe "course settings" do
       expect(f("#content")).not_to contain_link("Home")
     end
 
+    describe "move dialog" do
+      it "should return focus to cog menu button when disabling an item" do
+        get "/courses/#{@course.id}/settings#tab-navigation"
+        cog_menu_button = ff(".al-trigger")[2]
+        cog_menu_button.click                 # open the menu
+        ff(".disable_nav_item_link")[2].click    # click "Disable"
+        check_element_has_focus(cog_menu_button)
+      end
+    end
+
     it "should add a section" do
       section_name = 'new section'
       get "/courses/#{@course.id}/settings#tab-sections"
@@ -303,9 +330,25 @@ describe "course settings" do
     expect(f("#content")).not_to contain_css(".course_form button[type='submit']")
   end
 
+  it "should let a sub-account admin edit enrollment term" do
+    term = Account.default.enrollment_terms.create!(:name => "some term")
+    sub_a = Account.default.sub_accounts.create!
+    account_admin_user(:active_all => true, :account => sub_a)
+    user_session(@admin)
+
+    @course = sub_a.courses.create!
+    get "/courses/#{@course.id}/settings"
+
+    click_option('#course_enrollment_term_id', term.name)
+
+    submit_form('#course_form')
+
+    expect(@course.reload.enrollment_term).to eq term
+  end
+
   context "link validator" do
     it "should validate all the links" do
-      CourseLinkValidator.any_instance.stubs(:reachable_url?).returns(false).once # don't actually ping the links for the specs
+      allow_any_instance_of(CourseLinkValidator).to receive(:reachable_url?).and_return(false) # don't actually ping the links for the specs
 
       course_with_teacher_logged_in
       attachment_model
@@ -331,7 +374,7 @@ describe "course settings" do
       topic = @course.discussion_topics.create!(:title => "discussion title", :message => html)
       mod = @course.context_modules.create!(:name => "some module")
       tag = mod.add_item(:type => 'external_url', :url => bad_url, :title => 'pls view')
-      page = @course.wiki.wiki_pages.create!(:title => "wiki", :body => html)
+      page = @course.wiki_pages.create!(:title => "wiki", :body => html)
       quiz = @course.quizzes.create!(:title => 'quiz1', :description => html)
 
       qq = quiz.quiz_questions.create!(:question_data => aq.question_data.merge('question_name' => 'other test question'))
@@ -382,7 +425,7 @@ describe "course settings" do
         <a href='#{deleted_link}'>link</a>
       }
       @course.save!
-      page = @course.wiki.wiki_pages.create!(:title => "wikiii", :body => %{<a href='#{unpublished_link}'>link</a>})
+      page = @course.wiki_pages.create!(:title => "wikiii", :body => %{<a href='#{unpublished_link}'>link</a>})
 
       get "/courses/#{@course.id}/link_validator"
       wait_for_ajaximations

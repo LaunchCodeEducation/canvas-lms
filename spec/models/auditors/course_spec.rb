@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -25,7 +25,7 @@ describe Auditors::Course do
   let(:request_id) { 42 }
 
   before do
-    RequestContextGenerator.stubs( :request_id => request_id )
+    allow(RequestContextGenerator).to receive_messages( :request_id => request_id )
 
     @account = Account.default
     @sub_account = Account.create!(:parent_account => @account)

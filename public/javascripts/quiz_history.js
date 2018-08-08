@@ -1,10 +1,26 @@
-define([
-  'jquery' /* $ */,
-  'jquery.instructure_misc_plugins' /* fragmentChange */,
-  'jquery.templateData' /* getTemplateData */,
-  'vendor/jquery.scrollTo' /* /\.scrollTo/ */,
-  'compiled/behaviors/quiz_selectmenu'
-], function($) {
+/*
+ * Copyright (C) 2012 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+import $ from 'jquery'
+import './jquery.instructure_misc_plugins' /* fragmentChange */
+import './jquery.templateData'
+import './vendor/jquery.scrollTo'
+import 'compiled/behaviors/quiz_selectmenu'
 
   var parentWindow = {
     exists: function(){
@@ -168,7 +184,7 @@ define([
       var $total = $("#after_fudge_points_total");
       var total = 0;
       $(".display_question .user_points:visible").each(function() {
-        var points = parseFloat($(this).find("input[type=number]").val(), 10) || 0;
+        var points = parseFloat($(this).find("input.question_input").val(), 10) || 0;
         points = Math.round(points * 100.0) / 100.0;
         total = total + points;
       });
@@ -392,7 +408,7 @@ define([
       gradingForm.setInitialSnapshot(data);
     }
 
-    $(".question_holder .user_points input[type=number],.question_holder .question_neutral_comment .question_comment_text textarea").change(function() {
+    $(".question_holder .user_points .question_input,.question_holder .question_neutral_comment .question_comment_text textarea").change(function() {
       var $question = $(this).parents(".display_question");
       var questionId = $question.attr('id');
       gradingForm.updateSnapshotFor($question);
@@ -441,6 +457,3 @@ define([
       }
     });
   }
-
-});
-

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -30,9 +30,20 @@ describe AssignmentOverride do
     @override_student.save!
 
     @override.destroy
+    @override_student.reload
     expect(AssignmentOverride.where(id: @override).first).not_to be_nil
-    expect(@override.workflow_state).to eq 'deleted'
-    expect(AssignmentOverrideStudent.where(:id => @override_student).first).to be_nil
+    expect(@override).to be_deleted
+    expect(AssignmentOverrideStudent.where(:id => @override_student).first).not_to be_nil
+    expect(@override_student).to be_deleted
+  end
+
+  it 'should allow deletes to invalid objects' do
+    override = assignment_override_model(course: @course)
+    # make it invalid
+    AssignmentOverride.where(id: override).update_all(set_type: 'potato')
+    expect(override.reload).to be_invalid
+    override.destroy
+    expect{ override.destroy }.not_to raise_error
   end
 
   it "should default set_type to adhoc" do
@@ -85,6 +96,8 @@ describe AssignmentOverride do
     @override_student.save!
 
     @override.destroy
+    expect(@override_student.reload).to be_deleted
+
     @override2 = assignment_override_model(:assignment => @assignment)
     @override_student2 = @override2.assignment_override_students.build
     @override_student2.user = @student
@@ -179,8 +192,8 @@ describe AssignmentOverride do
 
     it "should propagate student errors" do
       student = student_in_course(course: @override.assignment.context, name: 'Johnny Manziel').user
-      @override.assignment_override_students.create(user: student)
-      @override.assignment_override_students.build(user: student)
+      @override.assignment_override_students.create(user: student, workflow_state: 'active')
+      @override.assignment_override_students.build(user: student, workflow_state: 'active')
       expect(@override).not_to be_valid
       expect(@override.errors[:assignment_override_students].first.type).to eq :taken
     end
@@ -362,6 +375,37 @@ describe AssignmentOverride do
       end
       @override.valid? # trigger bookkeeping
       expect(@override.title).to eq '4 students'
+    end
+  end
+
+  describe "#title_from_students" do
+    before :each do
+      @assignment_override = AssignmentOverride.new
+      allow(AssignmentOverride).to receive(:title_from_student_count)
+    end
+
+    it "returns 'No Students' when passed in nil" do
+      expect(@assignment_override.title_from_students(nil)).to eql('No Students')
+    end
+
+    it "returns 'No Students' when pass in an empty array" do
+      expect(@assignment_override.title_from_students([])).to eql('No Students')
+    end
+
+    it "calls AssignmentOverride.title_from_student_count when called with a non-empty array" do
+      expect(AssignmentOverride).to receive(:title_from_student_count)
+
+      @assignment_override.title_from_students(["A Student"])
+    end
+  end
+
+  describe ".title_from_student_count" do
+    it "returns '1 student' when passed in 1" do
+      expect(AssignmentOverride.title_from_student_count(1)).to eql('1 student')
+    end
+
+    it "returns '42 students' when passed in 42" do
+      expect(AssignmentOverride.title_from_student_count(42)).to eql('42 students')
     end
   end
 
@@ -610,7 +654,7 @@ describe AssignmentOverride do
   describe '#update_grading_period_grades with no grading periods' do
     it 'should not update grades when due_at changes' do
       assignment_model
-      Course.any_instance.expects(:recompute_student_scores).never
+      expect_any_instance_of(Course).to receive(:recompute_student_scores).never
       override = AssignmentOverride.new
       override.assignment = @assignment
       override.due_at = 6.months.ago
@@ -644,13 +688,13 @@ describe AssignmentOverride do
 
     it 'should not update grades if there are no students on this override' do
       @override.assignment_override_students.clear
-      Course.any_instance.expects(:recompute_student_scores).never
+      expect_any_instance_of(Course).to receive(:recompute_student_scores).never
       @override.due_at = 6.months.ago
       @override.save!
     end
 
     it 'should update grades when due_at changes to a grading period' do
-      Course.any_instance.expects(:recompute_student_scores).twice
+      expect_any_instance_of(Course).to receive(:recompute_student_scores).twice
       @override.due_at = 6.months.ago
       @override.save!
     end
@@ -658,7 +702,7 @@ describe AssignmentOverride do
     it 'should update grades twice when due_at changes to another grading period' do
       @override.due_at = 1.month.ago
       @override.save!
-      Course.any_instance.expects(:recompute_student_scores).twice
+      expect_any_instance_of(Course).to receive(:recompute_student_scores).twice
       @override.due_at = 6.months.ago
       @override.save!
     end
@@ -666,7 +710,7 @@ describe AssignmentOverride do
     it 'should not update grades if grading period did not change' do
       @override.due_at = 1.month.ago
       @override.save!
-      Course.any_instance.expects(:recompute_student_scores).never
+      expect_any_instance_of(Course).to receive(:recompute_student_scores).never
       @override.due_at = 2.months.ago
       @override.save!
     end
@@ -680,7 +724,7 @@ describe AssignmentOverride do
     end
 
     it "triggers when applicable override is created" do
-      DueDateCacher.expects(:recompute).with(@assignment)
+      expect(DueDateCacher).to receive(:recompute).with(@assignment)
       new_override = @assignment.assignment_overrides.build
       new_override.title = 'New Override'
       new_override.override_due_at(3.days.from_now)
@@ -688,60 +732,60 @@ describe AssignmentOverride do
     end
 
     it "triggers when overridden due_at changes" do
-      DueDateCacher.expects(:recompute).with(@assignment)
+      expect(DueDateCacher).to receive(:recompute).with(@assignment)
       @override.override_due_at(5.days.from_now)
       @override.save
     end
 
     it "triggers when overridden due_at changes to nil" do
-      DueDateCacher.expects(:recompute).with(@assignment)
+      expect(DueDateCacher).to receive(:recompute).with(@assignment)
       @override.override_due_at(nil)
       @override.save
     end
 
     it "triggers when due_at_overridden changes" do
-      DueDateCacher.expects(:recompute).with(@assignment)
+      expect(DueDateCacher).to receive(:recompute).with(@assignment)
       @override.clear_due_at_override
       @override.save
     end
 
     it "triggers when applicable override deleted" do
-      DueDateCacher.expects(:recompute).with(@assignment)
+      expect(DueDateCacher).to receive(:recompute).with(@assignment)
       @override.destroy
     end
 
     it "triggers when applicable override undeleted" do
       @override.destroy
 
-      DueDateCacher.expects(:recompute).with(@assignment)
+      expect(DueDateCacher).to receive(:recompute).with(@assignment)
       @override.workflow_state = 'active'
       @override.save
     end
 
-    it "does not trigger when non-applicable override is created" do
-      DueDateCacher.expects(:recompute).never
+    it "triggers when override without a due_date is created" do
+      expect(DueDateCacher).to receive(:recompute)
       @assignment.assignment_overrides.create
     end
 
-    it "does not trigger when non-applicable override deleted" do
+    it "triggers when override without a due_date deleted" do
       @override.clear_due_at_override
       @override.save
 
-      DueDateCacher.expects(:recompute).never
+      expect(DueDateCacher).to receive(:recompute)
       @override.destroy
     end
 
-    it "does not trigger when non-applicable override undeleted" do
+    it "triggers when override without a due_date undeleted" do
       @override.clear_due_at_override
       @override.destroy
 
-      DueDateCacher.expects(:recompute).never
+      expect(DueDateCacher).to receive(:recompute)
       @override.workflow_state = 'active'
       @override.save
     end
 
     it "does not trigger when nothing changed" do
-      DueDateCacher.expects(:recompute).never
+      expect(DueDateCacher).to receive(:recompute).never
       @override.save
     end
   end
@@ -801,24 +845,24 @@ describe AssignmentOverride do
     end
 
     it "does nothing if it is not ADHOC" do
-      @override.stubs(:set_type).returns "NOT_ADHOC"
-      @override.expects(:destroy).never
+      allow(@override).to receive(:set_type).and_return "NOT_ADHOC"
+      expect(@override).to receive(:destroy).never
 
       @override.destroy_if_empty_set
     end
 
     it "does nothing if the set is not empty" do
-      @override.stubs(:set_type).returns "ADHOC"
-      @override.stubs(:set).returns [1,2,3]
-      @override.expects(:destroy).never
+      allow(@override).to receive(:set_type).and_return "ADHOC"
+      allow(@override).to receive(:set).and_return [1,2,3]
+      expect(@override).to receive(:destroy).never
 
       @override.destroy_if_empty_set
     end
 
     it "destroys itself if the set is empty" do
-      @override.stubs(:set_type).returns 'ADHOC'
-      @override.stubs(:set).returns []
-      @override.expects(:destroy).once
+      allow(@override).to receive(:set_type).and_return 'ADHOC'
+      allow(@override).to receive(:set).and_return []
+      expect(@override).to receive(:destroy).once
 
       @override.destroy_if_empty_set
     end
@@ -868,19 +912,19 @@ describe AssignmentOverride do
     end
 
     it "returns false if no students who are active in course for ADHOC" do
-      @override.stubs(:set_type).returns "ADHOC"
-      @override.stubs(:set).returns []
+      allow(@override).to receive(:set_type).and_return "ADHOC"
+      allow(@override).to receive(:set).and_return []
 
       expect(@override.set_not_empty?).to eq false
     end
 
     it "returns true if no students who are active in course and CourseSection or Group" do
-      @override.stubs(:set_type).returns "CourseSection"
-      @override.stubs(:set).returns []
+      allow(@override).to receive(:set_type).and_return "CourseSection"
+      allow(@override).to receive(:set).and_return []
 
       expect(@override.set_not_empty?).to eq true
 
-      @override.stubs(:set_type).returns "Group"
+      allow(@override).to receive(:set_type).and_return "Group"
 
       expect(@override.set_not_empty?).to eq true
     end
@@ -903,7 +947,7 @@ describe AssignmentOverride do
       # the critical thing is visible_students_only is called the default shard,
       # but the query executes on a different shard, but it should still be
       # well-formed (especially with qualified names)
-      AssignmentOverride.visible_students_only([1, 2]).shard(@shard1).to_a
+      expect { AssignmentOverride.visible_students_only([1, 2]).shard(@shard1).to_a }.not_to raise_error
     end
 
     it "should not duplicate adhoc overrides containing multiple students" do
@@ -954,7 +998,7 @@ describe AssignmentOverride do
       end
 
       it 'delegates to the course' do
-        @assignment.context.any_instantiation.expects(:enrollments_visible_to).with(@student)
+        expect_any_instantiation_of(@assignment.context).to receive(:enrollments_visible_to).with(@student)
         subject
       end
     end
@@ -968,7 +1012,7 @@ describe AssignmentOverride do
       end
 
       it 'delegates to UserSearch' do
-        @quiz.context.any_instantiation.expects(:enrollments_visible_to).with(@student)
+        expect_any_instantiation_of(@quiz.context).to receive(:enrollments_visible_to).with(@student)
         subject
       end
     end

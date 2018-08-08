@@ -1,7 +1,25 @@
+/*
+ * Copyright (C) 2014 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
 import ReactDOM from 'react-dom'
-import update from 'react-addons-update'
-import DataRow from 'jsx/grading/dataRow'
+import update from 'immutability-helper'
+import DataRow from '../grading/dataRow'
 import $ from 'jquery'
 import I18n from 'i18n!external_tools'
 import _ from 'underscore'
@@ -75,7 +93,10 @@ import splitAssetString from 'compiled/str/splitAssetString'
     },
 
     insertGradingStandardRow: function(index) {
-      var newEditingStandard = update(this.state.editingStandard, {data: {$splice:  [[index + 1, 0, ["", ""]]]}});
+      const [rowBefore, rowAfter] = this.state.editingStandard.data.slice(index, index + 2)
+      const score = rowAfter ? (rowBefore[1] - rowAfter[1]) / 2 + rowAfter[1] : 0
+
+      const newEditingStandard = update(this.state.editingStandard, {data: {$splice:  [[index + 1, 0, ["", score]]]}});
       this.setState({editingStandard: newEditingStandard});
     },
 

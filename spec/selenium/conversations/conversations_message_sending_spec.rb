@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../helpers/conversations_common')
 
 describe "conversations new" do
@@ -25,6 +42,7 @@ describe "conversations new" do
     end
 
     it "should start a group conversation when there is only one recipient", priority: "2", test_id: 201499 do
+      skip_if_chrome('fragile in chrome')
       conversations
       compose course: @course, to: [@s1], subject: 'single recipient', body: 'hallo!'
       c = @s1.conversations.last.conversation
@@ -33,6 +51,7 @@ describe "conversations new" do
     end
 
     it "should start a group conversation when there is more than one recipient", priority: "2", test_id: 201500 do
+      skip_if_chrome('fragile in chrome')
       conversations
       compose course: @course, to: [@s1, @s2], subject: 'multiple recipients', body: 'hallo!'
       c = @s1.conversations.last.conversation
@@ -110,16 +129,16 @@ describe "conversations new" do
     it "should allow admins to message users from their profiles", priority: "2", test_id: 201940 do
       user = account_admin_user
       user_logged_in({:user => user})
+
       get "/accounts/#{Account.default.id}/users"
       wait_for_ajaximations
-      f('li.user a').click
-      wait_for_ajaximations
-      f('.icon-email').click
+      f('[data-automation="users list"] tr a [name="IconMessage"]').click
       wait_for_ajaximations
       expect(f('.ac-token')).not_to be_nil
     end
 
     it "should allow selecting multiple recipients in one search", priority: "2", test_id: 201941 do
+      skip_if_chrome('fragile in chrome')
       conversations
       fj('#compose-btn').click
       wait_for_ajaximations
@@ -133,6 +152,7 @@ describe "conversations new" do
     end
 
     it "should not send the message on shift-enter", priority: "1", test_id: 206019 do
+      skip_if_chrome('fragile in chrome')
       conversations
       compose course: @course, to: [@s1], subject: 'context-free', body: 'hallo!', send: false
       driver.action.key_down(:shift).perform
@@ -185,10 +205,11 @@ describe "conversations new" do
     context "bulk_message locking" do
       before do
         # because i'm too lazy to create more users
-        Conversation.stubs(:max_group_conversation_size).returns(1)
+        allow(Conversation).to receive(:max_group_conversation_size).and_return(1)
       end
 
       it "should check and lock the bulk_message checkbox when over the max size", priority: "2", test_id: 206022 do
+        skip('COMMS-1164')
         conversations
         compose course: @course, subject: 'lockme', body: 'hallo!', send: false
 
@@ -211,12 +232,13 @@ describe "conversations new" do
       end
 
       it "should leave the value the same as before after unlocking", priority: "2", test_id: 206023 do
+        skip_if_chrome('fragile in chrome')
         conversations
         compose course: @course, subject: 'lockme', body: 'hallo!', send: false
 
         selector = "#bulk_message"
         bulk_cb = f(selector)
-        bulk_cb.click # check the box
+        move_to_click(selector)
 
         f("#recipient-search-btn").click
         wait_for_ajaximations

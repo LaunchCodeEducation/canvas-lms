@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016 Instructure, Inc.
+# Copyright (C) 2016 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -19,14 +19,14 @@
 module GradebookSettingsHelpers
   private
 
-  def gradebook_includes
+  def gradebook_includes(user: @user, course: @course)
     @gradebook_includes ||= begin
-      course_id = @course.id
-      gb_settings = @user.preferences.fetch(:gradebook_settings, {}).fetch(course_id, {})
+      course_id = course.id
+      gb_settings = user.preferences.fetch(:gradebook_settings, {}).fetch(course_id, {})
 
       includes = []
       includes << :inactive if gb_settings.fetch('show_inactive_enrollments', "false") == "true"
-      if gb_settings.fetch('show_concluded_enrollments', "false") == "true" || @course.concluded?
+      if gb_settings.fetch('show_concluded_enrollments', "false") == "true" || course.concluded?
         includes << :completed
       end
       includes

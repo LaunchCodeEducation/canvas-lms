@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2012 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import $ from 'jquery'
 import _ from 'underscore'
 import React from 'react'
@@ -5,7 +23,7 @@ import ReactDOM from 'react-dom'
 import preventDefault from 'compiled/fn/preventDefault'
 import PublishButtonView from 'compiled/views/PublishButtonView'
 import PublishIconView from 'compiled/views/PublishIconView'
-import ReactModalExample from 'jsx/styleguide/ReactModalExample'
+import ReactModalExample from '../styleguide/ReactModalExample'
 import Backbone from 'Backbone'
 import 'jqueryui/accordion'
 import 'jqueryui/tabs'
@@ -46,9 +64,6 @@ const iconEventsMap = {
 }
 
 $('#content').on(iconEventsMap, '.demo-icons')
-
-// Accordion
-$('#styleguide_demo_accordion1, #styleguide_demo_accordion2').accordion({header: 'h3'})
 
 // Tabs
 $('#styleguide-tabs-demo-regular').tabs()

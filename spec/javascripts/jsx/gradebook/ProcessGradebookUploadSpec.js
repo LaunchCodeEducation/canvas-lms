@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2016 - 2017 Instructure, Inc.
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,8 +12,8 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 define([
@@ -201,6 +201,18 @@ define([
     const createAssignmentRequest2 = JSON.parse(requests[1].requestBody);
     equalAssignment(createAssignmentRequest2.assignment, newAssignment2);
   });
+
+  test('sends calculate_grades: false as an argument when creating assignments', () => {
+    const gradebook = {
+      assignments: [
+        newAssignment1
+      ]
+    }
+    ProcessGradebookUpload.createAssignments(gradebook)
+
+    const createAssignmentRequest = JSON.parse(requests[0].requestBody)
+    strictEqual(createAssignmentRequest.calculate_grades, false)
+  })
 
   QUnit.module('ProcessGradebookUpload.mapLocalAssignmentsToDatabaseAssignments');
 

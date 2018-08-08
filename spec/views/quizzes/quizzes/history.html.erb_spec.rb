@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -75,6 +75,17 @@ describe "/quizzes/quizzes/history" do
 
       render "quizzes/quizzes/history"
       expect(response.body).not_to match /grade-by-question-warning/
+    end
+  end
+
+  context 'for an anonymous survey' do
+    it "doesn't display the user name" do
+      quiz = assign(:quiz, @course.quizzes.create!(quiz_type: 'survey', anonymous_submissions: true))
+      submission = assign(:submission, quiz.generate_submission(@user))
+      assign(:current_submission, submission)
+      assign(:version_instances, submission.submitted_attempts)
+      render 'quizzes/quizzes/history'
+      expect(response.body).not_to include(@user.name)
     end
   end
 end

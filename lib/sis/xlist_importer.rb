@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -56,6 +56,7 @@ module SIS
         raise ImportError, "No xlist_course_id given for a cross-listing" if xlist_course_id.blank?
         raise ImportError, "No section_id given for a cross-listing" if section_id.blank?
         raise ImportError, "Improper status \"#{status}\" for a cross-listing" unless status =~ /\A(active|deleted)\z/i
+        return if @batch.skip_deletes? && status =~ /deleted/i
 
         section = @root_account.course_sections.where(sis_source_id: section_id).take
         raise ImportError, "A cross-listing referenced a non-existent section #{section_id}" unless section
@@ -75,7 +76,7 @@ module SIS
             @course.conclude_at = section.course.conclude_at
             @course.restrict_enrollments_to_course_dates = section.course.restrict_enrollments_to_course_dates
             @course.sis_source_id = xlist_course_id
-            @course.sis_batch_id = @batch.id if @batch
+            @course.sis_batch_id = @batch.id
             @course.workflow_state = 'claimed'
             @course.template_course = section.course
             @course.save_without_broadcasting!

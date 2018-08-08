@@ -1,9 +1,26 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'jquery'
   'underscore'
   'i18n!pages'
   'str/htmlEscape'
-  'compiled/views/DialogFormView'
+  '../DialogFormView'
 ], ($, _, I18n, htmlEscape, DialogFormView) ->
 
   dialogDefaults =
@@ -15,7 +32,7 @@ define [
   class WikiPageDeleteDialog extends DialogFormView
     setViewProperties: false
     wrapperTemplate: -> '<div class="outlet"></div>'
-    template: -> I18n.t 'delete_confirmation', 'Are you sure you wish to delete this wiki page?'
+    template: -> I18n.t 'delete_confirmation', 'Are you sure you want to delete this page?'
 
     @optionProperty 'wiki_pages_path'
     @optionProperty 'focusOnCancel'
@@ -51,27 +68,31 @@ define [
 
       @$el.disableWhileLoading dfd
 
+    close: ->
+      if @dialog?.isOpen()
+        @dialog.close()
+      if @buttonClicked == 'delete'
+        @focusOnDelete?.focus()
+      else
+        @focusOnCancel?.focus()
+
     setupDialog: ->
       super
 
       form = @
 
-      # Add a close event for focus handling
-      form.$el.on('dialogclose', (event, ui) =>
-        @focusOnCancel?.focus()
-      )
-
       buttons = [
         class: 'btn'
         text: I18n.t 'cancel_button', 'Cancel'
         click: =>
+          @buttonClicked = 'cancel'
           form.$el.dialog 'close'
       ,
         class: 'btn btn-danger'
         text: I18n.t 'delete_button', 'Delete'
         'data-text-while-loading': I18n.t 'deleting_button', 'Deleting...'
         click: =>
+          @buttonClicked = 'delete'
           form.submit()
-          @focusOnDelete.focus()
       ]
       @$el.dialog 'option', 'buttons', buttons

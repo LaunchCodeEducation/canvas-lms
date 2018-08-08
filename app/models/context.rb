@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -54,6 +54,12 @@ module Context
       Eportfolio: :Eportfolio
   }.freeze
 
+  def clear_cached_short_name
+    self.class.connection.after_transaction_commit do
+      Rails.cache.delete(['short_name_lookup', self.asset_string].cache_key)
+    end
+  end
+
   def add_aggregate_entries(entries, feed)
     entries.each do |entry|
       user = entry.user || feed.user
@@ -89,19 +95,17 @@ module Context
       context = context.respond_to?(:account) ? context.account : context.parent_account
       context_codes << context.asset_string if context
     end
-    codes_order = {}
-    context_codes.each_with_index{|c, idx| codes_order[c] = idx }
     associations = RubricAssociation.bookmarked.for_context_codes(context_codes).include_rubric
-    associations = associations.to_a.select{|a| a.rubric }.uniq{|a| [a.rubric_id, a.context_code] }
-    contexts = associations.group_by{|a| a.context_code }.map do |code, associations|
-      context_name = associations.first.context_name
-      res = {
-        :rubrics => associations.length,
+    associations = associations.to_a.select(&:rubric).uniq{|a| [a.rubric_id, a.context_code] }
+    contexts = associations.group_by(&:context_code).map do |code, code_associations|
+      context_name = code_associations.first.context_name
+      {
+        :rubrics => code_associations.length,
         :context_code => code,
         :name => context_name
       }
     end
-    contexts.sort_by{|c| codes_order[c[:context_code]] || CanvasSort::Last }
+    Canvas::ICU.collate_by(contexts) { |r| r[:name] }
   end
 
   def active_record_types
@@ -112,7 +116,7 @@ module Context
         res[:modules] = self.respond_to?(:context_modules) && self.context_modules.active.exists?
         res[:quizzes] = self.respond_to?(:quizzes) && self.quizzes.active.exists?
         res[:assignments] = self.respond_to?(:assignments) && self.assignments.active.exists?
-        res[:pages] = self.respond_to?(:wiki) && self.wiki_id && self.wiki.wiki_pages.active.exists?
+        res[:pages] = self.respond_to?(:wiki_pages) && self.wiki_pages.active.exists?
         res[:conferences] = self.respond_to?(:web_conferences) && self.web_conferences.active.exists?
         res[:announcements] = self.respond_to?(:announcements) && self.announcements.active.exists?
         res[:outcomes] = self.respond_to?(:has_outcomes?) && self.has_outcomes?
@@ -149,18 +153,27 @@ module Context
     result
   end
 
+  def self.context_code_for(record)
+    raise ArgumentError unless record.respond_to?(:context_type) && record.respond_to?(:context_id)
+    "#{record.context_type.underscore}_#{record.context_id}"
+  end
+
   def self.find_by_asset_string(string)
-    opts = string.split("_", -1)
-    id = opts.pop
-    klass_name = opts.join('_').classify.to_sym
-    if CONTEXT_TYPES.include?(klass_name)
-      type = Object.const_get(klass_name, false)
-      type.find(id)
-    else
-      nil
+    from_context_codes([string]).first
+  end
+
+  def self.from_context_codes(context_codes)
+    contexts = {}
+    context_codes.each do |cc|
+      type, _, id = cc.rpartition('_')
+      if CONTEXT_TYPES.include?(type.camelize.to_sym)
+        contexts[type.camelize] = [] unless contexts[type.camelize]
+        contexts[type.camelize] << id
+      end
     end
-  rescue => e
-    nil
+    contexts.reduce([]) do |memo, (context, ids)|
+      memo + context.constantize.where(id: ids)
+    end
   end
 
   def self.asset_type_for_string(string)
@@ -186,6 +199,14 @@ module Context
     res
   rescue => e
     nil
+  end
+
+  def self.asset_name(asset)
+    name = asset.display_name.presence if asset.respond_to?(:display_name)
+    name ||= asset.title.presence if asset.respond_to?(:title)
+    name ||= asset.short_description.presence if asset.respond_to?(:short_description)
+    name ||= asset.name if asset.respond_to?(:name)
+    name || ''
   end
 
   def self.get_account(context)

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module AvatarHelper
 
   def avatar_image_attrs(user_or_id)
@@ -10,8 +27,8 @@ module AvatarHelper
       ["/images/messages/avatar-50.png", '']
     else
       avatar_settings = @domain_root_account && @domain_root_account.settings[:avatars] || 'enabled'
-      user_id, user_shard = Shard.local_id_for(user_id)
-      user_shard ||= Shard.current
+      user_id = Shard.global_id_for(user_id)
+      user_shard = Shard.shard_for(user_id)
       image_url, alt_tag = user_shard.activate do
         Rails.cache.fetch(Cacher.inline_avatar_cache_key(user_id, avatar_settings)) do
           if !user && user_id.to_i > 0
@@ -50,14 +67,10 @@ module AvatarHelper
     link_opts[:style] += ";width: #{opts[:size]}px;height: #{opts[:size]}px" if opts[:size]
     link_opts[:href] = url if url
     link_opts[:title] = opts[:title] if opts[:title]
-    content = content_tag(
-      :span,
-      I18n.t('Click to change profile picture for %{display_name}', :display_name => display_name),
-      class: 'screenreader-only'
-    )
+    content = content_tag(:span, opts[:sr_content] || display_name, class: 'screenreader-only')
     content += (opts[:edit] ? content_tag(:i, nil, class: 'icon-edit') : '')
     content += (opts[:show_flag] ? content_tag(:i, nil, class: 'icon-flag') : '')
-    content_tag(:a, content, link_opts)
+    content_tag(url ? :a : :span, content, link_opts)
   end
 
   def avatar_url_for(conversation, participants = conversation.participants)
@@ -77,7 +90,7 @@ module AvatarHelper
     )
   end
 
-  def avatar_url_for_user(user, blank_fallback=false)
+  def self.avatar_url_for_user(user, request, blank_fallback=false)
     default_avatar = User.avatar_fallback_url(
         blank_fallback ? '/images/blank.png' : User.default_avatar_fallback,
         request)
@@ -90,12 +103,16 @@ module AvatarHelper
       default_avatar
     end
 
-    if !url.match(%r{\Ahttps?://})
+    if !url.nil? && !url.match(%r{\Ahttps?://})
       # make sure that the url is not just a path
       url = "#{request.base_url}#{url}"
     end
 
     url
+  end
+
+  def avatar_url_for_user(user, blank_fallback=false)
+    AvatarHelper.avatar_url_for_user(user, request, blank_fallback)
   end
 
   def blank_fallback

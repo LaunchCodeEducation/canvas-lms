@@ -1,9 +1,27 @@
-import $ from 'jquery'
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import _ from 'underscore'
 import I18n from 'i18n!external_tools'
 import React from 'react'
+import PropTypes from 'prop-types'
 import ReactModal from 'react-modal'
-import store from 'jsx/external_apps/lib/ExternalAppsStore'
+import store from '../../external_apps/lib/ExternalAppsStore'
 import 'compiled/jquery.rails_flash_notifications'
 
   const modalOverrides = {
@@ -26,17 +44,18 @@ export default React.createClass({
     displayName: 'ExternalToolPlacementButton',
 
     componentDidUpdate: function() {
-      var _this = this;
+      const _this = this;
       window.requestAnimationFrame(function() {
-        var node = document.getElementById('close' + _this.state.tool.name);
-        if (node) {
-          node.focus();
+        if (_this.refs.closex) {
+          _this.refs.closex.focus();
         }
       });
     },
 
     propTypes: {
-      tool: React.PropTypes.object.isRequired
+      tool: PropTypes.object.isRequired,
+      type: PropTypes.string, // specify "button" if this is not a menu item
+      onClose: PropTypes.func
     },
 
     getInitialState() {
@@ -65,7 +84,9 @@ export default React.createClass({
     },
 
     closeModal() {
-      this.setState({ modalIsOpen: false });
+      this.setState({ modalIsOpen: false }, () => {
+        if (this.props.onClose) this.props.onClose()
+      })
     },
 
     placements() {
@@ -87,11 +108,11 @@ export default React.createClass({
         "link_selection":I18n.t("Link Selection"),
         "migration_selection":I18n.t("Migration Selection"),
         "module_menu":I18n.t("Module Menu"),
-        "post_grades":I18n.t("Post Grades"),
+        "post_grades":I18n.t("Sync Grades"),
         "quiz_menu":I18n.t("Quiz Menu"),
         "tool_configuration":I18n.t("Tool Configuration"),
         "user_navigation":I18n.t("User Navigation"),
-        "wiki_page_menu":I18n.t("Wiki Page Menu"),
+        "wiki_page_menu":I18n.t("Page Menu"),
       };
 
       var tool = this.state.tool;
@@ -124,7 +145,7 @@ export default React.createClass({
                 <h4 tabIndex="-1">{I18n.t('App Placements')}</h4>
               </div>
               <div className="ReactModal__Header-Actions">
-                <button  className="Button Button--icon-action" type="button"  onClick={this.closeModal} >
+                <button  className="Button Button--icon-action" type="button" ref='closex'  onClick={this.closeModal} >
                   <i className="icon-x"></i>
                   <span className="screenreader-only">Close</span>
                 </button>
@@ -155,7 +176,7 @@ export default React.createClass({
 
       if (this.props.type === "button") {
         return(
-          <a href="#" ref="placementButton" role="menuitem" aria-label={editAriaLabel} className="btn long" onClick={this.openModal} >
+          <a href="#" ref="placementButton" role="button" aria-label={editAriaLabel} className="btn long" onClick={this.openModal} >
             <i className="icon-info" data-tooltip="left" title={I18n.t('Tool Placements')}></i>
             { this.getModal() }
           </a>

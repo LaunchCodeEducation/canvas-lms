@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -32,6 +32,50 @@ describe DashboardHelper do
       course_with_student(:active_all => true)
       @current_user = @student
       expect(show_welcome_message?()).to be_falsey
+    end
+  end
+
+  context "user_dashboard_view" do
+    before :once do
+      course_with_student(:active_all => true)
+      @current_user = @student
+    end
+
+    it "should use the account's default dashboard view setting if the user has not selected one" do
+      @current_user.dashboard_view = nil
+      @current_user.save!
+      @course.account.default_dashboard_view = 'activity'
+      @course.account.save!
+      expect(user_dashboard_view).to eq 'activity'
+    end
+
+    it "should default to 'cards' if 'planner' was set but the feature flag is disabled" do
+      @current_user.dashboard_view = 'planner'
+      @current_user.save!
+      expect(user_dashboard_view).to eq 'cards'
+    end
+
+    it "should return 'planner' if set and feature is enabled" do
+      @course.root_account.enable_feature!(:student_planner)
+      @current_user.dashboard_view = 'planner'
+      @current_user.save!
+      expect(user_dashboard_view).to eq 'planner'
+    end
+
+    it "should be backwards compatible with the deprecated 'show_recent_activity' preference" do
+      @current_user.preferences[:recent_activity_dashboard] = true
+      @current_user.save!
+      expect(user_dashboard_view).to eq 'activity'
+    end
+
+    it "should return the correct value based on the user's setting" do
+      @current_user.dashboard_view = 'cards'
+      @current_user.save!
+      expect(user_dashboard_view).to eq 'cards'
+
+      @current_user.dashboard_view = 'activity'
+      @current_user.save!
+      expect(user_dashboard_view).to eq 'activity'
     end
   end
 end

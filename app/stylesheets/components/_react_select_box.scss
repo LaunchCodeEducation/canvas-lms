@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 .react-select-box-container {
   position: relative;
   width: 240px;
@@ -5,7 +23,7 @@
   background-color: $ic-color-light;
   border-radius: $borderRadius;
   border: 1px solid $ic-border-color;
-  text-align: left;
+  text-align: direction(left);
   box-shadow: 0 0 2px rgba(0, 0, 0, .3);
 }
 .react-select-box {
@@ -14,7 +32,7 @@
   cursor: pointer;
   border: none;
   width: 100%;
-  text-align: left;
+  text-align: direction(left);
   background-color: transparent;
 }
 
@@ -24,8 +42,8 @@
   position: absolute;
   height: 20px;
   top: 15px;
-  right: 34px;
-  border-left: 1px solid $ic-border-color;
+  #{direction(right)}: 34px;
+  border-#{direction(left)}: 1px solid $ic-border-color;
 }
 
 .react-select-box:after {
@@ -33,7 +51,7 @@
   position: absolute;
   z-index: 1;
   top: 20px;
-  right: 13px;
+  #{direction(right)}: 13px;
   border-top: 6px solid $ic-color-dark;
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
@@ -71,7 +89,7 @@
 .react-select-box-clear {
   position: absolute;
   top: 15px;
-  right: 0;
+  #{direction(right)}: 0;
   width: 35px;
   height: 20px;
   background-color: $ic-color-light;
@@ -84,7 +102,7 @@
   content: '×';
   position: absolute;
   top: 2px;
-  left: 10px;
+  #{direction(left)}: 10px;
   z-index: 1;
   background-color: $ic-color-medium;
   border-radius: 100%;
@@ -99,7 +117,7 @@
 
 .react-select-box-clear:hover:before,
 .react-select-box-clear:focus:before {
-  background-color: $ic-brand-primary;
+  background-color: var(--ic-brand-primary);
 }
 
 .react-select-box-hidden {
@@ -112,7 +130,7 @@
   padding: 10px 0;
   width: 240px;
   top: 100%;
-  left: 0;
+  #{direction(left)}: 0;
   z-index: 4;
   background-color: $ic-color-light;
   border-radius: $borderRadius;
@@ -135,7 +153,7 @@
 
 .react-select-box-option:hover {
   color: $ic-font-color-light;
-  background-color: $ic-brand-primary;
+  background-color: var(--ic-brand-primary);
   text-decoration: none;
 }
 
@@ -144,7 +162,7 @@
 }
 
 .react-select-box-multi .react-select-box-option {
-  padding-left: 42px;
+  padding-#{direction(left)}: 42px;
   position: relative;
 }
 
@@ -153,12 +171,12 @@
   position: absolute;
   line-height: 1;
   text-align: center;
-  left: 20px;
+  #{direction(left)}: 20px;
   top: 9px;
   border-radius: 3px;
   height: 12px;
   width: 12px;
-  margin-right: 10px;
+  margin-#{direction(right)}: 10px;
   border: 1px solid $ic-border-color;
   background: $ic-color-medium-light;
   vertical-align: middle;
@@ -177,11 +195,11 @@
 .react-select-box-option-focused {
   color: $ic-font-color-light;
   outline: 0;
-  background-color: $ic-brand-primary;
+  background-color: var(--ic-brand-primary);
 }
 
 .react-select-box-close {
-  color: $ic-brand-primary;
+  color: var(--ic-brand-primary);
   text-transform: uppercase;
   background-color: transparent;
   border: none;
@@ -205,5 +223,5 @@
 
 .react-select-box-native {
   position: absolute;
-  left: -99999em;
+  #{direction(left)}: -99999em;
 }

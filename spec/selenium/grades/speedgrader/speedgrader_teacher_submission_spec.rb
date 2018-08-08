@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative '../../helpers/speed_grader_common'
 
 describe "speed grader submissions" do
@@ -26,20 +43,20 @@ describe "speed grader submissions" do
 
       get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}#%7B%22student_id%22%3A#{@submission.student.id}%7D"
 
-      #check for assignment title
+      # check for assignment title
       expect(f('#assignment_url')).to include_text(@assignment.title)
 
-      #check for assignment text in speed grader iframe
+      # check for assignment text in speed grader iframe
       check_first_student = -> do
         expect(f('#combo_box_container .ui-selectmenu-item-header')).to include_text(@student.name)
-        in_frame 'speedgrader_iframe' do
+        in_frame 'speedgrader_iframe','.is-inside-submission-frame' do
           expect(f('#main')).to include_text(@submission.body)
         end
       end
 
       check_second_student = -> do
         expect(f('#combo_box_container .ui-selectmenu-item-header')).to include_text(@student_2.name)
-        in_frame 'speedgrader_iframe' do
+        in_frame 'speedgrader_iframe','.is-inside-submission-frame' do
           expect(f('#main')).to include_text(@submission_2.body)
         end
       end
@@ -75,7 +92,7 @@ describe "speed grader submissions" do
       wait_for_ajax_requests
 
       #add comment
-      f('#add_a_comment > textarea').send_keys('grader comment')
+      f('#add_a_comment textarea').send_keys('grader comment')
       submit_form('#add_a_comment')
       expect(f('#comments > .comment')).to be_displayed
     end
@@ -87,7 +104,7 @@ describe "speed grader submissions" do
 
       get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
 
-      expect(f('#submission_late_notice')).to be_displayed
+      expect(f('#submission_details')).to contain_css('.submission-late-pill')
     end
 
     it "should not display a late message if an assignment has been overridden", priority: "1", test_id: 283280 do
@@ -101,9 +118,8 @@ describe "speed grader submissions" do
 
       get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
 
-      expect(f('#submission_late_notice')).not_to be_displayed
+      expect(f('#submission_details')).not_to contain_css('.submission-late-pill')
     end
-
 
     it "should display no submission message if student does not make a submission", priority: "1", test_id: 283499 do
       @student = user_with_pseudonym(:active_user => true, :username => 'student@example.com', :password => 'qwertyuiop')
@@ -114,13 +130,14 @@ describe "speed grader submissions" do
       expect(f('#this_student_does_not_have_a_submission')).to be_displayed
     end
 
+    let(:unenrolled_user) { create_users(1, return_type: :record)[0] }
+
+    let(:student_3) { @course.enroll_student(unenrolled_user, enrollment_state: :active) }
+
     it "should handle versions correctly", priority: "2", test_id: 283500 do
       submission1 = student_submission(:username => "student1@example.com", :body => 'first student, first version')
       submission2 = student_submission(:username => "student2@example.com", :body => 'second student')
-      submission3 = student_submission(:username => "student3@example.com", :body => 'third student')
-
-      # This is "no submissions" guy
-      submission3.delete
+      student_3
 
       submission1.submitted_at = 10.minutes.from_now
       submission1.body = 'first student, second version'
@@ -134,14 +151,14 @@ describe "speed grader submissions" do
       # was carried through to other students, ones with only 1 version.
       expect(f('#submission_to_view').find_elements(:css, 'option').length).to eq 2
 
-      in_frame 'speedgrader_iframe' do
+      in_frame 'speedgrader_iframe','.is-inside-submission-frame' do
         expect(f('#content')).to include_text('first student, second version')
       end
 
       click_option('#submission_to_view', '0', :value)
       wait_for_ajaximations
 
-      in_frame 'speedgrader_iframe' do
+      in_frame 'speedgrader_iframe','.is-inside-submission-frame' do
         wait_for_ajaximations
         expect(f('#content')).to include_text('first student, first version')
       end
@@ -156,7 +173,7 @@ describe "speed grader submissions" do
       f('#grade_container').find_element(:css, 'input').send_keys("5\n")
       wait_for_ajaximations
 
-      in_frame 'speedgrader_iframe' do
+      in_frame 'speedgrader_iframe','.is-inside-submission-frame' do
         expect(f('#content')).to include_text('second student')
       end
 
@@ -217,15 +234,12 @@ describe "speed grader submissions" do
       add_attachment_student_assignment(filename, @students[0], fullpath)
 
       get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
-      expect(f('#speedgrader_iframe')).to be_displayed
+      image_element = f('#iframe_holder img')
 
-      in_frame("speedgrader_iframe") do
-        # validates the image\attachment is inside the iframe as expected
-        image_element = f('img')
-
+      if Attachment.local_storage?
         expect(image_element.attribute('src')).to include('download')
-        expect(image_element.attribute('style')).to include('max-height: 100')
-        expect(image_element.attribute('style')).to include('max-width: 100')
+      else
+        expect(image_element.attribute('src')).to include('amazonaws')
       end
     end
 
@@ -315,6 +329,71 @@ describe "speed grader submissions" do
         wait_for_ajaximations
         expect(Delayed::Job.find_by_tag('Submission#submit_to_turnitin')).not_to be_nil
         expect(f('#grade_container .submission_pending')).not_to be_nil
+      end
+    end
+
+    context "LTI Plagiarism Platform" do
+      before(:each) do
+        @assignment.save!
+      end
+
+      it "displays a pending icon if submission status is pending", priority: "1" do
+        student_submission
+        @submission.originality_reports.create!(workflow_state: 'pending')
+
+        get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
+        wait_for_ajaximations
+
+        turnitin_icon = f('#grade_container .submission_pending')
+        expect(turnitin_icon).not_to be_nil
+        turnitin_icon.click
+        wait_for_ajaximations
+        expect(f('#grade_container .turnitin_info')).not_to be_nil
+      end
+
+      it "displays a score if submission has an originality report", priority: "1" do
+        student_submission
+        @submission.originality_reports.create!(originality_score: 96)
+
+        get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
+        wait_for_ajaximations
+
+        expect(f('#grade_container .turnitin_similarity_score')).to include_text "96%"
+      end
+
+      it "displays an error icon if submission status is error", priority: "2" do
+        student_submission
+        @submission.originality_reports.create!(workflow_state: 'error')
+
+        get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
+        wait_for_ajaximations
+
+        turnitin_icon = f('#grade_container .submission_error')
+        expect(turnitin_icon).not_to be_nil
+        turnitin_icon.click
+        wait_for_ajaximations
+        expect(f('#grade_container .turnitin_info')).not_to be_nil
+        expect(f('#grade_container .turnitin_resubmit_button')).not_to be_nil
+      end
+
+      context 'when group is present' do
+        let(:submission_one) { student_submission }
+        let!(:group) do
+          group = submission_one.assignment.course.groups.create!(name: 'group one')
+          group.add_user(submission_one.user)
+          submission_one.update!(group: group)
+          group
+        end
+
+        it "displays a score if submission has an originality report", priority: "1" do
+          report = submission_one.originality_reports.create!(originality_score: 96)
+          report.copy_to_group_submissions!
+
+          get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
+          wait_for_ajaximations
+
+          expect(f('#grade_container .turnitin_similarity_score')).to include_text "96%"
+        end
       end
     end
   end

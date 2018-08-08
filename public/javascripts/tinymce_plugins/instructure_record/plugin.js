@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2011 Instructure, Inc.
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,14 +12,12 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-define([
-  'compiled/editor/stocktiny',
-  'tinymce_plugins/instructure_record/mediaEditorLoader'
-], function(tinymce, mediaEditorLoader) {
+import tinymce from 'compiled/editor/stocktiny'
+import mediaEditorLoader from 'tinymce_plugins/instructure_record/mediaEditorLoader'
 
   tinymce.create('tinymce.plugins.InstructureRecord', {
     init : function(ed, url) {
@@ -44,4 +42,3 @@ define([
 
   // Register plugin
   tinymce.PluginManager.add('instructure_record', tinymce.plugins.InstructureRecord);
-});

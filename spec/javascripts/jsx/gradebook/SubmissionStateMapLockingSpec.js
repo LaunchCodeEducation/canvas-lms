@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
   'underscore',
   'timezone',
@@ -31,6 +49,50 @@ define([
   // TODO: the spec setup above should live in a spec helper -- at the
   // time this is being written a significant amount of work is needed
   // to be able to require javascript files that live in the spec directory
+
+  QUnit.module('SubmissionStateMap');
+
+  test ('submission is unlocked if not anonymous', function() {
+    const assignment = { id: '1', muted: true };
+    const map = createAndSetupMap(assignment);
+    const state = map.getSubmissionState({ user_id: student.id, assignment_id: assignment.id });
+    strictEqual(state.locked, false);
+  });
+
+  test ('submission is unlocked if not muted', function() {
+    const assignment = { id: '1', anonymous_grading: true };
+    const map = createAndSetupMap(assignment);
+    const state = map.getSubmissionState({ user_id: student.id, assignment_id: assignment.id });
+    strictEqual(state.locked, false);
+  });
+
+  test ('submission is locked if anonymous and muted', function() {
+    const assignment = { id: '1', anonymous_grading: true, muted: true };
+    const map = createAndSetupMap(assignment);
+    const state = map.getSubmissionState({ user_id: student.id, assignment_id: assignment.id });
+    strictEqual(state.locked, true);
+  });
+
+  test ('submission is unlocked if not moderated', function() {
+    const assignment = { id: '1', moderated_grading: false, grades_published: false };
+    const map = createAndSetupMap(assignment);
+    const state = map.getSubmissionState({ user_id: student.id, assignment_id: assignment.id });
+    strictEqual(state.locked, false);
+  });
+
+  test ('submission is unlocked if grades are published', function() {
+    const assignment = { id: '1', moderated_grading: false, grades_published: true };
+    const map = createAndSetupMap(assignment);
+    const state = map.getSubmissionState({ user_id: student.id, assignment_id: assignment.id });
+    strictEqual(state.locked, false);
+  });
+
+  test ('submission is locked if moderated and not published', function() {
+    const assignment = { id: '1', moderated_grading: true, grades_published: false };
+    const map = createAndSetupMap(assignment);
+    const state = map.getSubmissionState({ user_id: student.id, assignment_id: assignment.id });
+    strictEqual(state.locked, true);
+  });
 
   QUnit.module('SubmissionStateMap with no grading periods');
 

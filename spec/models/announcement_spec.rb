@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -32,6 +32,9 @@ describe Announcement do
 
       @course.lock_all_announcements = true
       @course.save!
+
+      # should not trigger an update callback by re-saving inside a before_save
+      expect_any_instance_of(Announcement).to receive(:clear_streams_if_not_published).never
       announcement = @course.announcements.create!(valid_announcement_attributes)
 
       expect(announcement).to be_locked
@@ -68,6 +71,31 @@ describe Announcement do
     end
   end
 
+  context "section specific announcements" do
+    before(:once) do
+      course_with_teacher(active_course: true)
+      @section = @course.course_sections.create!(name: 'test section')
+
+      @announcement = @course.announcements.create!(:user => @teacher, message: 'hello my favorite section!')
+      @announcement.is_section_specific = true
+      @announcement.course_sections = [@section]
+      @announcement.save!
+
+      @student1, @student2 = create_users(2, return_type: :record)
+      @course.enroll_student(@student1, :enrollment_state => 'active')
+      @course.enroll_student(@student2, :enrollment_state => 'active')
+      student_in_section(@section, user: @student1)
+    end
+
+    it "should be visible to students in specific section" do
+      expect(@announcement.visible_for?(@student1)).to be_truthy
+    end
+
+    it "should not be visible to students not in specific section" do
+      expect(@announcement.visible_for?(@student2)).to be_falsey
+    end
+  end
+
   context "permissions" do
     it "should not allow announcements on a course" do
       course_with_student(:active_user => 1)
@@ -97,6 +125,20 @@ describe Announcement do
       course_with_teacher(active_all: true)
       @course.account.role_overrides.create!(permission: 'read_announcements', role: teacher_role, enabled: false)
       a = @course.announcements.create!(valid_announcement_attributes)
+      expect(a.grants_right?(@user, :read)).to be(false)
+    end
+
+    it 'does allows announcements to be viewed only if visible_for? is true' do
+      course_with_student(active_all: true)
+      a = @course.announcements.create!(valid_announcement_attributes)
+      allow(a).to receive(:visible_for?).and_return true
+      expect(a.grants_right?(@user, :read)).to be(true)
+    end
+
+    it 'does not allow announcements to be viewed if visible_for? is false' do
+      course_with_student(active_all: true)
+      a = @course.announcements.create!(valid_announcement_attributes)
+      allow(a).to receive(:visible_for?).and_return false
       expect(a.grants_right?(@user, :read)).to be(false)
     end
   end
@@ -158,6 +200,24 @@ describe Announcement do
       announcement_model(:user => @teacher)
 
       expect(@a.messages_sent[notification_name]).to be_blank
+    end
+
+    it "should not broadcast if student's section is soft-concluded" do
+      course_with_student(:active_all => true)
+      section2 = @course.course_sections.create!
+      other_student = user_factory(:active_all => true)
+      @course.enroll_student(other_student, :section => section2, :enrollment_state => 'active')
+      section2.update_attributes(:start_at => 2.months.ago, :end_at => 1.month.ago, :restrict_enrollments_to_section_dates => true)
+
+      notification_name = "New Announcement"
+      n = Notification.create(:name => notification_name, :category => "TestImmediately")
+      NotificationPolicy.create(:notification => n, :communication_channel => @student.communication_channel, :frequency => "immediately")
+
+      @context = @course
+      announcement_model(:user => @teacher)
+      to_users = @a.messages_sent[notification_name].map(&:user)
+      expect(to_users).to include(@student)
+      expect(to_users).to_not include(other_student)
     end
   end
 end

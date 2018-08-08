@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module GradingSchemesCommon
   def save_and_reload_changes(grading_standard)
     f('.save_button').click
@@ -7,12 +24,14 @@ module GradingSchemesCommon
 
   def simple_grading_standard(context)
     @standard = context.grading_standards.create!(
-      :title => "My Grading Standard",
-      :standard_data => {
-        "scheme_0" => {:name => "A", :value => "90"},
-        "scheme_1" => {:name => "B", :value => "80"},
-        "scheme_2" => {:name => "C", :value => "70"}
-    })
+      title: "My Grading Standard",
+      standard_data: {
+        "scheme_0" => { name: "A", value: "90" },
+        "scheme_1" => { name: "B", value: "80" },
+        "scheme_2" => { name: "C", value: "70" },
+        "scheme_3" => { name: "D", value: "0" }
+      }
+    )
   end
 
   def should_add_a_grading_scheme(options = {name: "new grading standard"})

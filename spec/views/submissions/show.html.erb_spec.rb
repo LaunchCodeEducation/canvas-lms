@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -18,8 +18,11 @@
 
 require File.expand_path(File.dirname(__FILE__) + '/../../spec_helper')
 require File.expand_path(File.dirname(__FILE__) + '/../views_helper')
+require_relative '../../selenium/helpers/groups_common'
 
 describe "/submissions/show" do
+  include GroupsCommon
+
   before :once do
     course_with_student(active_all: true)
   end
@@ -33,9 +36,144 @@ describe "/submissions/show" do
     expect(response).not_to be_nil
   end
 
+  context 'when assignment is a group assignment' do
+    before :once do
+      @group_category = @course.group_categories.create!(name: "Test Group Set")
+      @group = @course.groups.create!(name: "a group", group_category: @group_category)
+      add_user_to_group(@user, @group, true)
+      @assignment = @course.assignments.create!(assignment_valid_attributes.merge(
+        group_category: @group_category,
+        grade_group_students_individually: true,
+      ))
+      @submission = @assignment.submit_homework(@user)
+    end
+
+    before :each do
+      view_context
+      assign(:assignment, @assignment)
+      assign(:submission, @submission)
+    end
+
+    it 'shows radio buttons for an individually graded group assignment' do
+      render "submissions/show"
+      @html = Nokogiri::HTML.fragment(response.body)
+      expect(@html.css('input[type="radio"][name="submission[group_comment]"]').size).to eq 2
+      expect(@html.css('#submission_group_comment').size).to eq 1
+    end
+
+    it 'renders hidden checkbox for a group graded group assignment' do
+      @assignment.grade_group_students_individually = false
+      @assignment.save!
+      render "submissions/show"
+      @html = Nokogiri::HTML.fragment(response.body)
+      expect(@html.css('input[type="radio"][name="submission[group_comment]"]').size).to eq 0
+      checkbox = @html.css('#submission_group_comment')
+      expect(checkbox.attr('checked').value).to eq 'checked'
+      expect(checkbox.attr('style').value).to include('display:none')
+    end
+  end
+
+  context 'when assignment has deducted points' do
+    it 'shows the deduction and "grade" as final grade when current_user is teacher' do
+      view_context(@course, @teacher)
+      a = @course.assignments.create!(title: "some assignment", points_possible: 10, grading_type: 'points')
+      assign(:assignment, a)
+      @submission = a.submit_homework(@user)
+      @submission.update(grade: 7, points_deducted: 2)
+      assign(:submission, @submission)
+      render "submissions/show"
+      html = Nokogiri::HTML.fragment(response.body)
+
+      expect(html.css('.late_penalty').text).to include('-2')
+      expect(html.css('.published_grade').text).to include('7')
+    end
+
+    it 'shows the deduction and "published_grade" as final grade when current_user is submission user' do
+      view_context(@course, @user)
+      a = @course.assignments.create!(title: "some assignment", points_possible: 10, grading_type: 'points')
+      assign(:assignment, a)
+      @submission = a.submit_homework(@user)
+      @submission.update(grade: '7', points_deducted: 2, published_grade: '6')
+      assign(:submission, @submission)
+      render "submissions/show"
+      html = Nokogiri::HTML.fragment(response.body)
+
+      expect(html.css('.late_penalty').text).to include('-2')
+      expect(html.css('.grade').text).to include('6')
+    end
+
+    context 'and is excused' do
+      it 'hides the deduction' do
+        view_context(@course, @teacher)
+        a = @course.assignments.create!(title: "some assignment", points_possible: 10, grading_type: 'points')
+        assign(:assignment, a)
+        @submission = a.submit_homework(@user)
+        @submission.update(grade: 7, points_deducted: 2, excused: true)
+        assign(:submission, @submission)
+        render "submissions/show"
+        html = Nokogiri::HTML.fragment(response.body)
+
+        deduction_elements = html.css('.late-penalty-display')
+
+        expect(deduction_elements).not_to be_empty
+        deduction_elements.each do |deduction_element|
+          expect(deduction_element.attr('style')).to include('display: none;')
+        end
+      end
+    end
+  end
+
+  context 'comments sidebar' do
+    before :each do
+      course_with_teacher
+      assignment_model(course: @course)
+      @submission = @assignment.submit_homework(@user)
+      view_context(@course, @teacher)
+      assign(:assignment, @assignment)
+      assign(:submission, @submission)
+    end
+
+    it "renders if assignment is not muted" do
+      @assignment.muted = false
+      @assignment.anonymous_grading = true
+      render 'submissions/show'
+      html = Nokogiri::HTML.fragment(response.body)
+      styles = html.css('.submission-details-comments').attribute('style').value.split("\;").map(&:strip)
+      expect(styles).not_to include('display: none')
+    end
+
+    it "renders if assignment is muted but not anonymous or moderated" do
+      @assignment.muted = true
+      @assignment.anonymous_grading = false
+      @assignment.moderated_grading = false
+      render 'submissions/show'
+      html = Nokogiri::HTML.fragment(response.body)
+      styles = html.css('.submission-details-comments').attribute('style').value.split("\;").map(&:strip)
+      expect(styles).not_to include('display: none')
+    end
+
+    it "does not render if assignment is muted and anonymous" do
+      @assignment.muted = true
+      @assignment.anonymous_grading = true
+      render 'submissions/show'
+      html = Nokogiri::HTML.fragment(response.body)
+      styles = html.css('.submission-details-comments').attribute('style').value.split("\;").map(&:strip)
+      expect(styles).to include('display: none')
+    end
+
+    it "does not render if assignment is muted and moderated" do
+      @assignment.muted = true
+      @assignment.moderated_grading = true
+      render 'submissions/show'
+      html = Nokogiri::HTML.fragment(response.body)
+      styles = html.css('.submission-details-comments').attribute('style').value.split("\;").map(&:strip)
+      expect(styles).to include('display: none')
+    end
+  end
+
   context 'when assignment has a rubric' do
     before :once do
-      assignment_model
+      assignment_model(course: @course)
       rubric_association_model association_object: @assignment, purpose: 'grading'
       @submission = @assignment.submit_homework(@user)
     end
@@ -98,7 +236,7 @@ describe "/submissions/show" do
         view_context(@course, @student)
         assign(:assignment, @assignment)
         assign(:submission, @submission)
-        assign(:rubric_association, @submission.rubric_association_with_assessing_user_id)
+        assign(:rubric_association, @assignment.rubric_association)
 
         render 'submissions/show'
         html = Nokogiri::HTML.fragment(response.body)
@@ -119,4 +257,3 @@ describe "/submissions/show" do
     end
   end
 end
-

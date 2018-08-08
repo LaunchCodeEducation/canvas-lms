@@ -1,13 +1,30 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'jquery'
-  'compiled/views/DiscussionTopics/DiscussionsSettingsView'
-  'compiled/views/DiscussionTopics/UserSettingsView'
+  '../DiscussionTopics/DiscussionsSettingsView'
+  '../DiscussionTopics/UserSettingsView'
   'i18n!discussion_topics'
   'underscore'
   'jst/announcements/IndexView'
-  'compiled/views/PaginatedView'
-  'compiled/views/DiscussionTopics/SummaryView'
-  'compiled/collections/AnnouncementsCollection'
+  '../PaginatedView'
+  '../DiscussionTopics/SummaryView'
+  '../../collections/AnnouncementsCollection'
 ], ($, DiscussionsSettingsView, UserSettingsView, I18n, _, template, PaginatedView, DiscussionTopicSummaryView, AnnouncementsCollection) ->
 
   class IndexView extends PaginatedView

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../common')
 require File.expand_path(File.dirname(__FILE__) + '/../helpers/basic/settings_specs')
 
@@ -6,6 +23,31 @@ describe "root account basic settings" do
   let(:account_settings_url) { "/accounts/#{account.id}/settings" }
   let(:admin_tab_url) { "/accounts/#{account.id}/settings#tab-users" }
   include_examples "settings basic tests", :root_account
+
+  it "should be able to disable enable_gravatar" do
+    account_admin_user(:active_all => true)
+    user_session(@admin)
+    get account_settings_url
+
+    f("#account_services_avatars").click
+    f("#account_settings_enable_gravatar").click
+
+    submit_form("#account_settings")
+    wait_for_ajax_requests
+    expect(Account.default.reload.settings[:enable_gravatar]).to eq false
+  end
+
+  it "downloads reports" do
+    course_with_admin_logged_in
+    account.account_reports.create!(
+      user: @user,
+      report_type: 'course_storage_csv'
+    ).run_report_without_send_later
+    get account_settings_url
+
+    f('#tab-reports-link').click
+    expect(f('#course_storage_csv .last-run a').attribute('href')).to match(/download_frd=1/)
+  end
 
   it "should change the default user quota", priority: "1", test_id: 250002 do
     course_with_admin_logged_in

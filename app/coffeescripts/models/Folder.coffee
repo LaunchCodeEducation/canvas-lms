@@ -1,10 +1,27 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'require'
-  'compiled/models/FilesystemObject'
+  '../models/FilesystemObject'
   'vendor/backbone-identity-map'
-  'compiled/collections/PaginatedCollection'
-  'compiled/collections/FilesCollection'
-  'compiled/util/natcompare'
+  '../collections/PaginatedCollection'
+  '../collections/FilesCollection'
+  '../util/natcompare'
   'jsx/shared/helpers/urlHelper'
 ], (require, FilesystemObject, identityMapMixin, PaginatedCollection, FilesCollection, natcompare, urlHelper) ->
 
@@ -96,7 +113,7 @@ define [
         encodeURIComponent(component)
       ).join('/')
 
-      filesEnv ||= require('compiled/react_files/modules/filesEnv') # circular dep
+      filesEnv ||= require('../react_files/modules/filesEnv') # circular dep
 
       # when we are viewing all files we need to pad the context_asset_string on the front of the url
       # so it would be something like /files/folder/users_1/some/sub/folder
@@ -164,7 +181,7 @@ define [
 
   # FoldersCollection is defined inside of this file, and not where it
   # should be, because RequireJS sucks at figuring out circular dependencies.
-  # 'compiled/collections/FoldersCollection' just grabs this and re-exports it.
+  # '../collections/FoldersCollection' just grabs this and re-exports it.
   Folder.FoldersCollection = class FoldersCollection extends PaginatedCollection
     @optionProperty 'parentFolder'
 

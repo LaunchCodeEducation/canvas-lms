@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2013 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -182,6 +182,11 @@ describe CalendarEvent do
         expect(res.end.strftime('%Y-%m-%dT%H:%M:%S')).to eq Time.zone.parse("Sep 3 2008 12:00pm").in_time_zone('UTC').strftime('%Y-%m-%dT%H:%M:00')
         expect(res.end.icalendar_tzid).to eq 'UTC'
         expect(res.dtstamp.strftime('%Y-%m-%dT%H:%M:%S')).to eq Time.zone.parse("Sep 3 2008 12:05pm").in_time_zone('UTC').strftime('%Y-%m-%dT%H:%M:00')
+      end
+
+      it 'should not fail with no date for all_day event' do
+        res = calendar_event_model(all_day: true).to_ics
+        expect(res).not_to be_nil
       end
 
       it "should return string dates for all_day events" do
@@ -593,9 +598,9 @@ describe CalendarEvent do
       expect { appointment2.reserve_for(@student1, @student1) }.to raise_error(CalendarEvent::ReservationError)
     end
 
-    it "should cancel existing reservations if cancel_existing = true" do
+    it "should cancel existing reservations if cancel_existing = true and the appointment is in the future" do
       ag = AppointmentGroup.create(:title => "test", :contexts => [@course], :max_appointments_per_participant => 1,
-        :new_appointments => [['2012-01-01 12:00:00', '2012-01-01 13:00:00'], ['2012-01-01 13:00:00', '2012-01-01 14:00:00']]
+        :new_appointments => [[1.hour.from_now, 2.hours.from_now], [3.hours.from_now, 4.hours.from_now]]
       )
       ag.publish!
       appointment = ag.appointments.first
@@ -604,6 +609,19 @@ describe CalendarEvent do
       r1 = appointment.reserve_for(@student1, @student1)
       expect { appointment2.reserve_for(@student1, @student1, :cancel_existing => true) }.not_to raise_error
       expect(r1.reload).to be_deleted
+    end
+
+    it "should refuse to cancel existing reservations if cancel_existing = true and the appointment is in the past" do
+      ag = AppointmentGroup.create(:title => "test", :contexts => [@course], :max_appointments_per_participant => 1,
+        :new_appointments => [[2.hours.ago, 1.hour.ago], [1.hour.from_now, 2.hours.from_now]]
+      )
+      ag.publish!
+      appointment = ag.appointments.first
+      appointment2 = ag.appointments.last
+
+      r1 = appointment.reserve_for(@student1, @student1)
+      expect { appointment2.reserve_for(@student1, @student1, :cancel_existing => true) }.to raise_error(CalendarEvent::ReservationError)
+      expect(r1.reload).not_to be_deleted
     end
 
     it "should save comments with appointment" do

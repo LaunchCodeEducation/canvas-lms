@@ -1,7 +1,25 @@
+/*
+ * Copyright (C) 2014 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import I18n from 'i18n!external_tools'
 import $ from 'jquery'
 import _ from 'underscore'
-import createStore from 'jsx/shared/helpers/createStore'
+import createStore from '../../shared/helpers/createStore'
 import parseLinkHeader from 'compiled/fn/parseLinkHeader'
 import 'compiled/jquery.rails_flash_notifications'
 
@@ -77,7 +95,8 @@ import 'compiled/jquery.rails_flash_notifications'
     }
     $.ajax({
       url: url,
-      data: { external_tool: params },
+      contentType: 'application/json',
+      data: JSON.stringify({ external_tool: params }),
       type: method,
       success: success.bind(this),
       error: error.bind(this)
@@ -196,6 +215,7 @@ import 'compiled/jquery.rails_flash_notifications'
     params['privacy_level'] = 'anonymous';
     params['consumer_key'] = 'N/A';
     params['shared_secret'] = 'N/A';
+    params['verify_uniqueness'] = data.verifyUniqueness
     if (data.consumerKey && data.consumerKey.length > 0) {
       params['consumer_key'] = data.consumerKey;
     }
@@ -205,15 +225,16 @@ import 'compiled/jquery.rails_flash_notifications'
     switch(configurationType) {
       case 'manual':
         // Convert custom fields into kv pair
-          if (data.customFields === '' || typeof data.customFields === 'undefined') {
-            params['custom_fields_string'] = '';
-          } else {
-              var pairs = (data.customFields || '').split('\n');
-            _.forEach(pairs, function(pair) {
-              var vals = pair.trim().split(/=(.+)?/);
-              params['custom_fields[' + vals[0] + ']'] = vals[1];
-            });
-          }
+        if (data.customFields === '' || typeof data.customFields === 'undefined') {
+          params['custom_fields_string'] = '';
+        } else {
+          var pairs = (data.customFields || '').split('\n');
+          params.custom_fields = {}
+          _.forEach(pairs, function(pair) {
+            var vals = pair.trim().split(/=(.+)?/);
+            params.custom_fields[vals[0]] = vals[1];
+          });
+        }
 
         params['domain'] = data.domain;
         params['privacy_level'] = data.privacyLevel;
@@ -229,6 +250,11 @@ import 'compiled/jquery.rails_flash_notifications'
         params['config_xml'] = data.xml;
         break;
     }
+
+    if (data.allow_membership_service_access != null) {
+      params['allow_membership_service_access'] = data.allow_membership_service_access;
+    }
+
     return params;
   };
 

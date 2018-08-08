@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
 import $ from 'jquery'
 import _ from 'underscore'
@@ -24,16 +42,16 @@ import ModalButtons from './modal-buttons'
 
   const Modal = React.createClass({
 
-    getInitialState() {
-      return {
-        modalIsOpen: this.props.isOpen
-      }
-    },
     getDefaultProps(){
       return {
         className: "ReactModal__Content--canvas", // Override with "ReactModal__Content--canvas ReactModal__Content--mini-modal" for a mini modal
         style: {},
       };
+    },
+    getInitialState() {
+      return {
+        modalIsOpen: this.props.isOpen
+      }
     },
     componentWillReceiveProps(props){
       let callback
@@ -63,40 +81,39 @@ import ModalButtons from './modal-buttons'
       const promise = this.props.onSubmit();
       $(this.modal).disableWhileLoading(promise);
     },
+    onAfterOpen() {
+      this.closeBtn.focus()
+      if (this.props.onAfterOpen) {
+        this.props.onAfterOpen()
+      }
+    },
     getAppElement () {
       // Need to wait for the dom to load before we can get the default #application dom element
       return this.props.appElement || document.getElementById('application');
     },
     processMultipleChildren(props){
-      let content = null;
-      let buttons = null;
+      let content = null
+      let buttons = null
 
       React.Children.forEach(props.children, function(child){
-        if(child.type == ModalContent){
-          content = child;
+        if (child.type === ModalContent) {
+          content = child
+        } else if (child.type === ModalButtons) {
+          buttons = child
+        } else {
+          // Warning if you don't include a component of the right type
+          console.warn('Modal chilren must be wrapped in either a modal-content or modal-buttons component.')
         }
-        if(child.type == ModalButtons){
-          buttons = child;
-        }
-      });
+      })
 
-      // Warning if you don't include a component of the right type
-      if(content == null){
-        console.warn('You should wrap your content in the modal-content component');
-      }
-      if(buttons == null){
-        console.warn('You should wrap your buttons in the modal-buttons component');
-      }
-
-      if(this.props.onSubmit){
+      if (this.props.onSubmit) {
         return (
           <form className="ModalForm" onSubmit={preventDefault(this.onSubmit)}>
-            { [content, buttons] }
+            {[content, buttons]}
           </form>
         )
       }
-      else
-      {
+      else {
         return [content, buttons]; // This order needs to be maintained
       }
     },
@@ -109,6 +126,7 @@ import ModalButtons from './modal-buttons'
             onRequestClose={this.closeModal}
             className={this.props.className}
             style={modalOverrides}
+            onAfterOpen={this.onAfterOpen}
             overlayClassName={this.props.overlayClassName}
             contentLabel={this.props.contentLabel}
             appElement={this.getAppElement()}>
@@ -127,15 +145,12 @@ import ModalButtons from './modal-buttons'
                   </button>
                 </div>
               </div>
-
               {this.processMultipleChildren(this.props)}
-
             </div>
           </ReactModal>
         </div>
       );
     }
-
   });
 
 export default Modal

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module GradebookSetup
   include Factories
 
@@ -52,19 +69,19 @@ module GradebookSetup
     }
   end
 
-  def update_teacher_course_preferences(preferences)
-    @teacher.update preferences: {
+  def update_display_preferences(concluded, inactive)
+    update_course_preferences(@teacher, {
+      'show_concluded_enrollments' => concluded.to_s,
+      'show_inactive_enrollments' => inactive.to_s
+    })
+  end
+
+  def update_course_preferences(user, preferences)
+    user.update preferences: {
       gradebook_settings: {
         @course.id => preferences
       }
     }
-  end
-
-  def update_display_preferences(concluded, inactive)
-    update_teacher_course_preferences({
-      'show_concluded_enrollments' => concluded.to_s,
-      'show_inactive_enrollments' => inactive.to_s
-    })
   end
 
   def display_concluded_enrollments
@@ -73,5 +90,27 @@ module GradebookSetup
 
   def display_inactive_enrollments
     update_display_preferences(false, true)
+  end
+
+  def show_grading_periods_filter(user)
+    set_filter_visibility(user, 'gradingPeriods', true)
+  end
+
+  def show_sections_filter(user)
+    set_filter_visibility(user, 'sections', true)
+  end
+
+  def show_modules_filter(user)
+    set_filter_visibility(user, 'modules', true)
+  end
+
+  def set_filter_visibility(user, filter, visible)
+    filters = user.preferences.dig(:gradebook_settings, @course.id, :selected_view_options_filters) || []
+    if visible && !filters.include?(filter)
+      filters << filter
+    elsif !visible && filters.include?(filter)
+      filters.delete(filter)
+    end
+    update_course_preferences(user, selected_view_options_filters: filters)
   end
 end

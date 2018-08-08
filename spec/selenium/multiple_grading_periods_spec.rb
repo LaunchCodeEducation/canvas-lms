@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2015-2016 Instructure, Inc.
+# Copyright (C) 2015 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -128,19 +128,26 @@ describe "interaction with grading periods" do
           end_date: 1.day.ago(now)
         )
       end
-      let!(:assignment) { test_course.assignments.create!(title: 'Assignment 1', due_at: 1.day.ago(now), points_possible: 10) }
+      let!(:assignment) do
+        test_course.assignments.create!(
+          title: 'Assignment 1',
+          due_at: 1.day.ago(now),
+          points_possible: 10,
+          workflow_state: 'published'
+        )
+      end
 
       it 'should list an assignment from a previous grading period', priority: "2", test_course: 381145 do
         user_session(teacher)
         get "/courses/#{test_course.id}/assignments"
-        expect(fj("#assignment_#{assignment.id} a.ig-title")).to include_text('Assignment 1')
+        expect(f("#assignment_#{assignment.id} a.ig-title")).to include_text('Assignment 1')
       end
 
       it 'should list an assignment from a current grading period when due date is updated', priority: "2", test_course: 576764 do
         assignment.update_attributes(due_at: 3.days.from_now(now))
         user_session(teacher)
         get "/courses/#{test_course.id}/assignments"
-        expect(fj("#assignment_#{assignment.id} a.ig-title")).to include_text('Assignment 1')
+        expect(f("#assignment_#{assignment.id} a.ig-title")).to include_text('Assignment 1')
       end
     end
   end
@@ -178,17 +185,19 @@ describe "interaction with grading periods" do
     end
 
     it 'should display the current grading period and assignments in grades page', priority: "1", test_id: 202326 do
-      expect(f(".grading_periods_selector option[selected='selected']")).to include_text('Course Grading Period 1')
+      expect(f("#grading_period_select_menu option[selected]")).to include_text('Course Grading Period 1')
       expect(f("#submission_#{assignment1.id} th a")).to include_text('Assignment 1')
     end
 
     it 'should update assignments when a different period is selected in grades page', priority: "1", test_id: 562596 do
-      fj(".grading_periods_selector option:nth-child(3)").click
+      fj("#grading_period_select_menu option:nth-child(3)").click
+      expect_new_page_load { f('#apply_select_menus').click }
       expect(fj("#submission_#{assignment2.id} th a")).to include_text('Assignment 2')
     end
 
     it 'should update assignments when a all periods are selected in grades page', priority: "1", test_id: 571756 do
-      fj(".grading_periods_selector option:nth-child(1)").click
+      fj("#grading_period_select_menu option:nth-child(1)").click
+      expect_new_page_load { f('#apply_select_menus').click }
       expect(fj("#submission_#{assignment1.id} th a")).to include_text('Assignment 1')
       expect(fj("#submission_#{assignment2.id} th a")).to include_text('Assignment 2')
     end

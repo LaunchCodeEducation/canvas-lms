@@ -200,6 +200,32 @@ describe AssignmentGroupsController, type: :request do
     expect(json).to eq expected
   end
 
+  it "optionally includes 'grades_published' for moderated assignments" do
+    group = @course.assignment_groups.create!(name: "Homework")
+    group.update_attribute(:position, 10)
+
+    @course.assignments.create!({
+      assignment_group: group,
+      description: "First Math Assignment",
+      points_possible: 10,
+      title: "Math 1.1"
+    })
+
+    json = api_call(
+      :get,
+      "/api/v1/courses/#{@course.id}/assignment_groups.json",
+      {
+        action: "index",
+        controller: "assignment_groups",
+        course_id: @course.id.to_s,
+        format: "json",
+        include: ["assignments", "grades_published"]
+      }
+    )
+
+    expect(json.first["assignments"].first["grades_published"]).to eq(true)
+  end
+
   context "exclude response fields" do
     before(:once) do
       setup_groups
@@ -346,19 +372,29 @@ describe AssignmentGroupsController, type: :request do
 
   end
 
-  it "should include module_ids when requested" do
-    mods = 2.times.map { |i| @course.context_modules.create! name: "Mod#{i}" }
-    g = @course.assignment_groups.create! name: 'assignments'
-    a = @course.assignments.create! assignment_group: g, title: "blah"
-    mods.each { |m| m.add_item type: "assignment", id: a.id }
+  context 'when module_ids are requested' do
+    before :each do
+      @mods = Array.new(2) { |i| @course.context_modules.create! name: "Mod#{i}" }
+      g = @course.assignment_groups.create! name: 'assignments'
+      a = @course.assignments.create! assignment_group: g, title: 'blah'
+      @mods.each { |m| m.add_item type: 'assignment', id: a.id }
 
-    json = api_call(:get,
-          "/api/v1/courses/#{@course.id}/assignment_groups.json?include[]=assignments&include[]=module_ids",
-          { controller: 'assignment_groups', action: 'index',
-            format: 'json', course_id: @course.id.to_s,
-            include: %w[assignments module_ids]})
-    assignment_json = json.first["assignments"].first
-    expect(assignment_json["module_ids"].sort).to eq mods.map(&:id).sort
+      json = api_call(:get,
+        "/api/v1/courses/#{@course.id}/assignment_groups.json?include[]=assignments&include[]=module_ids",
+        { controller: 'assignment_groups', action: 'index',
+          format: 'json', course_id: @course.id.to_s,
+          include: %w[assignments module_ids]})
+
+      @assignment_json = json.first["assignments"].first
+    end
+
+    it 'includes module_ids' do
+      expect(@assignment_json['module_ids'].sort).to eq @mods.map(&:id).sort
+    end
+
+    it 'includes module_positions' do
+      expect(@assignment_json['module_positions']).to eq([1, 1])
+    end
   end
 
   it "should not include all dates" do
@@ -601,7 +637,7 @@ describe AssignmentGroupsApiController, type: :request do
         @submission = bare_submission_model(@assignment, @student, {
           score: '25',
           grade: '25',
-          grader: @teacher,
+          grader_id: @teacher.id,
           submitted_at: Time.zone.now
         })
 

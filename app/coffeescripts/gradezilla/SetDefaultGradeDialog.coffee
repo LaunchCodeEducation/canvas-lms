@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18n!gradezilla'
   'jquery'
@@ -8,7 +25,7 @@ define [
   'jqueryui/dialog'
   'jquery.instructure_misc_plugins'
   'vendor/jquery.ba-tinypubsub'
-  'compiled/jquery/fixDialogButtons'
+  '../jquery/fixDialogButtons'
 
   # this is a partial needed by the 'SetDefaultGradeDialog' template
   # since you cant declare a dependency in a handlebars file, we need to do it here
@@ -21,7 +38,7 @@ define [
   class SetDefaultGradeDialog
     constructor: ({@assignment, @students, @context_id, @selected_section}) ->
 
-    show: =>
+    show: (onClose) =>
       templateLocals =
         assignment: @assignment
         showPointsPossible: (@assignment.points_possible || @assignment.points_possible == '0') && @assignment.grading_type != "gpa_scale"
@@ -35,6 +52,7 @@ define [
         open: => @$dialog.find(".grading_box").focus()
         close: => @$dialog.remove()
       ).fixDialogButtons()
+      @$dialog.on 'dialogclose', onClose
 
       $form = @$dialog
       $(".ui-dialog-titlebar-close").focus()
@@ -68,7 +86,7 @@ define [
               count: submissions.length)
             submittingDfd.resolve()
             $("#set_default_grade").focus()
-            @$dialog.remove()
+            @$dialog.dialog('close')
 
       getStudents = =>
         if @selected_section

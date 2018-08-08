@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -63,7 +63,7 @@ class TabsController < ApplicationController
 
   # @API List available tabs for a course or group
   #
-  # Returns a list of navigation tabs available in the current context.
+  # Returns a paginated list of navigation tabs available in the current context.
   #
   # @argument include[] [String, "external"]
   #   "external":: Optionally include external tool tabs in the returned list of tabs (Only has effect for courses, not groups)

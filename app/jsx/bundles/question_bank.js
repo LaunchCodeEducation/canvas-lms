@@ -1,20 +1,20 @@
-//
-// Copyright (C) 2012 Instructure, Inc.
-//
-// This file is part of Canvas.
-//
-// Canvas is free software: you can redistribute it and/or modify it under
-// the terms of the GNU Affero General Public License as published by the Free
-// Software Foundation, version 3 of the License.
-//
-// Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
-// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
-// A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
-// details.
-//
-// You should have received a copy of the GNU Affero General Public License along
-// with this program. If not, see <http://www.gnu.org/licenses/>.
-//
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import I18n from 'i18n!outcomes'
 import $ from 'jquery'
@@ -35,13 +35,11 @@ class QuestionBankPage {
   constructor () {
     this.onAddOutcome = this.onAddOutcome.bind(this)
     this.rootOutcomeGroup = new OutcomeGroup(ENV.ROOT_OUTCOME_GROUP)
-    this.cacheElements()
     this.attachEvents()
   }
 
-  cacheElements () {
-    this.$els.addOutcome = $('.add_outcome_link')
-    return this.$els.dialog = new FindDialog({
+  createDialog () {
+    this.$els.dialog = new FindDialog({
       title: this.translations.findOutcome,
       selectedGroup: this.rootOutcomeGroup,
       setQuizMastery: true,
@@ -49,16 +47,19 @@ class QuestionBankPage {
       disableGroupImport: true,
       rootOutcomeGroup: this.rootOutcomeGroup
     })
+    this.$els.dialog.on('import', this.onOutcomeImport)
   }
 
   attachEvents () {
-    this.$els.addOutcome.on('click', this.onAddOutcome)
-    return this.$els.dialog.on('import', this.onOutcomeImport)
+    $('.add_outcome_link').on('click', this.onAddOutcome)
   }
 
   onAddOutcome (e) {
     e.preventDefault()
-    return this.$els.dialog.show()
+    if (!this.$els.dialog) {
+      this.createDialog()
+    }
+    this.$els.dialog.show()
   }
 
   onOutcomeImport (outcome) {
@@ -69,9 +70,9 @@ class QuestionBankPage {
       if (id !== outcome.get('id')) { return [id, percent] } return null
     })
     alignments.push([outcome.get('id'), mastery])
-    return updateAlignments(alignments)
+    updateAlignments(alignments)
   }
-  }
+}
 QuestionBankPage.initClass()
 
 

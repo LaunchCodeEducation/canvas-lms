@@ -1,7 +1,25 @@
+<%
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+%>
+
   <% js_bundle :navigation_header %>
   <header id="header" class="ic-app-header no-print <%= 'no-user' unless @current_user %>">
     <a href="#content" id="skip_navigation_link"><%= t 'links.skip_to_content', "Skip To Content" %></a>
-      <div role="region" class="ic-app-header__main-navigation" aria-label="<%= t('Main Navigation') %>">
+      <div role="region" class="ic-app-header__main-navigation" aria-label="<%= t('Global Navigation') %>">
       <% unless @current_user.try(:prefers_high_contrast?) %>
         <div class="ic-app-header__logomark-container">
           <a href="<%= dashboard_url %>" class="ic-app-header__logomark">
@@ -35,7 +53,7 @@
               </a>
             </li>
           <% end %>
-          <% if @current_user && @current_user.all_accounts.count > 0 %>
+          <% if @current_user && @current_user.adminable_accounts.count > 0 %>
             <li class="menu-item ic-app-header__menu-list-item <%= ' ic-app-header__menu-list-item--active' if active_path?('/accounts') %>">
               <a id="global_nav_accounts_link" href="/accounts" class="ic-app-header__menu-list-link">
                 <div class="menu-item-icon-container" aria-hidden="true">
@@ -65,7 +83,7 @@
               </div>
             </a>
           </li>
-          <% if @current_user && @current_user.current_groups.count > 0 %>
+          <% if @current_user && @current_user.current_active_groups? %>
             <li class="menu-item ic-app-header__menu-list-item <%= ' ic-app-header__menu-list-item--active' if active_path?('/groups') %>">
               <a id="global_nav_groups_link" href="/groups" class="ic-app-header__menu-list-link">
                 <div class="menu-item-icon-container" aria-hidden="true">
@@ -124,14 +142,14 @@
             <button
               id="primaryNavToggle"
               class="ic-app-header__menu-list-link ic-app-header__menu-list-link--nav-toggle"
-              aria-label="
-                <% if @current_user.try(:collapse_global_nav?) %><%= t('Expand global navigation') %>
+              aria-label="<% if @current_user.try(:collapse_global_nav?) %><%= t('Expand global navigation') %>
                 <% else %><%= t('Minimize global navigation') %><% end %>"
-              title="
-                <% if @current_user.try(:collapse_global_nav?) %><%= t('Expand global navigation') %>
+              title="<% if @current_user.try(:collapse_global_nav?) %><%= t('Expand global navigation') %>
                 <% else %><%= t('Minimize global navigation') %><% end %>"
             >
-              <%= svg_icon :navtoggle %>
+              <div class="menu-item-icon-container" aria-hidden="true">
+                <%= svg_icon :navtoggle %>
+              </div>
             </button>
           </li>
         </ul>

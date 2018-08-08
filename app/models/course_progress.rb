@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -29,7 +29,7 @@ class CourseProgress
   end
 
   def modules
-    @_modules ||= course.modules_visible_to(user)
+    @_modules ||= course.modules_visible_to(user).preload(:content_tags).to_a
   end
 
   def current_module
@@ -48,7 +48,7 @@ class CourseProgress
 
   def module_progressions
     @_module_progressions ||= course.context_module_progressions.
-                                  where(user_id: user, context_module_id: modules)
+                                  where(user_id: user, context_module_id: modules).to_a
   end
 
   def current_position
@@ -66,7 +66,7 @@ class CourseProgress
   def current_content_tag
     return unless in_progress?
     @current_content_tag ||= begin
-      tags = current_module.content_tags.where(:position => current_position)
+      tags = current_module.content_tags.select{|ct| ct.position == current_position}
       if tags.any?
         opts = current_module.visibility_for_user(user)
         tags.detect{|tag| tag.visible_to_user?(user, opts)}
@@ -78,7 +78,7 @@ class CourseProgress
 
   def requirements
     # e.g. [{id: 1, type: 'must_view'}, {id: 2, type: 'must_view'}]
-    @_requirements ||= modules.flat_map { |m| m.completion_requirements_visible_to(@user) }.uniq
+    @_requirements ||= modules.flat_map { |m| m.completion_requirements_visible_to(@user, :is_teacher => false) }.uniq
   end
 
   def requirement_count
@@ -92,9 +92,9 @@ class CourseProgress
   def requirements_completed
     # find the list of requirements that have been recorded as met for this module, then
     # select only those requirements that are current, and filter out any duplicates
-    @_requirements_completed ||= module_progressions.flat_map { |cmp| cmp.requirements_met }
-                                                    .select { |req| requirements.include?(req) }
-                                                    .uniq
+    @_requirements_completed ||= module_progressions.flat_map { |cmp| cmp.requirements_met }.
+      select { |req| requirements.include?(req) }.
+      uniq
   end
 
   def requirement_completed_count
@@ -118,12 +118,12 @@ class CourseProgress
 
   def most_recent_module_completed_at
     return unless module_progressions
-    module_progressions.maximum(:completed_at)
+    module_progressions.map(&:completed_at).compact.max
   end
 
   def completed_at
     return unless completed?
-    most_recent_module_completed_at.utc.iso8601 rescue nil
+    most_recent_module_completed_at&.utc&.iso8601
   end
 
   def to_json

@@ -1,14 +1,32 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
+import PropTypes from 'prop-types'
 import I18n from 'i18n!outcomes'
-import Button from 'instructure-ui/lib/components/Button'
-import Modal, { ModalHeader, ModalBody, ModalFooter } from 'instructure-ui/lib/components/Modal'
-import Heading from 'instructure-ui/lib/components/Heading'
-import Typography from 'instructure-ui/lib/components/Typography'
+import Button from '@instructure/ui-buttons/lib/components/Button'
+import Modal, { ModalBody, ModalFooter } from '../shared/components/InstuiModal'
+import Text from '@instructure/ui-elements/lib/components/Text'
 
 export default React.createClass({
     proptypes: {
-      onClose: React.PropTypes.func,
-      onReady: React.PropTypes.func
+      onClose: PropTypes.func,
+      onReady: PropTypes.func
     },
     getInitialState: function () {
       return {
@@ -18,23 +36,19 @@ export default React.createClass({
     render: function () {
       return (
         <Modal
-          isOpen={this.state.isOpen}
+          open={this.state.isOpen}
           shouldCloseOnOverlayClick={true}
-          onRequestClose={this.close}
+          onDismiss={this.close}
           transition="fade"
           size="auto"
-          label={I18n.t("Modal Dialog: Add to course")}
-          closeButtonLabel={I18n.t("Close")}
+          label={I18n.t("Add to course...")}
           ref={this._saveModal}
           onEntering={this._fixFocus}
           onClose={this.props.onClose}
-          onReady={this.props.onReady}
+          onOpen={this.props.onReady}
         >
-          <ModalHeader>
-            <Heading>{I18n.t("Add to course...")}</Heading>
-          </ModalHeader>
           <ModalBody>
-            <Typography lineHeight="double">Add to course functionality goes here...</Typography>
+            <Text lineHeight="double">Add to course functionality goes here...</Text>
           </ModalBody>
           <ModalFooter>
             <Button onClick={this.close} variant="primary">{I18n.t("Close")}</Button>

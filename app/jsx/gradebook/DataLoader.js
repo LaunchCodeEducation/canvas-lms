@@ -1,6 +1,30 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import $ from 'jquery'
-import cheaterDepaginate from 'jsx/shared/CheatDepaginator'
+import cheaterDepaginate from '../shared/CheatDepaginator'
 import _ from 'underscore'
+
+function getGradingPeriodAssignments (courseId) {
+  const url = `/courses/${courseId}/gradebook/grading_period_assignments`;
+  return $.ajaxJSON(url, 'GET', {});
+}
+
   // loaders
   const getAssignmentGroups = (url, params) => {
     return cheaterDepaginate(url, params);
@@ -9,9 +33,6 @@ import _ from 'underscore'
     return $.ajaxJSON(url, "GET", {});
   };
   const getSections = (url) => {
-    return $.ajaxJSON(url, "GET", {});
-  };
-  const getEffectiveDueDates = (url) => {
     return $.ajaxJSON(url, "GET", {});
   };
 
@@ -41,9 +62,7 @@ import _ from 'underscore'
     while (pendingStudentsForSubmissions.length) {
       const studentIds = pendingStudentsForSubmissions.splice(0, submissionChunkSize);
       submissionChunkCount++;
-      $.ajaxJSON(submissionURL, "GET",
-                 {student_ids: studentIds, ...submissionParams},
-                 gotSubmissionsChunk);
+      cheaterDepaginate(submissionURL, { student_ids: studentIds, ...submissionParams }).then(gotSubmissionsChunk);
     }
   };
 
@@ -109,7 +128,10 @@ import _ from 'underscore'
       return { gotAssignmentGroups };
     }
 
-    const gotEffectiveDueDates = getEffectiveDueDates(opts.effectiveDueDatesURL);
+    let gotGradingPeriodAssignments;
+    if (opts.getGradingPeriodAssignments) {
+      gotGradingPeriodAssignments = getGradingPeriodAssignments(opts.courseId);
+    }
     const gotCustomColumns = getCustomColumns(opts.customColumnsURL);
     const gotStudents = getStudents(opts.studentsURL, opts.studentsParams, opts.studentsPageCb);
     const gotSubmissions = getSubmissions(opts.submissionsURL, opts.submissionsParams, opts.submissionsChunkCb, opts.submissionsChunkSize);
@@ -120,12 +142,12 @@ import _ from 'underscore'
         [gotSubmissions]);
 
     return {
-      gotAssignmentGroups: gotAssignmentGroups,
-      gotCustomColumns: gotCustomColumns ,
-      gotStudents: gotStudents,
-      gotSubmissions: gotSubmissions,
-      gotCustomColumnData: gotCustomColumnData,
-      gotEffectiveDueDates: gotEffectiveDueDates,
+      gotAssignmentGroups,
+      gotCustomColumns,
+      gotGradingPeriodAssignments,
+      gotStudents,
+      gotSubmissions,
+      gotCustomColumnData
     };
   };
 

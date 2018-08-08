@@ -1,14 +1,31 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'jquery'
   'timezone'
   'underscore'
   'Backbone'
-  'compiled/str/splitAssetString'
+  '../../str/splitAssetString'
   'jst/wiki/WikiPage'
-  'compiled/views/StickyHeaderMixin'
-  'compiled/views/wiki/WikiPageDeleteDialog'
-  'compiled/views/wiki/WikiPageReloadView'
-  'compiled/views/PublishButtonView'
+  '../StickyHeaderMixin'
+  './WikiPageDeleteDialog'
+  './WikiPageReloadView'
+  '../PublishButtonView'
   'i18n!pages'
   'str/htmlEscape'
   'prerequisites_lookup'
@@ -29,6 +46,7 @@ define [
     events:
       'click .delete_page': 'deleteWikiPage'
       'click .use-as-front-page-menu-item': 'useAsFrontPage'
+      'click .unset-as-front-page-menu-item': 'unsetAsFrontPage'
 
     @optionProperty 'modules_path'
     @optionProperty 'wiki_pages_path'
@@ -116,6 +134,12 @@ define [
         wiki_pages_path: @wiki_pages_path
       deleteDialog.open()
 
+    unsetAsFrontPage: (ev) ->
+      ev?.preventDefault()
+
+      @model.unsetFrontPage ->
+        $('#wiki_page_show .header-bar-right .al-trigger').focus()
+
     useAsFrontPage: (ev) ->
       ev?.preventDefault()
       return unless @model.get('published')
@@ -149,7 +173,9 @@ define [
         else
           $.datetimeString(json.lock_info.unlock_at)
 
-      json.cannot_edit_by_master_course = json.is_master_course_child_content && json.restricted_by_master_course
+      if json.is_master_course_child_content && json.restricted_by_master_course
+        json.cannot_delete_by_master_course = true
+        json.cannot_edit_by_master_course = json.master_course_restrictions.content
 
       json.wiki_page_menu_tools = ENV.wiki_page_menu_tools
       _.each json.wiki_page_menu_tools, (tool) =>

@@ -1,15 +1,32 @@
-define([
-  'i18n!account_authorization_configs',
-  'str/htmlEscape',
-  'react',
-  'react-dom',
-  'jsx/authentication_providers/AuthTypePicker',
-  'authentication_providers',
-  'jquery' /* $ */,
-  'jquery.instructure_forms' /* formSubmit */,
-  'jquery.keycodes' /* keycodes */,
-  'jquery.loadingImg' /* loadingImage */
-], function (I18n, htmlEscape, React, ReactDOM, AuthTypePicker, authenticationProviders, $) {
+/*
+ * Copyright (C) 2012 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+import I18n from 'i18n!authentication_providers'
+import htmlEscape from './str/htmlEscape'
+import React from 'react'
+import ReactDOM from 'react-dom'
+import AuthTypePicker from 'jsx/authentication_providers/AuthTypePicker'
+import authenticationProviders from 'authentication_providers'
+import $ from 'jquery'
+import './jquery.instructure_forms' /* formSubmit */
+import './jquery.keycodes'
+import './jquery.loadingImg'
+
   var Picker = React.createFactory(AuthTypePicker);
   var selectorNode = document.getElementById('add-authentication-provider');
   var authTypeOptions = JSON.parse(selectorNode.getAttribute('data-options'));
@@ -104,4 +121,3 @@ define([
       $provisioning_elements.find("input[type='checkbox']").removeAttr('checked');
     }
   });
-});

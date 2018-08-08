@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -170,7 +170,7 @@ class DiscussionEntriesController < ApplicationController
           @discussion_entries.sort_by{|e| e.updated_at}.each do |e|
             feed.entries << e.to_atom
           end
-          render :text => feed.to_xml
+          render :plain => feed.to_xml
         }
         format.rss {
           @entries = [@topic] + @discussion_entries

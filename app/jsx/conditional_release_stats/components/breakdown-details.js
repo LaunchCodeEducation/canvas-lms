@@ -1,13 +1,32 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
-import Button from 'instructure-ui/lib/components/Button'
-import Tray from 'instructure-ui/lib/components/Tray'
-import IconX from 'instructure-icons/react/Solid/IconXSolid'
+import PropTypes from 'prop-types'
+import Button from '@instructure/ui-buttons/lib/components/Button'
+import Tray from '@instructure/ui-overlays/lib/components/Tray'
+import IconX from '@instructure/ui-icons/lib/Solid/IconX'
 import I18n from 'i18n!cyoe_assignment_sidebar'
 import StudentRangeView from './student-ranges-view'
 import StudentDetailsView from './student-details-view'
 import { assignmentShape, selectedPathShape } from '../shapes/index'
 
-const { array, object, func, bool } = React.PropTypes
+const { array, object, func, bool } = PropTypes
 
 export default class BreakdownDetails extends React.Component {
     static propTypes = {
@@ -68,13 +87,10 @@ export default class BreakdownDetails extends React.Component {
 
       return (
         <Tray
-          isOpen={this.props.showDetails}
-          placement="right"
-          isDismissable={false}
-          trapFocus
-          getDefaultFocusElement={() => this.closeButton}
-          onReady={() => document.getElementById('application').setAttribute('aria-hidden', true)}
-          onClose={() => document.getElementById('application').setAttribute('aria-hidden', false)}
+          open={this.props.showDetails}
+          placement="end"
+          shouldContainFocus
+          defaultFocusElement={() => this.closeButton}
         >
           <div className="crs-breakdown-details">
             <div className="crs-breakdown-details__content">
@@ -109,6 +125,6 @@ export default class BreakdownDetails extends React.Component {
             </div>
           </div>
         </Tray>
-      )
+      );
     }
   }

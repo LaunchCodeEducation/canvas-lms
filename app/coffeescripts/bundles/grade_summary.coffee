@@ -1,14 +1,35 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require [
   'jquery'
   'underscore'
   'Backbone'
-  'compiled/userSettings'
-  'compiled/collections/OutcomeSummaryCollection'
-  'compiled/views/grade_summary/OutcomeSummaryView'
+  'react'
+  'react-dom'
+  '../userSettings'
+  '../collections/OutcomeSummaryCollection'
+  '../views/grade_summary/OutcomeSummaryView'
+  '../views/grade_summary/IndividualStudentView'
   'jsx/grading/GradeSummary'
   'jqueryui/tabs'
   'jquery.disableWhileLoading'
-], ($, _, Backbone, userSettings, OutcomeSummaryCollection, OutcomeSummaryView, GradeSummary) ->
+], ($, _, Backbone, React, ReactDOM, userSettings, OutcomeSummaryCollection,
+  OutcomeSummaryView, IndividualStudentView, GradeSummary) ->
   # Ensure the gradebook summary code has had a chance to setup all its handlers
   GradeSummary.setup()
 
@@ -23,11 +44,18 @@ require [
 
       course_id = ENV.context_asset_string.replace('course_', '')
       user_id = ENV.student_id
-      @outcomes = new OutcomeSummaryCollection([], course_id: course_id, user_id: user_id)
-      @outcomeView = new OutcomeSummaryView
-        el: $('#outcomes'),
-        collection: @outcomes,
-        toggles: $('.outcome-toggles')
+
+      if ENV.non_scoring_rubrics_enabled
+        @outcomeView = new IndividualStudentView
+          el: $('#outcomes'),
+          course_id: course_id,
+          student_id: user_id
+      else
+        @outcomes = new OutcomeSummaryCollection([], course_id: course_id, user_id: user_id)
+        @outcomeView = new OutcomeSummaryView
+          el: $('#outcomes'),
+          collection: @outcomes,
+          toggles: $('.outcome-toggles')
 
     tab: (tab, path) ->
       if tab != 'outcomes' && tab != 'assignments'
@@ -43,6 +71,8 @@ require [
       tab = ui.newPanel.attr('id')
       router.navigate("#tab-#{tab}", {trigger: true})
       userSettings.contextSet('grade_summary_tab', tab)
+
+  GradeSummary.renderSelectMenuGroup()
 
   router = new GradebookSummaryRouter
   Backbone.history.start()

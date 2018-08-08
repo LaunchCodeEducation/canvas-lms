@@ -1,4 +1,5 @@
-# Copyright (C) 2011 - 2015 Instructure, Inc.
+#
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -16,14 +17,29 @@
 #
 
 require File.expand_path(File.dirname(__FILE__) + '/../sharding_spec_helper.rb')
+require File.expand_path(File.dirname(__FILE__) + '/../lti2_course_spec_helper.rb')
 
 require 'csv'
 require 'socket'
 
 describe Course do
+  include_examples "outcome import context examples"
+
   describe 'relationships' do
     it { is_expected.to have_one(:late_policy).dependent(:destroy).inverse_of(:course) }
+    it { is_expected.to have_many(:feature_flags) }
   end
+
+  describe 'lti2 proxies' do
+    include_context 'lti2_course_spec_helper'
+
+    it 'has many tool proxies' do
+      tool_proxy # need to do this so that the tool_proxy is instantiated
+      expect(course.tool_proxies.size).to eq 1
+    end
+  end
+
+  it_behaves_like 'a learning outcome context'
 end
 
 describe Course do
@@ -37,6 +53,207 @@ describe Course do
     @course.workflow_state = 'claimed'
     @course.root_account = Account.default
     @course.enrollment_term = Account.default.default_enrollment_term
+  end
+
+  it "should re-run DueDateCacher if enrollment term changes" do
+    @course.save!
+    @course.enrollment_term = EnrollmentTerm.create!(root_account: Account.default, workflow_state: :active)
+    expect(DueDateCacher).to receive(:recompute_course).with(@course)
+    @course.save!
+  end
+
+  it "should not re-run DueDateCacher if enrollment term does not change" do
+    @course.save!
+    expect(DueDateCacher).not_to receive(:recompute_course)
+    @course.save!
+  end
+
+  it "should correctly identify course as active" do
+    @course.enrollment_term = EnrollmentTerm.create!(root_account: Account.default, workflow_state: :active)
+    expect(@course.inactive?).to eq false
+  end
+
+  it "should correctly identify destroyed course as not active" do
+    @course.enrollment_term = EnrollmentTerm.create!(root_account: Account.default, workflow_state: :active)
+    @course.destroy!
+    expect(@course.inactive?).to eq true
+  end
+
+  it "should correctly identify concluded course as not active" do
+    @course.complete!
+    expect(@course.inactive?).to eq true
+  end
+
+  describe '#grading_standard_or_default' do
+    it 'returns the grading scheme being used by the course, if one exists' do
+      @course.save!
+      standard = grading_standard_for(@course)
+      @course.update!(default_grading_standard: standard)
+      expect(@course.grading_standard_or_default).to be standard
+    end
+
+    it 'returns the Canvas default grading scheme if the course is not using a grading scheme' do
+      expect(@course.grading_standard_or_default.data).to eq GradingStandard.default_grading_standard
+    end
+  end
+
+  describe "#moderated_grading_max_grader_count" do
+    before(:once) do
+      @course = Course.create!
+    end
+
+    it 'returns 1 if the course has no instructors' do
+      expect(@course.moderated_grading_max_grader_count).to eq 1
+    end
+
+    it 'returns 1 if the course has one instructor' do
+      teacher = User.create!
+      @course.enroll_teacher(teacher)
+      expect(@course.moderated_grading_max_grader_count).to eq 1
+    end
+
+    it 'returns 10 if the course has more than 11 instructors' do
+      create_users_in_course(@course, 6, enrollment_type: 'TeacherEnrollment')
+      create_users_in_course(@course, 6, enrollment_type: 'TaEnrollment')
+      expect(@course.moderated_grading_max_grader_count).to eq 10
+    end
+
+    it 'returns N-1 if the course has between 1 < N < 12 instructors' do
+      create_users_in_course(@course, 2, enrollment_type: 'TeacherEnrollment')
+      @course.enroll_ta(User.create!, enrollment_state: 'active')
+      expect { @course.enroll_ta(User.create!, enrollment_state: 'active') }.to change {
+        @course.moderated_grading_max_grader_count
+      }.from(2).to(3)
+    end
+
+    it 'ignores deactivated instructors' do
+      create_users_in_course(@course, 2, enrollment_type: 'TeacherEnrollment')
+      @course.enroll_ta(User.create!, enrollment_state: 'active').deactivate
+      expect(@course.moderated_grading_max_grader_count).to eq 1
+    end
+
+    it 'ignores concluded instructors' do
+      create_users_in_course(@course, 2, enrollment_type: 'TeacherEnrollment')
+      @course.enroll_ta(User.create!, enrollment_state: 'active').conclude
+      expect(@course.moderated_grading_max_grader_count).to eq 1
+    end
+
+    it 'ignores deleted instructors' do
+      create_users_in_course(@course, 2, enrollment_type: 'TeacherEnrollment')
+      @course.enroll_ta(User.create!, enrollment_state: 'active').destroy
+      expect(@course.moderated_grading_max_grader_count).to eq 1
+    end
+
+    it 'ignores non-instructors' do
+      create_users_in_course(@course, 2, enrollment_type: 'TeacherEnrollment')
+      @course.enroll_student(User.create!, enrollment_state: 'active')
+      expect(@course.moderated_grading_max_grader_count).to eq 1
+    end
+  end
+
+  describe '#moderators' do
+    before(:once) do
+      @course = Course.create!
+      @teacher = User.create!
+      @course.enroll_teacher(@teacher)
+      @ta = User.create!
+      @course.enroll_ta(@ta)
+    end
+
+    it 'includes active teachers' do
+      expect(@course.moderators).to include @teacher
+    end
+
+    it 'includes active TAs' do
+      expect(@course.moderators).to include @ta
+    end
+
+    it 'excludes active teachers if teachers have "Select Final Grade" priveleges revoked' do
+      @course.root_account.role_overrides.create!(permission: 'select_final_grade', role: teacher_role, enabled: false)
+      expect(@course.moderators).not_to include @teacher
+    end
+
+    it 'excludes active TAs if TAs have "Select Final Grade" priveleges revoked' do
+      @course.root_account.role_overrides.create!(permission: 'select_final_grade', role: ta_role, enabled: false)
+      expect(@course.moderators).not_to include @ta
+    end
+
+    it 'excludes inactive teachers' do
+      @course.enrollments.find_by!(user_id: @teacher).deactivate
+      expect(@course.moderators).not_to include @teacher
+    end
+
+    it 'excludes concluded teachers' do
+      @course.enrollments.find_by!(user_id: @teacher).conclude
+      expect(@course.moderators).not_to include @teacher
+    end
+
+    it 'excludes inactive TAs' do
+      @course.enrollments.find_by!(user_id: @ta).deactivate
+      expect(@course.moderators).not_to include @ta
+    end
+
+    it 'excludes concluded TAs' do
+      @course.enrollments.find_by!(user_id: @ta).conclude
+      expect(@course.moderators).not_to include @ta
+    end
+
+    it 'excludes admins' do
+      admin = account_admin_user
+      expect(@course.moderators).not_to include admin
+    end
+  end
+
+  describe "#recompute_student_scores" do
+    it "should use all student ids except concluded and deleted if none are passed" do
+      @course.save!
+      course_with_student(course: @course).update!(workflow_state: :completed)
+      course_with_student(course: @course).update!(workflow_state: :inactive)
+      @user1 = @user
+      course_with_student(course: @course, active_all: true)
+      @user2 = @user
+      expect(Enrollment).to receive(:recompute_final_score) do |student_ids, course_id, opts|
+        expect(student_ids.sort). to eq [@user1.id, @user2.id]
+        expect(course_id). to eq @course.id
+        expect(opts). to eq({grading_period_id: nil, update_all_grading_period_scores: true})
+      end.and_return(nil)
+      @course.recompute_student_scores
+    end
+
+    it "should not use student ids for deleted enrollments, even if they are explicitly passed" do
+      @course.save!
+      enrollment = course_with_student(course: @course, active_all: true)
+      enrollment.destroy
+      expect(Enrollment).to receive(:recompute_final_score).with([], any_args)
+      @course.recompute_student_scores([enrollment.user_id])
+    end
+
+    it "should not use student ids for users enrolled in other courses, even if they are explicitly passed" do
+      @course.save!
+      first_course = @course
+      enrollment = course_with_student(active_all: true)
+      expect(Enrollment).to receive(:recompute_final_score).with([], any_args)
+      first_course.recompute_student_scores([enrollment.user_id])
+    end
+
+    it "triggers a delayed job by default" do
+      expect(@course).to receive(:send_later_if_production_enqueue_args).
+        with(:recompute_student_scores_without_send_later, any_args)
+
+      @course.recompute_student_scores
+    end
+
+    it "does not trigger a delayed job when passed run_immediately: true" do
+      expect(@course).not_to receive(:send_later_if_production_enqueue_args).
+        with(:recompute_student_scores_without_send_later, any_args)
+
+      @course.recompute_student_scores(nil, run_immediately: true)
+    end
+
+    it "calls recompute_student_scores_without_send_later when passed run_immediately: true" do
+      expect(@course).to receive(:recompute_student_scores_without_send_later)
+      @course.recompute_student_scores(nil, run_immediately: true)
+    end
   end
 
   it "should properly determine if group weights are active" do
@@ -207,6 +424,34 @@ describe Course do
     end
   end
 
+  describe "#relevant_grading_period_group" do
+    it "favors legacy over enrollment term grading_period_groups" do
+      @course.save!
+      account_group = Factories::GradingPeriodGroupHelper.new.create_for_account(@course.root_account)
+      account_group.enrollment_terms << @course.enrollment_term
+      grading_period_group = Factories::GradingPeriodGroupHelper.new.legacy_create_for_course(@course)
+      expect(@course.relevant_grading_period_group).to eq(grading_period_group)
+    end
+
+    it "returns a legacy grading_period_group" do
+      @course.save!
+      grading_period_group = Factories::GradingPeriodGroupHelper.new.legacy_create_for_course(@course)
+      expect(@course.relevant_grading_period_group).to eq(grading_period_group)
+    end
+
+    it "returns an enrollment term grading_period_group" do
+      @course.save!
+      grading_period_group = Factories::GradingPeriodGroupHelper.new.create_for_account(@course.root_account)
+      grading_period_group.enrollment_terms << @course.enrollment_term
+      expect(@course.relevant_grading_period_group).to eq(grading_period_group)
+    end
+
+    it "returns nil when there are no relevant grading_period_group" do
+      @course.save!
+      expect(@course.relevant_grading_period_group).to be nil
+    end
+  end
+
   describe "#weighted_grading_periods?" do
     it "returns false if course has legacy grading periods" do
       @course.save!
@@ -314,7 +559,7 @@ describe Course do
 
   context "validation" do
     it "should create a new instance given valid attributes" do
-      course_model
+      expect{course_model}.not_to raise_error
     end
 
     it "should require unique sis_source_id" do
@@ -849,29 +1094,32 @@ describe Course do
     end
 
     it "should preserve sticky fields" do
+      sub = @course.root_account.sub_accounts.create
       @course.sis_source_id = 'sis_id'
       @course.course_code = "cid"
-      @course.save!
       @course.stuck_sis_fields = [].to_set
+      @course.save!
+      @course.reload
       @course.name = "course_name"
       expect(@course.stuck_sis_fields).to eq [:name].to_set
       profile = @course.profile
       profile.description = "description"
       profile.save!
+      @course.account = sub
       @course.save!
-      expect(@course.stuck_sis_fields).to eq [:name].to_set
+      expect(@course.stuck_sis_fields).to eq [:name, :account_id].to_set
 
       @course.reload
 
       @new_course = @course.reset_content
 
       @course.reload
-      expect(@course.stuck_sis_fields).to eq [:workflow_state, :name].to_set
+      expect(@course.stuck_sis_fields).to eq [:workflow_state, :name, :account_id].to_set
       expect(@course.sis_source_id).to be_nil
 
       @new_course.reload
       expect(@new_course.sis_source_id).to eq 'sis_id'
-      expect(@new_course.stuck_sis_fields).to eq [:name].to_set
+      expect(@new_course.stuck_sis_fields).to eq [:name, :account_id].to_set
 
       expect(@course.uuid).not_to eq @new_course.uuid
       expect(@course.replacement_course_id).to eq @new_course.id
@@ -1013,23 +1261,48 @@ describe Course do
     end
   end
 
-  context "migrate_content_links" do
-    it "should ignore types not in the supported_types arg" do
-      c1 = course_model
-      c2 = course_model
-      orig = <<-HTML
-      We aren't translating <a href="/courses/#{c1.id}/assignments/5">links to assignments</a>
-      HTML
-      html = Course.migrate_content_links(orig, c1, c2, ['files'])
-      expect(html).to eq orig
-    end
-  end
-
   it "should be marshal-able" do
     c = Course.new(:name => 'c1')
-    Marshal.dump(c)
+    expect { Marshal.dump(c) }.not_to raise_error
     c.save!
-    Marshal.dump(c)
+    expect { Marshal.dump(c) }.not_to raise_error
+  end
+
+  describe "course_section_visibility" do
+    before :once do
+      @course = Account.default.courses.create!
+      @section1 = @course.course_sections.create!(:name => "Section 1")
+      @section2 = @course.course_sections.create!(:name => "Section 2")
+    end
+
+    it "returns all for admins" do
+      admin = account_admin_user(account: @course.root_account, role: admin_role, active_user: true)
+      expect(@course.course_section_visibility(admin)).to eq :all
+    end
+
+    it "returns correct sections for students" do
+      student = User.create!(:name => "Student")
+      @course.enroll_student(student, :section => @section1)
+      expect(@course.course_section_visibility(student)).to eq [@section1.id]
+    end
+
+    it "correctly limits visibilities for a limited teacher" do
+      limited_teacher = User.create(:name => "Limited Teacher")
+      @course.enroll_teacher(limited_teacher, :limit_privileges_to_course_section => true,
+        :section => @section2)
+      expect(@course.course_section_visibility(limited_teacher)).to eq [@section2.id]
+    end
+
+    it "unlimited teachers can see everything" do
+      unlimited_teacher = User.create(:name => "Unlimited Teacher")
+      @course.enroll_teacher(unlimited_teacher, :section => @section2)
+      expect(@course.course_section_visibility(unlimited_teacher)).to eq :all
+    end
+
+    it "returns none for a nobody" do
+      worthless_loser = User.create(:name => "Worthless Loser")
+      expect(@course.course_section_visibility(worthless_loser)).to eq []
+    end
   end
 end
 
@@ -1208,7 +1481,7 @@ describe Course, '#assignment_groups' do
     @course.assignment_groups.create!(:name => 'C Group', position: 3)
 
     @course.reload
-    expect(AssignmentGroup).to receive(:best_unicode_collation_key).with('assignment_groups.name').and_call_original
+    expect(AssignmentGroup).to receive(:best_unicode_collation_key).with('assignment_groups.name').at_least(1).and_call_original
     groups = @course.assignment_groups
 
     expect(groups[0].name).to eq('B Group')
@@ -1274,14 +1547,16 @@ describe Course, "gradebook_to_csv" do
 
     csv = GradebookExporter.new(@course, @teacher).to_csv
     expect(csv).not_to be_nil
-    rows = CSV.parse(csv)
-    expect(rows.length).to equal(3)
-    expect(rows[0][-1]).to eq "Final Score"
-    expect(rows[1][-1]).to eq "(read only)"
-    expect(rows[2][-1]).to eq "50.0"
-    expect(rows[0][-2]).to eq "Current Score"
-    expect(rows[1][-2]).to eq "(read only)"
-    expect(rows[2][-2]).to eq "100.0"
+    rows = CSV.parse(csv, headers: true)
+    expect(rows.length).to equal(2)
+    expect(rows[0]["Unposted Final Score"]).to eq "(read only)"
+    expect(rows[1]["Unposted Final Score"]).to eq "50.0"
+    expect(rows[0]["Final Score"]).to eq "(read only)"
+    expect(rows[1]["Final Score"]).to eq "50.0"
+    expect(rows[0]["Unposted Current Score"]).to eq "(read only)"
+    expect(rows[1]["Unposted Current Score"]).to eq "100.0"
+    expect(rows[0]["Current Score"]).to eq "(read only)"
+    expect(rows[1]["Current Score"]).to eq "100.0"
   end
 
   it "should order assignments and groups by position" do
@@ -1313,27 +1588,33 @@ describe Course, "gradebook_to_csv" do
 
     csv = GradebookExporter.new(@course, @teacher).to_csv
     expect(csv).not_to be_nil
-    rows = CSV.parse(csv)
-    expect(rows.length).to equal(3)
+    rows = CSV.parse(csv, headers: true)
+    expect(rows.length).to equal(2)
     assignments, groups = [], []
-    rows[0].each do |column|
+    rows.headers.each do |column|
       assignments << column.sub(/ \([0-9]+\)/, '') if column =~ /Assignment \d+/
       groups << column if column =~ /Some Assignment Group/
     end
     expect(assignments).to eq ["Assignment 02", "Assignment 03", "Assignment 01", "Assignment 05",  "Assignment 04", "Assignment 06", "Assignment 07", "Assignment 09", "Assignment 11", "Assignment 12", "Assignment 13", "Assignment 14", "Assignment 08", "Assignment 10"]
-    expect(groups).to eq ["Some Assignment Group 1 Current Points",
-                      "Some Assignment Group 1 Final Points",
-                      "Some Assignment Group 1 Current Score",
-                      "Some Assignment Group 1 Final Score",
-                      "Some Assignment Group 2 Current Points",
-                      "Some Assignment Group 2 Final Points",
-                      "Some Assignment Group 2 Current Score",
-                      "Some Assignment Group 2 Final Score"]
+    expect(groups).to eq [
+      "Some Assignment Group 1 Current Points",
+      "Some Assignment Group 1 Final Points",
+      "Some Assignment Group 1 Current Score",
+      "Some Assignment Group 1 Unposted Current Score",
+      "Some Assignment Group 1 Final Score",
+      "Some Assignment Group 1 Unposted Final Score",
+      "Some Assignment Group 2 Current Points",
+      "Some Assignment Group 2 Final Points",
+      "Some Assignment Group 2 Current Score",
+      "Some Assignment Group 2 Unposted Current Score",
+      "Some Assignment Group 2 Final Score",
+      "Some Assignment Group 2 Unposted Final Score"
+    ]
 
-    expect(rows[2][-10]).to eq "100.0"    # ag1 current score
-    expect(rows[2][-9]).to  eq "50.0"     # ag1 final score
-    expect(rows[2][-6]).to  eq "50.0"     # ag2 current score
-    expect(rows[2][-5]).to  eq "25.0"     # ag2 final score
+    expect(rows[1]["Some Assignment Group 1 Current Score"]).to eq "100.0"
+    expect(rows[1]["Some Assignment Group 1 Final Score"]).to eq "50.0"
+    expect(rows[1]["Some Assignment Group 2 Current Score"]).to eq "50.0"
+    expect(rows[1]["Some Assignment Group 2 Final Score"]).to eq "25.0"
   end
 
   it "handles nil assignment due_dates if the group and position are the same" do
@@ -1441,20 +1722,24 @@ describe Course, "gradebook_to_csv" do
 
     csv = GradebookExporter.new(@course, @teacher).to_csv
     expect(csv).not_to be_nil
-    rows = CSV.parse(csv)
-    expect(rows.length).to equal(3)
-    expect(rows[0][-1]).to eq "Final Grade"
-    expect(rows[1][-1]).to eq "(read only)"
-    expect(rows[2][-1]).to eq "A-"
-    expect(rows[0][-2]).to eq "Current Grade"
-    expect(rows[1][-2]).to eq "(read only)"
-    expect(rows[2][-2]).to eq "A-"
-    expect(rows[0][-3]).to eq "Final Score"
-    expect(rows[1][-3]).to eq "(read only)"
-    expect(rows[2][-3]).to eq "90.0"
-    expect(rows[0][-4]).to eq "Current Score"
-    expect(rows[1][-4]).to eq "(read only)"
-    expect(rows[2][-4]).to eq "90.0"
+    rows = CSV.parse(csv, headers: true)
+    expect(rows.length).to equal(2)
+    expect(rows[0]["Unposted Final Grade"]).to eq "(read only)"
+    expect(rows[1]["Unposted Final Grade"]).to eq "A-"
+    expect(rows[0]["Final Grade"]).to eq "(read only)"
+    expect(rows[1]["Final Grade"]).to eq "A-"
+    expect(rows[0]["Unposted Current Grade"]).to eq "(read only)"
+    expect(rows[1]["Unposted Current Grade"]).to eq "A-"
+    expect(rows[0]["Current Grade"]).to eq "(read only)"
+    expect(rows[1]["Current Grade"]).to eq "A-"
+    expect(rows[0]["Unposted Final Score"]).to eq "(read only)"
+    expect(rows[1]["Unposted Final Score"]).to eq "90.0"
+    expect(rows[0]["Final Score"]).to eq "(read only)"
+    expect(rows[1]["Final Score"]).to eq "90.0"
+    expect(rows[0]["Unposted Current Score"]).to eq "(read only)"
+    expect(rows[1]["Unposted Current Score"]).to eq "90.0"
+    expect(rows[0]["Current Score"]).to eq "(read only)"
+    expect(rows[1]["Current Score"]).to eq "90.0"
   end
 
   it "should include sis ids if enabled" do
@@ -1513,10 +1798,11 @@ describe Course, "gradebook_to_csv" do
     @user2.pseudonym.sis_user_id = "SISUSERID"
     @user2.pseudonym.save!
     @course.reload
-    @course.root_account.stubs(:trust_exists?).returns(true)
-    @course.root_account.any_instantiation.stubs(:trusted_account_ids).returns([account2.id])
-    HostUrl.expects(:context_host).with(@course.root_account).returns('school1')
-    HostUrl.expects(:context_host).with(account2).returns('school2')
+    allow(@course.root_account).to receive(:trust_exists?).and_return(true)
+    allow_any_instantiation_of(@course.root_account).to receive(:trusted_account_ids).and_return([account2.id])
+    allow_any_instantiation_of(@user2.pseudonyms.first).to receive(:works_for_account?).and_return(true)
+    expect(HostUrl).to receive(:context_host).with(@course.root_account).and_return('school1')
+    expect(HostUrl).to receive(:context_host).with(account2).and_return('school2')
 
     csv = GradebookExporter.new(@course, @teacher, :include_sis_id => true).to_csv
     expect(csv).not_to be_nil
@@ -1569,19 +1855,15 @@ describe Course, "gradebook_to_csv" do
     end
 
     it "includes points for unweighted courses" do
-      csv = CSV.parse(GradebookExporter.new(@course, @teacher).to_csv)
-      expect(csv[0][-8]).to eq "Assignments Current Points"
-      expect(csv[0][-7]).to eq "Assignments Final Points"
-      expect(csv[1][-8]).to eq "(read only)"
-      expect(csv[1][-7]).to eq "(read only)"
-      expect(csv[2][-8]).to eq "8.0"
-      expect(csv[2][-7]).to eq "8.0"
-      expect(csv[0][-4]).to eq "Current Points"
-      expect(csv[0][-3]).to eq "Final Points"
-      expect(csv[1][-4]).to eq "(read only)"
-      expect(csv[1][-3]).to eq "(read only)"
-      expect(csv[2][-4]).to eq "8.0"
-      expect(csv[2][-3]).to eq "8.0"
+      csv = CSV.parse(GradebookExporter.new(@course, @teacher).to_csv, headers: true)
+      expect(csv[0]["Assignments Current Points"]).to eq "(read only)"
+      expect(csv[1]["Assignments Current Points"]).to eq "8.0"
+      expect(csv[0]["Assignments Final Points"]).to eq "(read only)"
+      expect(csv[1]["Assignments Final Points"]).to eq "8.0"
+      expect(csv[0]["Current Points"]).to eq "(read only)"
+      expect(csv[1]["Current Points"]).to eq "8.0"
+      expect(csv[0]["Final Points"]).to eq "(read only)"
+      expect(csv[1]["Final Points"]).to eq "8.0"
     end
 
     it "doesn't include points for weighted courses" do
@@ -1724,6 +2006,47 @@ describe Course, "gradebook_to_csv" do
   end
 end
 
+describe Course, "gradebook_to_csv_in_background" do
+  context "sharding" do
+    specs_require_sharding
+
+    it "works for cross-shard users for courses on birth shard" do
+      s3_storage!
+
+      @shard1.activate do
+        @shard1_user = user_factory(active_all: true)
+      end
+
+      Shard.default.activate do
+        student_in_course(active_all: true)
+        @attachment_id = @course.gradebook_to_csv_in_background("asdf", @shard1_user)[:attachment_id]
+      end
+
+      @shard1.activate do
+        expect {
+          Attachment.find(@attachment_id).public_download_url
+        }.not_to raise_error
+      end
+    end
+  end
+  it "create_attachment uses inst-fs if inst-fs is enabled" do
+    @uuid = "1234-abcd"
+    allow(InstFS).to receive(:direct_upload).and_return(@uuid)
+    allow(InstFS).to receive(:enabled?).and_return(true)
+    @user = user_factory(active_all: true)
+    student_in_course(active_all: true)
+
+    attachment = @user.attachments.build
+    attachment.content_type = "text/csv"
+    attachment.file_state = "hidden"
+    attachment.filename = "exported file"
+    attachment.save!
+
+    @course.create_attachment(attachment, "some, csv, data, up, in, here")
+    expect(attachment.instfs_uuid).to eq(@uuid)
+  end
+end
+
 describe Course, "update_account_associations" do
   it "should update account associations correctly" do
     account1 = Account.create!(:name => 'first')
@@ -1791,9 +2114,6 @@ describe Course, "tabs_available" do
       tab_id = "context_external_tool_#{@tool.id}"
 
       @course.tab_configuration = [{"id" => tab_id}]
-      @course.tabs_available(@user).each do |tab|
-        puts tab.inspect
-      end
       tab = @course.tabs_available(@user).select { |t| t[:id] == tab_id }.first
       expect(tab[:target]).to eq("_blank")
     end
@@ -1965,7 +2285,7 @@ describe Course, "tabs_available" do
         :hidden => false,
         :args => [1, 2]
       }
-      Lti::MessageHandler.stubs(:lti_apps_tabs).returns([mock_tab])
+      allow(Lti::MessageHandler).to receive(:lti_apps_tabs).and_return([mock_tab])
       expect(@course.tabs_available(nil, :include_external => true)).to include(mock_tab)
     end
   end
@@ -2063,77 +2383,6 @@ describe Course, "tabs_available" do
   end
 end
 
-describe Course, "backup" do
-  let_once :course_to_backup do
-    @course = course_factory
-    group = @course.assignment_groups.create!(:name => "Some Assignment Group")
-    @course.assignments.create!(:title => "Some Assignment", :assignment_group => group)
-    @course.calendar_events.create!(:title => "Some Event", :start_at => Time.now, :end_at => Time.now)
-    @course.wiki.wiki_pages.create!(:title => "Some Page")
-    topic = @course.discussion_topics.create!(:title => "Some Discussion")
-    topic.discussion_entries.create!(:message => "just a test")
-    @course
-  end
-
-  it "should backup to a valid data structure" do
-    data = course_to_backup.backup
-    expect(data).not_to be_nil
-    expect(data.length).to be > 0
-    expect(data.any?{|i| i.is_a?(Assignment)}).to eql(true)
-    expect(data.any?{|i| i.is_a?(WikiPage)}).to eql(true)
-    expect(data.any?{|i| i.is_a?(DiscussionTopic)}).to eql(true)
-    expect(data.any?{|i| i.is_a?(CalendarEvent)}).to eql(true)
-  end
-
-  it "should backup to a valid json string" do
-    data = course_to_backup.backup_to_json
-    expect(data).not_to be_nil
-    expect(data.length).to be > 0
-    parse = JSON.parse(data) rescue nil
-    expect(parse).not_to be_nil
-    expect(parse).to be_is_a(Array)
-    expect(parse.length).to be > 0
-  end
-
-  it "should not cross learning outcomes with learning outcome groups in the association" do
-    skip('fails when being run in the single thread rake task')
-    # set up two courses with two outcomes
-    course = course_model
-    default_group = course.root_outcome_group
-    outcome = course.created_learning_outcomes.create!
-    default_group.add_outcome(outcome)
-
-    other_course = course_model
-    other_default_group = other_course.root_outcome_group
-    other_outcome = other_course.created_learning_outcomes.create!
-    other_default_group.add_outcome(other_outcome)
-
-    # add another group to the first course, which "coincidentally" has the
-    # same id as the second course's outcome
-    other_group = course.learning_outcome_groups.build
-    other_group.id = other_outcome.id
-    other_group.save!
-    default_group.adopt_outcome_group(other_group)
-
-    # reload and check
-    course.reload
-    other_course.reload
-    expect(course.learning_outcomes).to be_include(outcome)
-    expect(course.learning_outcomes).not_to be_include(other_outcome)
-    expect(other_course.learning_outcomes).to be_include(other_outcome)
-  end
-
-  it "should not count learning outcome groups as having outcomes" do
-    course = course_model
-    default_group = course.root_outcome_group
-    other_group = course.learning_outcome_groups.create!(:title => 'other group')
-    default_group.adopt_outcome_group(other_group)
-
-    expect(course).not_to have_outcomes
-  end
-
-end
-
 describe Course, 'grade_publishing' do
   before :once do
     @course = Course.new
@@ -2150,44 +2399,46 @@ describe Course, 'grade_publishing' do
 
     before(:each) do
       @plugin_settings = Canvas::Plugin.find!("grade_export").default_settings.clone
-      @plugin = mock()
-      Canvas::Plugin.stubs("find!".to_sym).with('grade_export').returns(@plugin)
-      @plugin.stubs(:settings).returns{@plugin_settings}
+      @plugin = double()
+      allow(Canvas::Plugin).to receive("find!".to_sym).with('grade_export').and_return(@plugin)
+      allow(@plugin).to receive(:settings).and_return(@plugin_settings)
     end
 
     context 'grade_publishing_status_translation' do
       it 'should work with nil statuses and messages' do
-        expect(@course.grade_publishing_status_translation(nil, nil)).to eq "Unpublished"
-        expect(@course.grade_publishing_status_translation(nil, "hi")).to eq "Unpublished: hi"
-        expect(@course.grade_publishing_status_translation("published", nil)).to eq "Published"
-        expect(@course.grade_publishing_status_translation("published", "hi")).to eq "Published: hi"
+        expect(@course.grade_publishing_status_translation(nil, nil)).to eq "Not Synced"
+        expect(@course.grade_publishing_status_translation(nil, "hi")).to eq "Not Synced: hi"
+        expect(@course.grade_publishing_status_translation("published", nil)).to eq "Synced"
+        expect(@course.grade_publishing_status_translation("published", "hi")).to eq "Synced: hi"
       end
 
       it 'should work with invalid statuses' do
-        expect(@course.grade_publishing_status_translation("invalid_status", nil)).to eq "Unknown status, invalid_status"
-        expect(@course.grade_publishing_status_translation("invalid_status", "what what")).to eq "Unknown status, invalid_status: what what"
+        expect(@course.grade_publishing_status_translation("bad_status", nil)).to eq "Unknown status, bad_status"
+        expect(@course.grade_publishing_status_translation("bad_status", "what what")).to eq(
+          "Unknown status, bad_status: what what"
+        )
       end
 
       it "should work with empty string statuses and messages" do
-        expect(@course.grade_publishing_status_translation("", "")).to eq "Unpublished"
-        expect(@course.grade_publishing_status_translation("", "hi")).to eq "Unpublished: hi"
-        expect(@course.grade_publishing_status_translation("published", "")).to eq "Published"
-        expect(@course.grade_publishing_status_translation("published", "hi")).to eq "Published: hi"
+        expect(@course.grade_publishing_status_translation("", "")).to eq "Not Synced"
+        expect(@course.grade_publishing_status_translation("", "hi")).to eq "Not Synced: hi"
+        expect(@course.grade_publishing_status_translation("published", "")).to eq "Synced"
+        expect(@course.grade_publishing_status_translation("published", "hi")).to eq "Synced: hi"
       end
 
       it 'should work with all known statuses' do
         expect(@course.grade_publishing_status_translation("error", nil)).to eq "Error"
         expect(@course.grade_publishing_status_translation("error", "hi")).to eq "Error: hi"
-        expect(@course.grade_publishing_status_translation("unpublished", nil)).to eq "Unpublished"
-        expect(@course.grade_publishing_status_translation("unpublished", "hi")).to eq "Unpublished: hi"
+        expect(@course.grade_publishing_status_translation("unpublished", nil)).to eq "Not Synced"
+        expect(@course.grade_publishing_status_translation("unpublished", "hi")).to eq "Not Synced: hi"
         expect(@course.grade_publishing_status_translation("pending", nil)).to eq "Pending"
         expect(@course.grade_publishing_status_translation("pending", "hi")).to eq "Pending: hi"
-        expect(@course.grade_publishing_status_translation("publishing", nil)).to eq "Publishing"
-        expect(@course.grade_publishing_status_translation("publishing", "hi")).to eq "Publishing: hi"
-        expect(@course.grade_publishing_status_translation("published", nil)).to eq "Published"
-        expect(@course.grade_publishing_status_translation("published", "hi")).to eq "Published: hi"
-        expect(@course.grade_publishing_status_translation("unpublishable", nil)).to eq "Unpublishable"
-        expect(@course.grade_publishing_status_translation("unpublishable", "hi")).to eq "Unpublishable: hi"
+        expect(@course.grade_publishing_status_translation("publishing", nil)).to eq "Syncing"
+        expect(@course.grade_publishing_status_translation("publishing", "hi")).to eq "Syncing: hi"
+        expect(@course.grade_publishing_status_translation("published", nil)).to eq "Synced"
+        expect(@course.grade_publishing_status_translation("published", "hi")).to eq "Synced: hi"
+        expect(@course.grade_publishing_status_translation("unpublishable", nil)).to eq "Unsyncable"
+        expect(@course.grade_publishing_status_translation("unpublishable", "hi")).to eq "Unsyncable: hi"
       end
     end
 
@@ -2243,24 +2494,24 @@ describe Course, 'grade_publishing' do
         messages, overall_status = @course.grade_publishing_statuses
         expect(overall_status).to eq "error"
         expect(messages.count).to eq 5
-        expect(messages["Unpublished"].sort_by(&:id)).to eq [
-            @student_enrollments[7],
-            @student_enrollments[8]
-          ].sort_by(&:id)
-        expect(messages["Published"]).to eq [
-            @student_enrollments[0]
-          ]
+        expect(messages["Not Synced"].sort_by(&:id)).to eq [
+          @student_enrollments[7],
+          @student_enrollments[8]
+        ].sort_by(&:id)
+        expect(messages["Synced"]).to eq [
+          @student_enrollments[0]
+        ]
         expect(messages["Error: cause of this reason"]).to eq [
-            @student_enrollments[1]
-          ]
+          @student_enrollments[1]
+        ]
         expect(messages["Error: cause of that reason"]).to eq [
-            @student_enrollments[3]
-          ]
-        expect(messages["Unpublishable"].sort_by(&:id)).to eq [
-            @student_enrollments[2],
-            @student_enrollments[4],
-            @student_enrollments[5]
-          ].sort_by(&:id)
+          @student_enrollments[3]
+        ]
+        expect(messages["Unsyncable"].sort_by(&:id)).to eq [
+          @student_enrollments[2],
+          @student_enrollments[4],
+          @student_enrollments[5]
+        ].sort_by(&:id)
       end
 
       it 'should correctly figure out the overall status with no enrollments' do
@@ -2328,14 +2579,14 @@ describe Course, 'grade_publishing' do
       end
 
       it 'should check whether or not grade export is enabled - success' do
-        @course.expects(:send_final_grades_to_endpoint).with(@user, nil).returns(nil)
-        @plugin.stubs(:enabled?).returns(true)
+        expect(@course).to receive(:send_final_grades_to_endpoint).with(@user, nil).and_return(nil)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings[:publish_endpoint] = "http://localhost/endpoint"
         @course.publish_final_grades(@user)
       end
 
       it 'should check whether or not grade export is enabled - failure' do
-        @plugin.stubs(:enabled?).returns(false)
+        allow(@plugin).to receive(:enabled?).and_return(false)
         @plugin_settings[:publish_endpoint] = "http://localhost/endpoint"
         expect(lambda {@course.publish_final_grades(@user)}).to raise_error("final grade publishing disabled")
       end
@@ -2348,8 +2599,8 @@ describe Course, 'grade_publishing' do
         expect(@student_enrollments.map(&:workflow_state)).to eq ["active"] * 6 + ["inactive"] + ["active"] * 2
         expect(@student_enrollments.map(&:last_publish_attempt_at)).to eq [nil] * 9
         grade_publishing_user("U2")
-        @course.expects(:send_final_grades_to_endpoint).with(@user, nil).returns(nil)
-        @plugin.stubs(:enabled?).returns(true)
+        expect(@course).to receive(:send_final_grades_to_endpoint).with(@user, nil).and_return(nil)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings[:publish_endpoint] = "http://localhost/endpoint"
         @course.publish_final_grades(@user)
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["pending"] * 6 + ["unpublished"] + ["pending"] * 2
@@ -2365,28 +2616,28 @@ describe Course, 'grade_publishing' do
       end
 
       it 'should kick off the actual grade send' do
-        @course.expects(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, nil).returns(nil)
-        @plugin.stubs(:enabled?).returns(true)
+        expect(@course).to receive(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, nil).and_return(nil)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings[:publish_endpoint] = "http://localhost/endpoint"
         @course.publish_final_grades(@user)
       end
 
       it 'should kick off the actual grade send for a specific user' do
         make_student_enrollments
-        @course.expects(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, @student_enrollments.first.user_id).returns(nil)
-        @plugin.stubs(:enabled?).returns(true)
+        expect(@course).to receive(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, @student_enrollments.first.user_id).and_return(nil)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings[:publish_endpoint] = "http://localhost/endpoint"
         @course.publish_final_grades(@user, @student_enrollments.first.user_id)
         expect(@student_enrollments.first.reload.grade_publishing_status).to eq "pending"
       end
 
       it 'should kick off the timeout when a success timeout is defined and waiting is configured' do
-        @course.expects(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, nil).returns(nil)
+        expect(@course).to receive(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, nil).and_return(nil)
         current_time = Time.now.utc
-        Time.stubs(:now).returns(current_time)
-        current_time.stubs(:utc).returns(current_time)
-        @course.expects(:send_at).with(current_time + 1.seconds, :expire_pending_grade_publishing_statuses, current_time).returns(nil)
-        @plugin.stubs(:enabled?).returns(true)
+        allow(Time).to receive(:now).and_return(current_time)
+        allow(current_time).to receive(:utc).and_return(current_time)
+        expect(@course).to receive(:send_at).with(current_time + 1.seconds, :expire_pending_grade_publishing_statuses, current_time).and_return(nil)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge!({
             :publish_endpoint => "http://localhost/endpoint",
             :success_timeout => "1",
@@ -2396,12 +2647,12 @@ describe Course, 'grade_publishing' do
       end
 
       it 'should not kick off the timeout when a success timeout is defined and waiting is not configured' do
-        @course.expects(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, nil).returns(nil)
+        expect(@course).to receive(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, nil).and_return(nil)
         current_time = Time.now.utc
-        Time.stubs(:now).returns(current_time)
-        current_time.stubs(:utc).returns(current_time)
-        @course.expects(:send_at).times(0)
-        @plugin.stubs(:enabled?).returns(true)
+        allow(Time).to receive(:now).and_return(current_time)
+        allow(current_time).to receive(:utc).and_return(current_time)
+        expect(@course).to receive(:send_at).never
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge!({
             :publish_endpoint => "http://localhost/endpoint",
             :success_timeout => "1",
@@ -2411,12 +2662,12 @@ describe Course, 'grade_publishing' do
       end
 
       it 'should not kick off the timeout when a success timeout is not defined and waiting is not configured' do
-        @course.expects(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, nil).returns(nil)
+        expect(@course).to receive(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, nil).and_return(nil)
         current_time = Time.now.utc
-        Time.stubs(:now).returns(current_time)
-        current_time.stubs(:utc).returns(current_time)
-        @course.expects(:send_at).times(0)
-        @plugin.stubs(:enabled?).returns(true)
+        allow(Time).to receive(:now).and_return(current_time)
+        allow(current_time).to receive(:utc).and_return(current_time)
+        expect(@course).to receive(:send_at).never
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge!({
             :publish_endpoint => "http://localhost/endpoint",
             :success_timeout => "",
@@ -2426,12 +2677,12 @@ describe Course, 'grade_publishing' do
       end
 
       it 'should not kick off the timeout when a success timeout is not defined and waiting is configured' do
-        @course.expects(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, nil).returns(nil)
+        expect(@course).to receive(:send_later_if_production).with(:send_final_grades_to_endpoint, @user, nil).and_return(nil)
         current_time = Time.now.utc
-        Time.stubs(:now).returns(current_time)
-        current_time.stubs(:utc).returns(current_time)
-        @course.expects(:send_at).times(0)
-        @plugin.stubs(:enabled?).returns(true)
+        allow(Time).to receive(:now).and_return(current_time)
+        allow(current_time).to receive(:utc).and_return(current_time)
+        expect(@course).to receive(:send_at).never
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge!({
             :publish_endpoint => "http://localhost/endpoint",
             :success_timeout => "no",
@@ -2457,11 +2708,11 @@ describe Course, 'grade_publishing' do
     context 'valid_grade_export_types' do
       it "should support instructure_csv" do
         expect(Course.valid_grade_export_types["instructure_csv"][:name]).to eq "Instructure formatted CSV"
-        course = mock()
-        enrollments = [mock(), mock()]
-        publishing_pseudonym = mock()
-        publishing_user = mock()
-        course.expects(:generate_grade_publishing_csv_output).with(enrollments, publishing_user, publishing_pseudonym).returns 42
+        course = double()
+        enrollments = [double(), double()]
+        publishing_pseudonym = double()
+        publishing_user = double()
+        expect(course).to receive(:generate_grade_publishing_csv_output).with(enrollments, publishing_user, publishing_pseudonym).and_return 42
         expect(Course.valid_grade_export_types["instructure_csv"][:callback].call(course,
             enrollments, publishing_user, publishing_pseudonym)).to eq 42
         expect(Course.valid_grade_export_types["instructure_csv"][:requires_grading_standard]).to be_falsey
@@ -2476,10 +2727,10 @@ describe Course, 'grade_publishing' do
       end
 
       it "should clear the grade publishing message of unpublishable enrollments" do
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge! :publish_endpoint => "http://localhost/endpoint", :format_type => "test_format"
         @ase = @student_enrollments.find_all{|e| e.workflow_state == 'active'}
-        Course.stubs(:valid_grade_export_types).returns({
+        allow(Course).to receive(:valid_grade_export_types).and_return({
             "test_format" => {
                 :callback => lambda {|course, enrollments, publishing_user, publishing_pseudonym|
                   expect(course).to eq @course
@@ -2496,8 +2747,8 @@ describe Course, 'grade_publishing' do
                 }
               }
           })
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post1", "test/mime1", {})
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post2", "test/mime2", {})
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post1", "test/mime1", {})
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post2", "test/mime2", {})
         @course.send_final_grades_to_endpoint @user
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["unpublishable", "unpublishable", "published", "unpublishable", "published", "published", "unpublished", "unpublishable", "published"]
         expect(@student_enrollments.map(&:grade_publishing_message)).to eq [nil] * 9
@@ -2505,17 +2756,17 @@ describe Course, 'grade_publishing' do
 
       it "should try to publish appropriate enrollments" do
         plugin_settings = Course.valid_grade_export_types["instructure_csv"]
-        Course.stubs(:valid_grade_export_types).returns(plugin_settings.merge({
+        allow(Course).to receive(:valid_grade_export_types).and_return(plugin_settings.merge({
           "instructure_csv" => { :requires_grading_standard => true, :requires_publishing_pseudonym => true }}))
         @course.grading_standard_enabled = true
         @course.save!
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge!({
             :publish_endpoint => "http://localhost/endpoint",
             :format_type => "instructure_csv"
         })
         @checked = false
-        Course.stubs(:valid_grade_export_types).returns({
+        allow(Course).to receive(:valid_grade_export_types).and_return({
             "instructure_csv" => {
                 :callback => lambda {|course, enrollments, publishing_user, publishing_pseudonym|
                   expect(course).to eq @course
@@ -2533,17 +2784,17 @@ describe Course, 'grade_publishing' do
 
       it "should try to publish appropriate enrollments (limited users)" do
         plugin_settings = Course.valid_grade_export_types["instructure_csv"]
-        Course.stubs(:valid_grade_export_types).returns(plugin_settings.merge({
+        allow(Course).to receive(:valid_grade_export_types).and_return(plugin_settings.merge({
                 "instructure_csv" => { :requires_grading_standard => true, :requires_publishing_pseudonym => true }}))
         @course.grading_standard_enabled = true
         @course.save!
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge!({
                                     :publish_endpoint => "http://localhost/endpoint",
                                     :format_type => "instructure_csv"
                                 })
         @checked = false
-        Course.stubs(:valid_grade_export_types).returns({
+        allow(Course).to receive(:valid_grade_export_types).and_return({
                                                             "instructure_csv" => {
                                                                 :callback => lambda {|course, enrollments, publishing_user, publishing_pseudonym|
                                                                   expect(course).to eq @course
@@ -2560,14 +2811,14 @@ describe Course, 'grade_publishing' do
       end
 
       it "should make sure grade publishing is enabled" do
-        @plugin.stubs(:enabled?).returns(false)
+        allow(@plugin).to receive(:enabled?).and_return(false)
         expect(lambda {@course.send_final_grades_to_endpoint nil}).to raise_error("final grade publishing disabled")
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["error"] * 6 + ["unpublished"] + ["error"] * 2
         expect(@student_enrollments.map(&:grade_publishing_message)).to eq ["final grade publishing disabled"] * 6 + [nil] + ["final grade publishing disabled"] * 2
       end
 
       it "should make sure an endpoint is defined" do
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge! :publish_endpoint => ""
         expect(lambda {@course.send_final_grades_to_endpoint nil}).to raise_error("endpoint undefined")
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["error"] * 6 + ["unpublished"] + ["error"] * 2
@@ -2576,10 +2827,10 @@ describe Course, 'grade_publishing' do
 
       it "should make sure the publishing user can publish" do
         plugin_settings = Course.valid_grade_export_types["instructure_csv"]
-        Course.stubs(:valid_grade_export_types).returns(plugin_settings.merge({
+        allow(Course).to receive(:valid_grade_export_types).and_return(plugin_settings.merge({
           "instructure_csv" => { :requires_grading_standard => false, :requires_publishing_pseudonym => true }}))
         @user = user_factory
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge! :publish_endpoint => "http://localhost/endpoint"
         expect(lambda {@course.send_final_grades_to_endpoint @user}).to raise_error("publishing disallowed for this publishing user")
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["error"] * 6 + ["unpublished"] + ["error"] * 2
@@ -2588,10 +2839,10 @@ describe Course, 'grade_publishing' do
 
       it "should make sure there's a grading standard" do
         plugin_settings = Course.valid_grade_export_types["instructure_csv"]
-        Course.stubs(:valid_grade_export_types).returns(plugin_settings.merge({
+        allow(Course).to receive(:valid_grade_export_types).and_return(plugin_settings.merge({
           "instructure_csv" => { :requires_grading_standard => true, :requires_publishing_pseudonym => false }}))
         @user = user_factory
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge! :publish_endpoint => "http://localhost/endpoint"
         expect(lambda {@course.send_final_grades_to_endpoint @user}).to raise_error("grade publishing requires a grading standard")
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["error"] * 6 + ["unpublished"] + ["error"] * 2
@@ -2599,7 +2850,7 @@ describe Course, 'grade_publishing' do
       end
 
       it "should make sure the format type is supported" do
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge! :publish_endpoint => "http://localhost/endpoint", :format_type => "invalid_Format"
         expect(lambda {@course.send_final_grades_to_endpoint @user}).to raise_error("unknown format type: invalid_Format")
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["error"] * 6 + ["unpublished"] + ["error"] * 2
@@ -2607,10 +2858,10 @@ describe Course, 'grade_publishing' do
       end
 
       def sample_grade_publishing_request(published_status)
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge! :publish_endpoint => "http://localhost/endpoint", :format_type => "test_format"
         @ase = @student_enrollments.find_all{|e| e.workflow_state == 'active'}
-        Course.stubs(:valid_grade_export_types).returns({
+        allow(Course).to receive(:valid_grade_export_types).and_return({
             "test_format" => {
                 :callback => lambda {|course, enrollments, publishing_user, publishing_pseudonym|
                   expect(course).to eq @course
@@ -2627,8 +2878,8 @@ describe Course, 'grade_publishing' do
                 }
               }
           })
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post1", "test/mime1", {})
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post2", "test/mime2", {})
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post1", "test/mime1", {})
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post2", "test/mime2", {})
         @course.send_final_grades_to_endpoint @user
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["unpublishable", published_status, "unpublishable", published_status, published_status, "unpublishable", "unpublished", "unpublishable", published_status]
         expect(@student_enrollments.map(&:grade_publishing_message)).to eq [nil] * 9
@@ -2639,7 +2890,7 @@ describe Course, 'grade_publishing' do
       end
 
       it "should recompute final grades" do
-        @course.expects(:recompute_student_scores_without_send_later)
+        expect(@course).to receive(:recompute_student_scores_without_send_later)
         sample_grade_publishing_request("published")
       end
 
@@ -2664,10 +2915,10 @@ describe Course, 'grade_publishing' do
       end
 
       it "should try and make all posts even if one of the postings fails" do
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge! :publish_endpoint => "http://localhost/endpoint", :format_type => "test_format"
         @ase = @student_enrollments.find_all{|e| e.workflow_state == 'active'}
-        Course.stubs(:valid_grade_export_types).returns({
+        allow(Course).to receive(:valid_grade_export_types).and_return({
             "test_format" => {
                 :callback => lambda {|course, enrollments, publishing_user, publishing_pseudonym|
                   expect(course).to eq @course
@@ -2687,19 +2938,19 @@ describe Course, 'grade_publishing' do
                 }
               }
           })
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post1", "test/mime1", {})
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post2", "test/mime2", {}).raises("waaah fail")
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post3", "test/mime3", {})
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post1", "test/mime1", {})
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post2", "test/mime2", {}).and_raise("waaah fail")
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post3", "test/mime3", {})
         expect(lambda {@course.send_final_grades_to_endpoint(@user)}).to raise_error("waaah fail")
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["published", "published", "published", "published", "error", "unpublishable", "unpublished", "unpublishable", "error"]
         expect(@student_enrollments.map(&:grade_publishing_message)).to eq [nil] * 4 + ["waaah fail"] + [nil] * 3 + ["waaah fail"]
       end
 
       it "should try and make all posts even if two of the postings fail" do
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge! :publish_endpoint => "http://localhost/endpoint", :format_type => "test_format"
         @ase = @student_enrollments.find_all{|e| e.workflow_state == 'active'}
-        Course.stubs(:valid_grade_export_types).returns({
+        allow(Course).to receive(:valid_grade_export_types).and_return({
             "test_format" => {
                 :callback => lambda {|course, enrollments, publishing_user, publishing_pseudonym|
                   expect(course).to eq @course
@@ -2719,19 +2970,19 @@ describe Course, 'grade_publishing' do
                 }
               }
           })
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post1", "test/mime1", {}).raises("waaah fail")
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post2", "test/mime2", {}).raises("waaah fail")
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post3", "test/mime3", {})
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post1", "test/mime1", {}).and_raise("waaah fail")
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post2", "test/mime2", {}).and_raise("waaah fail")
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post3", "test/mime3", {})
         expect(lambda {@course.send_final_grades_to_endpoint(@user)}).to raise_error("waaah fail")
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["published", "error", "published", "error", "error", "unpublishable", "unpublished", "unpublishable", "error"]
         expect(@student_enrollments.map(&:grade_publishing_message)).to eq [nil, "waaah fail", nil, "waaah fail", "waaah fail", nil, nil, nil, "waaah fail"]
       end
 
       it "should fail gracefully when the posting generator fails" do
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge! :publish_endpoint => "http://localhost/endpoint", :format_type => "test_format"
         @ase = @student_enrollments.find_all{|e| e.workflow_state == 'active'}
-        Course.stubs(:valid_grade_export_types).returns({
+        allow(Course).to receive(:valid_grade_export_types).and_return({
             "test_format" => {
                 :callback => lambda {|course, enrollments, publishiing_user, publishing_pseudonym|
                   raise "waaah fail"
@@ -2744,10 +2995,10 @@ describe Course, 'grade_publishing' do
       end
 
       it "should pass header parameters to post" do
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge! :publish_endpoint => "http://localhost/endpoint", :format_type => "test_format"
         @ase = @student_enrollments.find_all{|e| e.workflow_state == 'active'}
-        Course.stubs(:valid_grade_export_types).returns({
+        allow(Course).to receive(:valid_grade_export_types).and_return({
                                                             "test_format" => {
                                                                 :callback => lambda {|course, enrollments, publishing_user, publishing_pseudonym|
                                                                   expect(course).to eq @course
@@ -2764,17 +3015,17 @@ describe Course, 'grade_publishing' do
                                                                 }
                                                             }
                                                         })
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post1", "test/mime1", {"header_param" => "header_value"})
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "post2", "test/mime2", {})
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post1", "test/mime1", {"header_param" => "header_value"})
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "post2", "test/mime2", {})
         @course.send_final_grades_to_endpoint(@user)
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["unpublishable", "published", "unpublishable", "published", "published", "published", "unpublished", "unpublishable", "unpublishable"]
       end
 
       it 'should update enrollment status if no resource provided' do
-        @plugin.stubs(:enabled?).returns(true)
+        allow(@plugin).to receive(:enabled?).and_return(true)
         @plugin_settings.merge! :publish_endpoint => "http://localhost/endpoint", :format_type => "test_format"
         @ase = @student_enrollments.find_all{|e| e.workflow_state == 'active'}
-        Course.stubs(:valid_grade_export_types).returns({
+        allow(Course).to receive(:valid_grade_export_types).and_return({
                                                             "test_format" => {
                                                                 :callback => lambda {|course, enrollments, publishing_user, publishing_pseudonym|
                                                                   expect(course).to eq @course
@@ -2791,7 +3042,7 @@ describe Course, 'grade_publishing' do
                                                                 }
                                                             }
                                                         })
-        SSLCommon.expects(:post_data).never
+        expect(SSLCommon).to receive(:post_data).never
         @course.send_final_grades_to_endpoint @user
         expect(@student_enrollments.map(&:reload).map(&:grade_publishing_status)).to eq ["unpublishable", "published", "unpublishable", "published", "published", "unpublishable", "unpublished", "unpublishable", "published"]
         expect(@student_enrollments.map(&:grade_publishing_message)).to eq [nil] * 9
@@ -3016,9 +3267,9 @@ describe Course, 'grade_publishing' do
 
       @course.grading_standard_id = 0
       if expect_success
-        SSLCommon.expects(:post_data).with("http://localhost/endpoint", "test-jt-data", "application/jtmimetype", {})
+        expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", "test-jt-data", "application/jtmimetype", {})
       else
-        SSLCommon.expects(:post_data).never
+        expect(SSLCommon).to receive(:post_data).never
       end
       @course.publish_final_grades(user)
     end
@@ -3070,7 +3321,7 @@ describe Course, 'grade_publishing' do
       @course.grading_standard_id = 0
       csv = "publisher_id,publisher_sis_id,course_id,course_sis_id,section_id,section_sis_id,student_id," +
           "student_sis_id,enrollment_id,enrollment_status,score,grade\n"
-      SSLCommon.expects(:post_data).with("http://localhost/endpoint", csv, "text/csv", {})
+      expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", csv, "text/csv", {})
       @course.publish_final_grades(@user)
     end
 
@@ -3185,7 +3436,7 @@ describe Course, 'grade_publishing' do
           "#{teacher.user.id},T1,#{@course.id},C1,#{getsection("S1").id},S1,#{getpseudonym("S4").user.id},S4,#{getenroll("S4", "S1").id},active,0.0\n" +
           "#{teacher.user.id},T1,#{@course.id},C1,#{getsection("S3").id},S3,#{stud5.user.id},,#{Enrollment.where(user_id: stud5.user, course_section_id: getsection("S3")).first.id},active,85.0\n" +
           "#{teacher.user.id},T1,#{@course.id},C1,#{sec4.id},S4,#{stud6.user.id},,#{Enrollment.where(user_id: stud6.user, course_section_id: sec4.id).first.id},active,90.0\n"
-      SSLCommon.expects(:post_data).with("http://localhost/endpoint", csv, "text/csv", {})
+      expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", csv, "text/csv", {})
       @course.publish_final_grades(teacher.user)
 
       @course.grading_standard_id = 0
@@ -3200,7 +3451,7 @@ describe Course, 'grade_publishing' do
           "#{teacher.user.id},T1,#{@course.id},C1,#{getsection("S1").id},S1,#{getpseudonym("S4").user.id},S4,#{getenroll("S4", "S1").id},active,0.0,F\n" +
           "#{teacher.user.id},T1,#{@course.id},C1,#{getsection("S3").id},S3,#{stud5.user.id},,#{Enrollment.where(user_id: stud5.user, course_section_id: getsection("S3")).first.id},active,85.0,B\n" +
           "#{teacher.user.id},T1,#{@course.id},C1,#{sec4.id},S4,#{stud6.user.id},,#{Enrollment.where(user_id: stud6.user, course_section_id: sec4.id).first.id},active,90.0,A-\n"
-      SSLCommon.expects(:post_data).with("http://localhost/endpoint", csv, "text/csv", {})
+      expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", csv, "text/csv", {})
       @course.publish_final_grades(teacher.user)
 
       admin = user_model
@@ -3214,7 +3465,7 @@ describe Course, 'grade_publishing' do
           "#{admin.id},,#{@course.id},C1,#{getsection("S1").id},S1,#{getpseudonym("S4").user.id},S4,#{getenroll("S4", "S1").id},active,0.0,F\n" +
           "#{admin.id},,#{@course.id},C1,#{getsection("S3").id},S3,#{stud5.user.id},,#{Enrollment.where(user_id: stud5.user, course_section_id: getsection("S3")).first.id},active,85.0,B\n" +
           "#{admin.id},,#{@course.id},C1,#{sec4.id},S4,#{stud6.user.id},,#{Enrollment.where(user_id: stud6.user, course_section_id: sec4.id).first.id},active,90.0,A-\n"
-      SSLCommon.expects(:post_data).with("http://localhost/endpoint", csv, "text/csv", {})
+      expect(SSLCommon).to receive(:post_data).with("http://localhost/endpoint", csv, "text/csv", {})
       @course.publish_final_grades(admin)
     end
   end
@@ -3438,6 +3689,9 @@ describe Course, "manageable_by_user" do
     course = Course.create!(:account => sub_sub_account)
 
     expect(Course.manageable_by_user(user.id).map{ |c| c.id }).to be_include(course.id)
+
+    user.account_users.first.destroy!
+    expect(Course.manageable_by_user(user.id)).to_not be_exists
   end
 
   it "should include courses the user is actively enrolled in as a teacher" do
@@ -3644,6 +3898,18 @@ describe Course, "section_visibility" do
   end
 
   context "full" do
+    it "returns rejected enrollments if passed :priors_and_deleted" do
+      @course.student_enrollments.find_by(user_id: @student1).update!(workflow_state: "rejected")
+      visible_student_ids = @course.students_visible_to(@teacher, include: :priors_and_deleted).pluck(:id)
+      expect(visible_student_ids).to include @student1.id
+    end
+
+    it "returns deleted enrollments if passed :priors_and_deleted" do
+      @course.student_enrollments.find_by(user_id: @student1).destroy
+      visible_student_ids = @course.students_visible_to(@teacher, include: :priors_and_deleted).pluck(:id)
+      expect(visible_student_ids).to include @student1.id
+    end
+
     it "should return students from all sections" do
       expect(@course.students_visible_to(@teacher).sort_by(&:id)).to eql [@student1, @student2]
       expect(@course.students_visible_to(@student1).sort_by(&:id)).to eql [@student1, @student2]
@@ -3657,7 +3923,7 @@ describe Course, "section_visibility" do
       expect(@course.sections_visible_to(@student1)).to eq [@course.default_section]
     end
 
-    it "should ignore concluded secitions if option is given" do
+    it "should ignore concluded sections if option is given" do
       @student1 = student_in_section(@other_section, {:active_all => true})
       @student1.enrollments.each(&:conclude)
 
@@ -3991,10 +4257,10 @@ describe Course do
 
     it "should be preferred if delegated authentication is configured" do
       account = Account.create!
-      account.settings[:open_registration] = true
-      account.save!
       account.authentication_providers.create!(:auth_type => 'cas')
       account.authentication_providers.first.move_to_bottom
+      account.settings[:open_registration] = true
+      account.save!
       course_factory(account: account)
       expect(@course.user_list_search_mode_for(nil)).to eq :preferred
       expect(@course.user_list_search_mode_for(user_factory)).to eq :preferred
@@ -4044,25 +4310,25 @@ describe Course do
 
     it "should allow course-wide visibility regardless of membership given :manage_groups permission" do
       expect(@course.groups_visible_to(@user)).to be_empty
-      @course.expects(:grants_any_right?).returns(true)
+      expect(@course).to receive(:grants_any_right?).and_return(true)
       expect(@course.groups_visible_to(@user)).to eq [@group]
     end
 
     it "should allow course-wide visibility regardless of membership given :view_group_pages permission" do
       expect(@course.groups_visible_to(@user)).to be_empty
-      @course.expects(:grants_any_right?).returns(true)
+      expect(@course).to receive(:grants_any_right?).and_return(true)
       expect(@course.groups_visible_to(@user)).to eq [@group]
     end
 
     it "should default to active groups only" do
-      @course.expects(:grants_any_right?).returns(true).at_least_once
+      expect(@course).to receive(:grants_any_right?).and_return(true).at_least(:once)
       expect(@course.groups_visible_to(@user)).to eq [@group]
       @group.destroy
       expect(@course.reload.groups_visible_to(@user)).to be_empty
     end
 
     it "should allow overriding the scope" do
-      @course.expects(:grants_any_right?).returns(true).at_least_once
+      expect(@course).to receive(:grants_any_right?).and_return(true).at_least(:once)
       @group.destroy
       expect(@course.groups_visible_to(@user)).to be_empty
       expect(@course.groups_visible_to(@user, @course.groups)).to eq [@group]
@@ -4796,6 +5062,16 @@ describe Course, '#module_items_visible_to' do
     @course.complete!
     expect(@course.module_items_visible_to(@teacher).map(&:title)).to match_array %w(published unpublished)
   end
+
+  context "sharding" do
+    specs_require_sharding
+
+    it "shouldn't kersplud on a different shard" do
+      @shard1.activate do
+        expect(@course.module_items_visible_to(@student).first.title).to eq 'published'
+      end
+    end
+  end
 end
 
 describe Course, '#update_enrolled_users' do
@@ -4845,7 +5121,7 @@ describe Course, "#image" do
   it "returns the download_url for a course file if image_id is set" do
     @course.image_id = @attachment.id
     @course.save!
-    expect(@course.image).to eq @attachment.download_url
+    expect(@course.image).to eq @attachment.public_download_url
   end
 
   it "returns nil if image_id and image_url are not set" do
@@ -4882,8 +5158,8 @@ describe Course, '#any_assignment_in_closed_grading_period?' do
   it 'delegates to EffectiveDueDates#any_in_closed_grading_period?' do
     test_course = Course.create!
     edd = EffectiveDueDates.for_course(test_course)
-    EffectiveDueDates.expects(:for_course).with(test_course).returns(edd)
-    edd.expects(:any_in_closed_grading_period?).returns(true)
+    expect(EffectiveDueDates).to receive(:for_course).with(test_course).and_return(edd)
+    expect(edd).to receive(:any_in_closed_grading_period?).and_return(true)
     expect(test_course.any_assignment_in_closed_grading_period?).to eq(true)
   end
 end
@@ -4891,16 +5167,130 @@ end
 describe Course, "#default_home_page" do
   let(:course) { Course.create! }
 
-  it "defaults to 'feed'" do
-    expect(course.default_home_page).to eq "feed"
-  end
-
-  it "is 'modules' if feature flag enabled" do
-    course.root_account.enable_feature! :modules_home_page
+  it "defaults to 'modules'" do
     expect(course.default_home_page).to eq "modules"
   end
 
   it "is set assigned to 'default_view' on creation'" do
-    expect(course.default_view).to eq 'feed'
+    expect(course.default_view).to eq 'modules'
+  end
+end
+
+describe Course, "#show_total_grade_as_points?" do
+  before(:once) do
+    @course = Course.create!
+  end
+
+  it "returns true if the course settings include show_total_grade_as_points: true" do
+    @course.update!(show_total_grade_as_points: true)
+    expect(@course).to be_show_total_grade_as_points
+  end
+
+  it "returns false if the course settings include show_total_grade_as_points: false" do
+    @course.update!(show_total_grade_as_points: false)
+    expect(@course).not_to be_show_total_grade_as_points
+  end
+
+  it "returns false if the course settings do not include show_total_grade_as_points" do
+    expect(@course).not_to be_show_total_grade_as_points
+  end
+
+  context "course settings include show_total_grade_as_points: true" do
+    before(:once) do
+      @course.update!(show_total_grade_as_points: true)
+    end
+
+    it "returns true if assignment groups are not weighted" do
+      @course.group_weighting_scheme = "equal"
+      expect(@course).to be_show_total_grade_as_points
+    end
+
+    it "returns false if assignment groups are weighted" do
+      @course.group_weighting_scheme = "percent"
+      expect(@course).not_to be_show_total_grade_as_points
+    end
+
+    context "assignment groups are not weighted" do
+      before(:once) do
+        @course.update!(group_weighting_scheme: "equal")
+      end
+
+      it "returns true if the associated grading period group is not weighted" do
+        group = @course.account.grading_period_groups.create!
+        group.enrollment_terms << @course.enrollment_term
+        expect(@course).to be_show_total_grade_as_points
+      end
+
+      it "returns false if the associated grading period group is weighted" do
+        group = @course.account.grading_period_groups.create!(weighted: true)
+        group.enrollment_terms << @course.enrollment_term
+        expect(@course).not_to be_show_total_grade_as_points
+      end
+    end
+  end
+
+  describe Course, "#gradebook_backwards_incompatible_features_enabled?" do
+    let(:course) { Course.create! }
+
+    it "returns true if a late policy is enabled" do
+      course.late_policy = LatePolicy.new(late_submission_deduction_enabled: true)
+
+      expect(course.gradebook_backwards_incompatible_features_enabled?).to be true
+    end
+
+    it "returns true if a missing policy is enabled" do
+      course.late_policy = LatePolicy.new(missing_submission_deduction_enabled: true)
+
+      expect(course.gradebook_backwards_incompatible_features_enabled?).to be true
+    end
+
+    it "returns true if both a late and missing policy are enabled" do
+      course.late_policy =
+        LatePolicy.new(late_submission_deduction_enabled: true, missing_submission_deduction_enabled: true)
+
+      expect(course.gradebook_backwards_incompatible_features_enabled?).to be true
+    end
+
+    it "returns false if there are no policies" do
+      expect(course.gradebook_backwards_incompatible_features_enabled?).to be false
+    end
+
+    it "returns false if both policies are disabled" do
+      course.late_policy =
+        LatePolicy.new(late_submission_deduction_enabled: false, missing_submission_deduction_enabled: false)
+
+      expect(course.gradebook_backwards_incompatible_features_enabled?).to be false
+    end
+
+    context "With submissions" do
+      let(:student) { student_in_course(course: course).user }
+      let!(:assignment) { course.assignments.create!(title: 'assignment', points_possible: 10) }
+      let(:submission) { assignment.submissions.find_by(user: student) }
+
+      it "returns true if they are any submissions with a late_policy_status of none" do
+        submission.late_policy_status = 'none'
+        submission.save!
+
+        expect(course.gradebook_backwards_incompatible_features_enabled?).to be true
+      end
+
+      it "returns true if they are any submissions with a late_policy_status of missing" do
+        submission.late_policy_status = 'missing'
+        submission.save!
+
+        expect(course.gradebook_backwards_incompatible_features_enabled?).to be true
+      end
+
+      it "returns true if they are any submissions with a late_policy_status of late" do
+        submission.late_policy_status = 'late'
+        submission.save!
+
+        expect(course.gradebook_backwards_incompatible_features_enabled?).to be true
+      end
+
+      it "returns false if there are no policies and no submissions with late_policy_status" do
+        expect(course.gradebook_backwards_incompatible_features_enabled?).to be false
+      end
+    end
   end
 end

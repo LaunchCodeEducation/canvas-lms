@@ -1,12 +1,29 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18n!editor'
   'jquery'
   'underscore'
   'Backbone'
-  'compiled/views/tinymce/EquationToolbarView'
+  './EquationToolbarView'
   'jst/tinymce/EquationEditorView'
   'str/htmlEscape'
-  'compiled/fn/preventDefault'
+  '../../fn/preventDefault'
   'jsx/shared/rce/RceCommandShim'
   'jqueryui/dialog'
   'mathquill'
@@ -172,12 +189,20 @@ define [
     restoreCaret: ->
       @editor.selection.moveToBookmark(@prevSelection)
 
+    # the following is here to make it easier to unit test
+    @doubleEncodeEquationForUrl: (text) ->
+      encodeURIComponent encodeURIComponent text
+
+    # the following will be called by onSubmit below
+    doubleEncodeEquationForUrl: (text) ->
+      @constructor.doubleEncodeEquationForUrl text
+
     onSubmit: (event) =>
       event.preventDefault()
 
       text = @getEquation()
       altText = "LaTeX: #{ text }"
-      url = "/equation_images/#{ encodeURIComponent escape text }"
+      url = "/equation_images/#{ @doubleEncodeEquationForUrl text }"
       $img = $(document.createElement('img')).attr
         src: url
         alt: altText

@@ -1,20 +1,20 @@
-//
-// Copyright (C) 2012 Instructure, Inc.
-//
-// This file is part of Canvas.
-//
-// Canvas is free software: you can redistribute it and/or modify it under
-// the terms of the GNU Affero General Public License as published by the Free
-// Software Foundation, version 3 of the License.
-//
-// Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
-// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
-// A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
-// details.
-//
-// You should have received a copy of the GNU Affero General Public License along
-// with this program. If not, see <http://www.gnu.org/licenses/>.
-//
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import $ from 'jquery'
 import ToolbarView from 'compiled/views/outcomes/ToolbarView'
@@ -26,7 +26,8 @@ import browserTemplate from 'jst/outcomes/browser'
 import instructionsTemplate from 'jst/outcomes/mainInstructions'
 import React from 'react'
 import ReactDOM from 'react-dom'
-import OutcomesActionsPopoverMenu from 'jsx/outcomes/OutcomesActionsPopoverMenu'
+import {showImportOutcomesModal} from '../outcomes/ImportOutcomesModal'
+import {showOutcomesImporter, showOutcomesImporterIfInProgress} from '../outcomes/OutcomesImporter'
 
 const renderInstructions = ENV.PERMISSIONS.manage_outcomes
 
@@ -36,14 +37,6 @@ $el.html(browserTemplate({
   canManageRubrics: ENV.PERMISSIONS.manage_rubrics,
   contextUrlRoot: ENV.CONTEXT_URL_ROOT
 }))
-
-ReactDOM.render(
-  <OutcomesActionsPopoverMenu
-    contextUrlRoot={ENV.CONTEXT_URL_ROOT}
-    permissions={ENV.PERMISSIONS}
-  />,
-  $el.find('#popoverMenu')[0]
-)
 
 export const toolbar = new ToolbarView({el: $el.find('.toolbar')})
 
@@ -60,11 +53,39 @@ export const content = new ContentView({
   renderInstructions
 })
 
+// events for Outcome sync
+const disableOutcomeViews = () => {
+  sidebar.$sidebar.hide()
+  toolbar.disable()
+}
+
+const resetOutcomeViews = () => {
+  toolbar.enable()
+  sidebar.resetSidebar()
+  content.resetContent()
+  sidebar.$sidebar.show()
+}
+
 // toolbar events
 toolbar.on('goBack', sidebar.goBack)
 toolbar.on('add', sidebar.addAndSelect)
 toolbar.on('add', content.add)
 toolbar.on('find', () => sidebar.findDialog(FindDialog))
+toolbar.on('import', () => showImportOutcomesModal({toolbar}))
+toolbar.on('start_sync', (file) => showOutcomesImporter({
+  file,
+  disableOutcomeViews,
+  resetOutcomeViews,
+  mount: content.$el[0],
+  contextUrlRoot: ENV.CONTEXT_URL_ROOT
+}))
+
+showOutcomesImporterIfInProgress({
+  disableOutcomeViews,
+  resetOutcomeViews,
+  mount: content.$el[0],
+  contextUrlRoot: ENV.CONTEXT_URL_ROOT
+}, ENV.current_user.id)
 
 // sidebar events
 sidebar.on('select', model => content.show(model))

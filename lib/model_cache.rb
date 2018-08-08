@@ -1,4 +1,5 @@
-# Copyright (C) 2012 Instructure, Inc.
+#
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -73,9 +74,9 @@ module ModelCache
     def update_in_caches
       return unless cache = ModelCache[self.class.name.underscore.pluralize.to_sym]
       cache.keys.each do |key|
-        if send("#{key}_changed?")
+        if saved_change_to_attribute?(key)
           cache[key][send(key)] = self
-          cache[key].delete(send("#{key}_was"))
+          cache[key].delete(attribute_before_last_save(key))
         end
       end
     end

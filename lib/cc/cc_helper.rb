@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -22,7 +22,7 @@ module CC
 module CCHelper
 
   CANVAS_NAMESPACE = 'http://canvas.instructure.com/xsd/cccv1p0'
-  XSD_URI = 'http://canvas.instructure.com/xsd/cccv1p0.xsd'
+  XSD_URI = 'https://canvas.instructure.com/xsd/cccv1p0.xsd'
 
   # IMS formats/types
   IMS_DATE = "%Y-%m-%d"
@@ -96,12 +96,12 @@ module CCHelper
   ASSIGNMENT_XML = 'assignment.xml'
   EXTERNAL_CONTENT_FOLDER = 'external_content'
 
-  def ims_date(date=nil)
-    CCHelper.ims_date(date)
+  def ims_date(date=nil,default=Time.now)
+    CCHelper.ims_date(date, default)
   end
 
-  def ims_datetime(date=nil)
-    CCHelper.ims_datetime(date)
+  def ims_datetime(date=nil,default=Time.now)
+    CCHelper.ims_datetime(date, default)
   end
 
   def self.create_key(object, prepend="")
@@ -113,13 +113,15 @@ module CCHelper
     "i" + Digest::MD5.hexdigest(prepend + key)
   end
 
-  def self.ims_date(date=nil)
-    date ||= Time.now
+  def self.ims_date(date=nil,default=Time.now)
+    date ||= default
+    return nil unless date
     date.respond_to?(:utc) ? date.utc.strftime(IMS_DATE) : date.strftime(IMS_DATE)
   end
 
-  def self.ims_datetime(date=nil)
-    date ||= Time.now
+  def self.ims_datetime(date=nil,default=Time.now)
+    date ||= default
+    return nil unless date
     date.respond_to?(:utc) ? date.utc.strftime(IMS_DATETIME) : date.strftime(IMS_DATETIME)
   end
 
@@ -140,7 +142,7 @@ module CCHelper
 
   def get_html_title_and_body(doc)
     title = get_node_val(doc, 'html head title')
-    body = doc.at_css('html body').to_s.gsub(%r{</?body>}, '').strip
+    body = doc.at_css('html body').to_s.force_encoding(Encoding::UTF_8).gsub(%r{</?body>}, '').strip
     [title, body]
   end
 
@@ -176,7 +178,7 @@ module CCHelper
       @media_object_flavor = opts[:media_object_flavor]
       @used_media_objects = Set.new
       @media_object_infos = {}
-      @rewriter = UserContent::HtmlRewriter.new(course, user)
+      @rewriter = UserContent::HtmlRewriter.new(course, user, contextless_types: ['files'])
       @course = course
       @user = user
       @track_referenced_files = opts[:track_referenced_files]
@@ -198,7 +200,7 @@ module CCHelper
           if match_data = match.url.match(%r{/files/folder/(.*)})
             # this might not be the best idea but let's keep going and see what happens
             "#{COURSE_TOKEN}/files/folder/#{match_data[1]}"
-          else
+          elsif match.prefix.present?
             # If match.obj_id is nil, it's because we're actually linking to a page
             # (the /courses/:id/files page) and not to a specific file. In this case,
             # just pass it straight through.
@@ -226,22 +228,22 @@ module CCHelper
         # WikiPagesController allows loosely-matching URLs; fix them before exporting
         if match.obj_id.present?
           url_or_title = match.obj_id
-          page = @course.wiki.wiki_pages.deleted_last.where(url: url_or_title).first ||
-                 @course.wiki.wiki_pages.deleted_last.where(url: url_or_title.to_url).first ||
-                 @course.wiki.wiki_pages.where(id: url_or_title.to_i).first
+          page = @course.wiki_pages.deleted_last.where(url: url_or_title).first ||
+                 @course.wiki_pages.deleted_last.where(url: url_or_title.to_url).first ||
+                 @course.wiki_pages.where(id: url_or_title.to_i).first
         end
         if page
-          "#{WIKI_TOKEN}/#{match.type}/#{page.url}"
+          "#{WIKI_TOKEN}/#{match.type}/#{page.url}#{match.query}"
         else
-          "#{WIKI_TOKEN}/#{match.type}/#{match.obj_id}"
+          "#{WIKI_TOKEN}/#{match.type}/#{match.obj_id}#{match.query}"
         end
       end
       @rewriter.set_handler('wiki', &wiki_handler)
       @rewriter.set_handler('pages', &wiki_handler)
       @rewriter.set_handler('items') do |match|
         item = ContentTag.find(match.obj_id)
-        migration_id = CCHelper.create_key(item)
-        new_url = "#{COURSE_TOKEN}/modules/#{match.type}/#{migration_id}"
+        migration_id = @key_generator.create_key(item)
+        new_url = "#{COURSE_TOKEN}/modules/#{match.type}/#{migration_id}#{match.query}"
       end
       @rewriter.set_default_handler do |match|
         new_url = match.url
@@ -250,8 +252,8 @@ module CCHelper
           if obj && (@rewriter.user_can_view_content?(obj) || @for_epub_export)
             # for all other types,
             # create a migration id for the object, and use that as the new link
-            migration_id = CCHelper.create_key(obj)
-            new_url = "#{OBJECT_TOKEN}/#{match.type}/#{migration_id}"
+            migration_id = @key_generator.create_key(obj)
+            new_url = "#{OBJECT_TOKEN}/#{match.type}/#{migration_id}#{match.query}"
           end
         elsif match.obj_id
           new_url = "#{COURSE_TOKEN}/#{match.type}/#{match.obj_id}#{match.rest}"
@@ -275,13 +277,11 @@ module CCHelper
       meta_html = ""
       meta_fields.each_pair do |k, v|
         next unless v.present?
-        meta_html += %{<meta name="#{k}" content="#{v}"/>\n}
+        meta_html += %{<meta name="#{HtmlTextHelper.escape_html(k.to_s)}" content="#{HtmlTextHelper.escape_html(v.to_s)}"/>\n}
       end
 
-      %{<html>\n<head>\n<meta http-equiv="Content-Type" content="text/html; charset=utf-8">\n<title>#{title}</title>\n#{meta_html}</head>\n<body>\n#{content}\n</body>\n</html>}
+      %{<html>\n<head>\n<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>\n<title>#{HtmlTextHelper.escape_html(title)}</title>\n#{meta_html}</head>\n<body>\n#{content}\n</body>\n</html>}
     end
-
-    UrlAttributes = CanvasSanitize::SANITIZE[:protocols].inject({}) { |h,(k,v)| h[k] = v.keys; h }
 
     def html_content(html)
       html = @rewriter.translate_content(html)
@@ -295,7 +295,7 @@ module CCHelper
         next unless anchor['id']
         media_id = anchor['id'].gsub(/^media_comment_/, '')
         obj = MediaObject.by_media_id(media_id).first
-        if obj && migration_id = CCHelper.create_key(obj)
+        if obj && migration_id = @key_generator.create_key(obj)
           @used_media_objects << obj
           info = CCHelper.media_object_info(obj, nil, media_object_flavor)
           @media_object_infos[obj.id] = info
@@ -307,7 +307,7 @@ module CCHelper
       # (those in the course are already "$CANVAS_COURSE_REFERENCE$/...", but links
       #  outside the course need a domain to be meaningful in the export)
       # see also Api#api_user_content, which does a similar thing
-      UrlAttributes.each do |tag, attributes|
+      Api::Html::Content::URL_ATTRIBUTES.each do |tag, attributes|
         doc.css(tag).each do |element|
           attributes.each do |attribute|
             url_str = element[attribute]

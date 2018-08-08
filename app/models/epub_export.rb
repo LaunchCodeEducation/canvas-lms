@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 class EpubExport < ActiveRecord::Base
   include CC::Exporter::Epub::Exportable
   include LocaleSelection
@@ -55,7 +72,8 @@ class EpubExport < ActiveRecord::Base
     create_job_progress(completion: 0, tag: self.class.to_s.underscore)
   end
 
-  delegate :download_url, to: :attachment, allow_nil: true
+  delegate :public_download_url, to: :attachment, allow_nil: true
+  delegate :downloadable?, to: :attachment, allow_nil: true
   delegate :completion, :running?, to: :job_progress, allow_nil: true
 
   scope :running, -> { where(workflow_state: ['created', 'exporting', 'exported', 'generating']) }
@@ -98,7 +116,7 @@ class EpubExport < ActiveRecord::Base
     content_export.export
     true
   end
-  handle_asynchronously :export, priority: Delayed::LOW_PRIORITY, max_attempts: 1
+  handle_asynchronously :export, priority: Delayed::LOW_PRIORITY, max_attempts: 1, on_permanent_failure: :mark_as_failed
 
   def mark_exported
     if content_export.failed?
@@ -116,14 +134,18 @@ class EpubExport < ActiveRecord::Base
     update_attribute(:workflow_state, 'generating')
     convert_to_epub
   end
-  handle_asynchronously :generate, priority: Delayed::LOW_PRIORITY, max_attempts: 1
+  handle_asynchronously :generate, priority: Delayed::LOW_PRIORITY, max_attempts: 1, on_permanent_failure: :mark_as_failed
 
   def mark_as_generated
     job_progress.complete! if job_progress.running?
     update_attribute(:workflow_state, 'generated')
   end
 
-  def mark_as_failed
+  def mark_as_failed(error=nil)
+    if error
+      out = Canvas::Errors.capture_exception(:course_export, error)
+      ::Rails.logger.debug("Created ErrorReport #{out[:error_report]}")
+    end
     job_progress.try :fail!
     update_attribute(:workflow_state, 'failed')
   end
@@ -139,7 +161,7 @@ class EpubExport < ActiveRecord::Base
       file_paths = super
       I18n.locale = :en
     rescue => e
-      mark_as_failed
+      mark_as_failed(e)
       raise e
     end
 
@@ -158,10 +180,10 @@ class EpubExport < ActiveRecord::Base
         file_path,
         mime_type.try(:content_type)
       )
-      self.attachments.create({
-        filename: File.basename(file_path),
-        uploaded_data: file
-      })
+      attachment = self.attachments.new
+      attachment.filename = File.basename(file_path)
+      Attachments::Storage.store_for_attachment(attachment, file)
+      attachment.save!
     rescue Errno::ENOENT => e
       mark_as_failed
       raise e

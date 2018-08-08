@@ -1,6 +1,24 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
 import _ from 'underscore'
-import createStore from 'jsx/shared/helpers/createStore'
+import createStore from '../shared/helpers/createStore'
 import $ from 'jquery'
 import DefaultUrlMixin from 'compiled/backbone-ext/DefaultUrlMixin'
 import parseLinkHeader from 'compiled/fn/parseLinkHeader'
@@ -46,7 +64,7 @@ import parseLinkHeader from 'compiled/fn/parseLinkHeader'
 
     var getUsersPath = this.getContextPath() + "/users"
     $.getJSON(getUsersPath,
-      {user_ids: givenIds, enrollment_type: "student", include: ["enrollments", "group_ids"]},
+      {user_ids: givenIds.join(","), enrollment_type: "student", include: ["enrollments", "group_ids"]},
       this._fetchStudentsByIDSuccessHandler.bind(this, {})
     )
   }

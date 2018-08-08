@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 - 2014 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -35,7 +35,7 @@ module AccountReports
 
       #if both dates are specified use them or change the start date if range is over 2 week
       if start_at && end_at
-        if end_at - start_at > 2.weeks
+        if end_at - start_at > 2.weeks.to_i
           @start = end_at - 2.weeks
           @account_report.parameters["start_at"] = @start
         end
@@ -117,6 +117,7 @@ module AccountReports
                              AND a.context_type = 'Course'
                            WHERE s.user_id = p.user_id
                              AND a.context_id = courses.id
+                             AND s.workflow_state <> 'deleted'
                            #{time_span_join})")
 
       no_subs = no_subs.where(e: {workflow_state: enrollment_states}) if enrollment_states
@@ -186,19 +187,10 @@ module AccountReports
       param = {}
 
       if start_at
-        param[:start_at] = start_at
-        start = " AND aua.updated_at > :start_at"
+        data = data.where("enrollments.last_activity_at < ? OR enrollments.last_activity_at IS NULL", start_at)
       else
-        start = ""
+        data = data.where("enrollments.last_activity_at IS NULL")
       end
-
-      data = data.
-        where("NOT EXISTS (SELECT user_id, context_id
-                           FROM #{AssetUserAccess.quoted_table_name} aua
-                           WHERE aua.user_id = enrollments.user_id
-                             AND aua.context_id = enrollments.course_id
-                             AND aua.context_type = 'Course'
-                           #{start})", param)
 
       data = data.where(:enrollments => {:course_id => course}) if course
       data = add_term_scope(data, 'c')

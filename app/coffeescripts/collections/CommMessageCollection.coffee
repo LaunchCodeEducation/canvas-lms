@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,7 +17,7 @@
 #
 
 define [
-  'compiled/collections/PaginatedCollection'
+  '../collections/PaginatedCollection'
 ], (PaginatedCollection) ->
 
   class CommMessageCollection extends PaginatedCollection

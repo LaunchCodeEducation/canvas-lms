@@ -1,3 +1,21 @@
+<%
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+%>
+
 <% question_bank ||= nil %>
 <% context = question_bank ? question_bank.context : @context %>
 <% title = question_bank&.title || '{{ title }}' %>
@@ -10,14 +28,14 @@
       <% not_yet_bookmarked = question_bank && !question_bank.bookmarked_for?(@current_user) %>
       <% bookmark_bank_text = t('Bookmark %{bank}', :bank => title) %>
       <% unbookmark_bank_text = t('Unbookmark %{bank}', :bank => title) %>
-      <a href="<%= context_url(context, :context_question_bank_bookmark_url, question_bank ? question_bank.id : "{{ id }}") %>" class="bookmark_bank_link no-hover" title="<%= bookmark_bank_text %>" style="<%= hidden unless not_yet_bookmarked %>"><span class="screenreader-only"><%= bookmark_bank_text %></span><i class="icon-bookmark" aria-hidden="true"></i></a>
-      <a href="<%= context_url(context, :context_question_bank_bookmark_url, question_bank ? question_bank.id : "{{ id }}", :unbookmark => 1) %>" class="bookmark_bank_link no-hover" title="<%= unbookmark_bank_text %>" style="<%= hidden if not_yet_bookmarked %>"><span class="screenreader-only"><%= unbookmark_bank_text %></span><i class="icon-remove-bookmark" aria-hidden="true"></i></a>
+      <a href="<%= context_url(context, :context_question_bank_bookmark_url, question_bank ? question_bank.id : "{{ id }}") %>" class="Button Button--icon-action bookmark_bank_link" title="<%= bookmark_bank_text %>" style="<%= hidden unless not_yet_bookmarked %>"><span class="screenreader-only"><%= bookmark_bank_text %></span><i class="icon-bookmark" aria-hidden="true"></i></a>
+      <a href="<%= context_url(context, :context_question_bank_bookmark_url, question_bank ? question_bank.id : "{{ id }}", :unbookmark => 1) %>" class="Button Button--icon-action bookmark_bank_link" title="<%= unbookmark_bank_text %>" style="<%= hidden if not_yet_bookmarked %>"><span class="screenreader-only"><%= unbookmark_bank_text %></span><i class="icon-remove-bookmark" aria-hidden="true"></i></a>
       <% if context == @context && @context.grants_right?(@current_user, session, :manage_assignments) %>
         <% edit_bank_text = t('Edit %{bank}', :bank => title) %>
         <% delete_bank_text = t('Delete %{bank}', :bank => title) %>
         <span style="<%= hidden if question_bank && !can_do(question_bank, @current_user, :update) %>">
-          <a href="<%= context_url(context, :context_question_bank_url, question_bank ? question_bank.id : "{{ id }}") %>" class="edit_bank_link" title="<%= edit_bank_text %>"><span class="screenreader-only"><%= edit_bank_text %></span><i class="icon-edit standalone-icon" aria-hidden="true"></i></a>
-          <a href="<%= context_url(context, :context_question_bank_url, question_bank ? question_bank.id : "{{ id }}") %>" class="delete_bank_link" title="<%= delete_bank_text %>"><span class="screenreader-only"><%= delete_bank_text %></span><i class="icon-end standalone-icon" aria-hidden="true"></i></a>
+          <a href="<%= context_url(context, :context_question_bank_url, question_bank ? question_bank.id : "{{ id }}") %>" class="Button Button--icon-action edit_bank_link" title="<%= edit_bank_text %>"><span class="screenreader-only"><%= edit_bank_text %></span><i class="icon-edit" aria-hidden="true"></i></a>
+          <a href="<%= context_url(context, :context_question_bank_url, question_bank ? question_bank.id : "{{ id }}") %>" class="Button Button--icon-action delete_bank_link" title="<%= delete_bank_text %>"><span class="screenreader-only"><%= delete_bank_text %></span><i class="icon-end" aria-hidden="true"></i></a>
         </span>
       <% end %>
     </div>

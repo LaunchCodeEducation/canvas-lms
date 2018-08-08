@@ -1,12 +1,30 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
 import ReactDOM from 'react-dom'
 import page from 'page'
 import qs from 'qs'
 import redux from 'redux'
-import CollaborationsApp from 'jsx/collaborations/CollaborationsApp'
-import CollaborationsToolLaunch from 'jsx/collaborations/CollaborationsToolLaunch'
-import actions from 'jsx/collaborations/actions/collaborationsActions'
-import store from 'jsx/collaborations/store/store'
+import CollaborationsApp from '../collaborations/CollaborationsApp'
+import CollaborationsToolLaunch from '../collaborations/CollaborationsToolLaunch'
+import actions from '../collaborations/actions/collaborationsActions'
+import store from '../collaborations/store/store'
 import splitAssetString from 'compiled/str/splitAssetString'
 
   $(window).on('externalContentReady', (e, data) => store.dispatch(actions.externalContentReady(e, data)));

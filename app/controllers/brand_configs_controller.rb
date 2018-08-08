@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 class BrandConfigsController < ApplicationController
 
   include Api::V1::Progress
@@ -87,6 +104,7 @@ class BrandConfigsController < ApplicationController
   # indicating the progress of generating the css and pushing it to the CDN
   # @returns {BrandConfig, Progress}
   def create
+    params[:brand_config] ||= {}
     opts = {
       parent_md5: @account.first_parent_brand_config.try(:md5),
       variables: process_variables(params[:brand_config][:variables])
@@ -171,7 +189,8 @@ class BrandConfigsController < ApplicationController
   end
 
   def process_variables(variables)
-    variables.each_with_object({}) do |(key, value), memo|
+    return unless variables
+    variables.to_unsafe_h.each_with_object({}) do |(key, value), memo|
       next unless value.present? && (config = BrandableCSS.variables_map[key])
       value = process_file(value) if config['type'] == 'image'
       memo[key] = value
@@ -209,7 +228,7 @@ class BrandConfigsController < ApplicationController
     if Attachment.s3_storage?
       attachment.s3_url
     else
-      attachment.authenticated_s3_url
+      attachment.public_url
     end
   end
 end

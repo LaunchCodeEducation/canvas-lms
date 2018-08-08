@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2011 Instructure, Inc.
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,25 +12,24 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-define([
-  'i18n!media_comments',
-  'underscore',
-  'vendor/jquery.ba-tinypubsub',
-  'jquery' /* $ */,
-  'str/htmlEscape',
-  'jst/MediaComments',
-  'compiled/media_comments/js_uploader',
-  'compiled/jquery/mediaComment' /* $.fn.mediaComment */,
-  'jquery.ajaxJSON' /* ajaxJSON */,
-  'jqueryui/dialog',
-  'jquery.instructure_misc_helpers' /* /\$\.h/, /\$\.fileSize/ */,
-  'jquery.instructure_misc_plugins' /* .dim, /\.log\(/ */,
-  'jqueryui/progressbar' /* /\.progressbar/ */,
-  'jqueryui/tabs' /* /\.tabs/ */
-], function(I18n, _, pubsub, $, htmlEscape, mediaCommentsTemplate, JsUploader) {
+
+import I18n from 'i18n!media_comments'
+import _ from 'underscore'
+import pubsub from 'vendor/jquery.ba-tinypubsub'
+import $ from 'jquery'
+import htmlEscape from './str/htmlEscape'
+import mediaCommentsTemplate from 'jst/MediaComments'
+import JsUploader from 'compiled/media_comments/js_uploader'
+import 'compiled/jquery/mediaComment'
+import './jquery.ajaxJSON'
+import 'jqueryui/dialog'
+import './jquery.instructure_misc_helpers' /* /\$\.h/, /\$\.fileSize/ */
+import './jquery.instructure_misc_plugins' /* .dim, /\.log\(/ */
+import 'jqueryui/progressbar'
+import 'jqueryui/tabs'
 
   "use strict"
   var jsUploader
@@ -77,7 +76,7 @@ define([
         pubsub.publish('media_object_created', data);
       }, $.noop);
     }
-    pubsub.publish('media_comment_created', {id: entry.entryId, mediaType: mediaType});
+    pubsub.publish('media_comment_created', {id: entry.entryId, mediaType: mediaType, title: entry.userTitle});
   }
 
   var addedEntryIds = {};
@@ -262,6 +261,9 @@ define([
   var reset_selectors = false;
   var lastInit = null;
   $.mediaComment.init = function(mediaType, opts) {
+  require.ensure([], function () {
+    var swfobject = require('swfobject');
+
     lastInit = lastInit || new Date();
     mediaType = mediaType || "any";
     opts = opts || {};
@@ -481,6 +483,7 @@ define([
 
     // Do JS uploader is appropriate
     if (INST.kalturaSettings.js_uploader) {
+      var JsUploader = require('compiled/media_comments/js_uploader');
       jsUploader = new JsUploader(mediaType, opts);
       jsUploader.onReady = mediaCommentReady;
       jsUploader.addEntry = addEntry;
@@ -522,6 +525,7 @@ define([
       // **********************************************************************
       var checkForKS = function() {
         if($div.data('ks')) {
+          var mediaCommentsTemplate = require('jst/MediaComments');
           $div.html(mediaCommentsTemplate());
           $div.find("#media_record_tabs").tabs({activate: $.mediaComment.video_delegate.expectReady});
           mediaCommentReady();
@@ -538,7 +542,9 @@ define([
       // only call mediaCommentReady if we are not doing js uploader
       mediaCommentReady();
     }
+  }, 'mediaCommentRecordAsyncChunk')
   } // End of init function
+
   $(document).ready(function() {
     $(document).bind('reset_media_comment_forms', function() {
       $("#audio_record_holder_message,#video_record_holder_message").removeClass('saving')
@@ -631,7 +637,7 @@ define([
       alert(I18n.t('errors.save_failed_try_again', "Entry failed to save.  Please try again."));
     }
   }
-});
+
 
 // Debugging methods for kaltura record widget. If These exist they'll be called.
 //function deviceDetected(){

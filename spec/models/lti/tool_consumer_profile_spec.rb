@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014 Instructure, Inc.
+# Copyright (C) 2017 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -90,6 +90,14 @@ module Lti
         end
 
         expect(service).not_to be_nil
+      end
+
+      it "includes 'vnd.Canvas.User'" do
+        expect(
+          Lti::ToolConsumerProfile::RESTRICTED_SERVICES.any? do |s|
+            s[:id].include? 'vnd.Canvas.User'
+          end
+        ).to be_truthy
       end
     end
 

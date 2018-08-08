@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Instructure, Inc.
+ * Copyright (C) 2017 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -42,11 +42,11 @@ import 'compiled/jquery.rails_flash_notifications'
       };
     }
 
-    showDialog () {
+    showDialog (cb) {
       if (this.isAdmin || !this.assignment.inClosedGradingPeriod) {
         const dialog = new SetDefaultGradeDialog(this.getSetDefaultGradeDialogOptions());
 
-        dialog.show();
+        dialog.show(cb);
       } else {
         $.flashError(I18n.t('Unable to set default grade because this ' +
           'assignment is due in a closed grading period for at least one student'));

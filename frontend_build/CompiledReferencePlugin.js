@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 // We have a lot of references to "compiled" directories right now,
 // but since webpack can load and compile coffeescript on the fly,
 // we can just use a coffeescript loader.  The problem, though, is
@@ -10,11 +28,20 @@
 // a compile step ahead of time.
 
 const path = require('path')
+const fs = require('fs')
 
 const specRoot = path.resolve(__dirname, '../spec')
 
-function addExt (requestString) {
-  const ext = /\/templates\//.test(requestString) ? '.hbs' : '.coffee'
+function addExt (requestString, context='') {
+  let ext = /\/templates\//.test(requestString) ? '.hbs' : '.coffee'
+  // temporarily handle .js files in app/coffeescripts. if there is a .js file with the same name,
+  // it takes precedence
+  if (ext === '.coffee') {
+    const jsFileToStat = path.join((requestString.startsWith('.') ? context : 'app'), requestString) + '.js'
+    if (fs.existsSync(jsFileToStat)) {
+      ext = '.js'
+    }
+  }
   return requestString + ext
 }
 
@@ -47,7 +74,7 @@ class CompiledReferencePlugin {
           !/\.coffee$/.test(requestString)
         ) {
           // this is a relative require to  a compiled coffeescript (or hbs) file
-          result.request = addExt(requestString)
+          result.request = addExt(requestString, input.context)
         } else if (requestString.includes('jst/') && !requestString.endsWith('.handlebars')) {
           // this is a handlebars file in canvas. We have to require it with its full
           // extension while we still have a require-js build or we risk loading
@@ -68,7 +95,7 @@ class CompiledReferencePlugin {
             // `spec/coffescripts` to `resolve.modules` and '.coffee' to `resolve.extensions` (which
             // would slow everything down because it would add to the # of files it has to stat when
             // looking for things), we rewrite those requests here
-            result.request = `${specRoot}/coffeescripts/${requestString}.coffee`
+            result.request = `${specRoot}/coffeescripts/${requestString}`
           }
         }
 

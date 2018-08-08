@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative '../spec_helper'
 
 describe JwtsController do
@@ -6,8 +23,7 @@ describe JwtsController do
   let(:other_user){ user_factory(active_user: true) }
   let(:translate_token) do
     ->(resp){
-      un_csrfd_body = resp.body.gsub("while(1);", "")
-      utf8_token_string = JSON.parse(un_csrfd_body)['token']
+      utf8_token_string = json_parse(resp.body)['token']
       decoded_crypted_token = Canvas::Security.base64_decode(utf8_token_string)
       return Canvas::Security.decrypt_services_jwt(decoded_crypted_token)
     }
@@ -24,8 +40,7 @@ describe JwtsController do
       before(:each){ user_session(token_user) }
       let(:translate_token) do
         ->(resp){
-          un_csrfd_body = resp.body.gsub("while(1);", "")
-          utf8_token_string = JSON.parse(un_csrfd_body)['token']
+          utf8_token_string = json_parse(resp.body)['token']
           decoded_crypted_token = Canvas::Security.base64_decode(utf8_token_string)
           return Canvas::Security.decrypt_services_jwt(decoded_crypted_token)
         }
@@ -46,7 +61,8 @@ describe JwtsController do
 
     it "doesn't allow using a token to gen a token" do
       token = Canvas::Security::ServicesJwt.generate({ sub: token_user.global_id })
-      get 'create', {format: 'json'}, {'Authorization' => "Bearer #{token}"}
+      @request.headers['Authorization'] = "Bearer #{token}"
+      get 'create', format: 'json'
       expect(response.status).to_not eq(200)
     end
   end
@@ -60,7 +76,8 @@ describe JwtsController do
 
     it "doesn't allow using a token to gen a token" do
       token = Canvas::Security::ServicesJwt.generate({ sub: token_user.global_id })
-      get 'refresh', {format: 'json'}, {'Authorization' => "Bearer #{token}"}
+      @request.headers['Authorization'] = "Bearer #{token}"
+      get 'refresh', format: 'json'
       expect(response.status).to_not eq(200)
     end
 
@@ -83,7 +100,7 @@ describe JwtsController do
         expect(services_jwt).to receive(:refresh_for_user)
           .with('testjwt', 'testhost', other_user, real_user: real_user)
           .and_return('refreshedjwt')
-        post 'refresh', format: 'json', jwt: 'testjwt', as_user_id: other_user.id
+        post 'refresh', params: {jwt: 'testjwt', as_user_id: other_user.id}, format: 'json'
         token = JSON.parse(response.body)['token']
         expect(token).to eq('refreshedjwt')
       end
@@ -94,7 +111,7 @@ describe JwtsController do
           request.env['HTTP_HOST'],
           token_user
         )
-        post 'refresh', jwt: original_jwt
+        post 'refresh', params: {jwt: original_jwt}
         refreshed_jwt = JSON.parse(response.body)['token']
         expect(refreshed_jwt).to_not eq(original_jwt)
       end
@@ -104,7 +121,7 @@ describe JwtsController do
           .as_stubbed_const(transfer_nested_constants: true)
         expect(services_jwt).to receive(:refresh_for_user)
           .and_raise(Canvas::Security::ServicesJwt::InvalidRefresh)
-        post 'refresh', format: 'json', jwt: 'testjwt'
+        post 'refresh', params: {jwt: 'testjwt'}, format: 'json'
         expect(response.status).to eq(400)
       end
     end

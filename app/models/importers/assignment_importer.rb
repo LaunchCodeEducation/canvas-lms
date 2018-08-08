@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_dependency 'importers'
 
 module Importers
@@ -8,15 +25,9 @@ module Importers
     def self.process_migration(data, migration)
       assignments = data['assignments'] ? data['assignments']: []
       to_import = migration.to_import 'assignments'
-      assignments.each do |assign|
-        if migration.import_object?("assignments", assign['migration_id'])
-          begin
-            import_from_migration(assign, migration.context, migration)
-          rescue
-            migration.add_import_warning(t('#migration.assignment_type', "Assignment"), assign[:title], $!)
-          end
-        end
-      end
+
+      create_assignments(assignments, migration)
+
       migration_ids = assignments.map{|m| m['assignment_id'] }.compact
       conn = Assignment.connection
       cases = []
@@ -27,6 +38,72 @@ module Importers
       end
     end
 
+    def self.create_assignments(assignments, migration)
+      assignment_records = []
+      context = migration.context
+
+      Assignment.suspend_callbacks(:update_submissions_later) do
+        assignments.each do |assign|
+          if migration.import_object?("assignments", assign['migration_id'])
+            begin
+              assignment_records << import_from_migration(assign, context, migration, nil, nil)
+            rescue
+              migration.add_import_warning(t('#migration.assignment_type', "Assignment"), assign[:title], $!)
+            end
+          end
+        end
+      end
+
+      if context.respond_to?(:assignment_group_no_drop_assignments) && context.assignment_group_no_drop_assignments
+        context.assignments.active.where.not(:migration_id => nil).
+          where(:assignment_group_id => context.assignment_group_no_drop_assignments.values).each do |item|
+          if group = context.assignment_group_no_drop_assignments[item.migration_id]
+            AssignmentGroup.add_never_drop_assignment(group, item)
+          end
+        end
+      end
+
+      assignment_records.compact!
+
+      assignment_ids = assignment_records.map(&:id)
+      Submission.suspend_callbacks(:update_assignment, :touch_graders) do
+        # execute this query against the slave, so that it will use a cursor, and not
+        # attempt to order by submissions.id, because in very large dbs that can cause
+        # the postgres planner to prefer to search the submission_pkey index
+        Shackles.activate(:slave) do
+          Submission.where(assignment_id: assignment_ids).find_each do |sub|
+            Shackles.activate(:master) { sub.save! }
+          end
+        end
+      end
+
+      context.touch_admins if context.respond_to?(:touch_admins)
+    end
+
+    def self.create_tool_settings(tool_setting_hash, tool_proxy, assignment)
+      return if tool_proxy.blank? || tool_setting_hash.blank?
+
+      ts_vendor_code = tool_setting_hash.dig('vendor_code')
+      ts_product_code = tool_setting_hash.dig('product_code')
+      ts_custom = tool_setting_hash.dig('custom')
+      ts_custom_params = tool_setting_hash.dig('custom_parameters')
+
+      return unless tool_proxy.product_family.vendor_code == ts_vendor_code &&
+                    tool_proxy.product_family.product_code == ts_product_code
+
+      tool_setting = tool_proxy.tool_settings.find_or_create_by!(
+        resource_link_id: assignment.lti_context_id,
+        context: assignment.course
+      )
+
+      tool_setting.update_attributes!(
+        custom: ts_custom,
+        custom_parameters: ts_custom_params,
+        vendor_code: ts_vendor_code,
+        product_code: ts_product_code
+      )
+    end
+
     def self.import_from_migration(hash, context, migration, item=nil, quiz=nil)
       hash = hash.with_indifferent_access
       return nil if hash[:migration_id] && hash[:assignments_to_import] && !hash[:assignments_to_import][hash[:migration_id]]
@@ -35,11 +112,12 @@ module Importers
       item ||= context.assignments.temp_record #new(:context => context)
 
       item.mark_as_importing!(migration)
+      master_migration = migration&.for_master_course_import?  # propagate null dates only for blueprint syncs
 
       item.title = hash[:title]
       item.title = I18n.t('untitled assignment') if item.title.blank?
       item.migration_id = hash[:migration_id]
-      if item.new_record? || item.deleted?
+      if item.new_record? || item.deleted? || master_migration
         if item.can_unpublish?
           item.workflow_state = (hash[:workflow_state] || 'published')
         else
@@ -130,8 +208,10 @@ module Importers
       rubric ||= context.available_rubric(hash[:rubric_id]) if hash[:rubric_id]
       if rubric
         assoc = rubric.associate_with(item, context, :purpose => 'grading', :skip_updating_points_possible => true)
-        assoc.use_for_grading = !!hash[:rubric_use_for_grading] if hash.has_key?(:rubric_use_for_grading)
-        assoc.hide_score_total = !!hash[:rubric_hide_score_total] if hash.has_key?(:rubric_hide_score_total)
+        assoc.use_for_grading = !!hash[:rubric_use_for_grading] if hash.key?(:rubric_use_for_grading)
+        assoc.hide_score_total = !!hash[:rubric_hide_score_total] if hash.key?(:rubric_hide_score_total)
+        assoc.hide_points = !!hash[:rubric_hide_points] if hash.key?(:rubric_hide_points)
+        assoc.hide_outcome_results = !!hash[:rubric_hide_outcome_results] if hash.key?(:rubric_hide_outcome_results)
         if hash[:saved_rubric_comments]
           assoc.summary_data ||= {}
           assoc.summary_data[:saved_comments] ||= {}
@@ -141,6 +221,8 @@ module Importers
         assoc.save
 
         item.points_possible ||= rubric.points_possible if item.infer_grading_type == "points"
+      elsif master_migration && item.rubric
+        item.rubric_association.destroy
       end
 
       if hash[:assignment_overrides]
@@ -191,9 +273,11 @@ module Importers
         item.saved_by = :quiz
       end
 
-      hash[:due_at] ||= hash[:due_date]
+      hash[:due_at] ||= hash[:due_date] if hash.has_key?(:due_date)
       [:due_at, :lock_at, :unlock_at, :peer_reviews_due_at].each do |key|
-        item.send"#{key}=", Canvas::Migration::MigratorHelper.get_utc_time_from_timestamp(hash[key]) unless hash[key].nil?
+        if hash.has_key?(key) && (master_migration || hash[key].present?)
+          item.send"#{key}=", Canvas::Migration::MigratorHelper.get_utc_time_from_timestamp(hash[key])
+        end
       end
 
       if hash[:has_group_category]
@@ -204,8 +288,8 @@ module Importers
       [:peer_reviews,
        :automatic_peer_reviews, :anonymous_peer_reviews,
        :grade_group_students_individually, :allowed_extensions,
-       :position, :peer_review_count, :muted, :moderated_grading,
-       :omit_from_final_grade, :intra_group_peer_reviews
+       :position, :peer_review_count,
+       :omit_from_final_grade, :intra_group_peer_reviews, :post_to_sis
       ].each do |prop|
         item.send("#{prop}=", hash[prop]) unless hash[prop].nil?
       end
@@ -224,6 +308,12 @@ module Importers
         else
           item.turnitin_settings = settings
         end
+      end
+
+      if hash["similarity_detection_tool"].present?
+        settings =  item.turnitin_settings
+        settings[:originality_report_visibility] = hash["similarity_detection_tool"]["visibility"]
+        item.turnitin_settings = settings
       end
 
       migration.add_imported_item(item)
@@ -261,9 +351,30 @@ module Importers
         end
       end
 
-      if context.respond_to?(:assignment_group_no_drop_assignments) && context.assignment_group_no_drop_assignments
-        if group = context.assignment_group_no_drop_assignments[item.migration_id]
-          AssignmentGroup.add_never_drop_assignment(group, item)
+      if hash["similarity_detection_tool"].present?
+        similarity_tool = hash["similarity_detection_tool"]
+        vendor_code = similarity_tool["vendor_code"]
+        product_code = similarity_tool["product_code"]
+        resource_type_code = similarity_tool["resource_type_code"]
+        item.assignment_configuration_tool_lookups.create(
+          tool_vendor_code: vendor_code,
+          tool_product_code: product_code,
+          tool_resource_type_code: resource_type_code,
+          tool_type: 'Lti::MessageHandler'
+        )
+        active_proxies = Lti::ToolProxy.find_active_proxies_for_context_by_vendor_code_and_product_code(
+          context: context, vendor_code: vendor_code, product_code: product_code
+        ).preload(:tool_settings)
+
+
+        if active_proxies.blank?
+          migration.add_warning(I18n.t(
+            "We were unable to find a tool profile match for vendor_code: \"%{vendor_code}\" product_code: \"%{product_code}\".",
+            vendor_code: vendor_code, product_code: product_code)
+          )
+        else
+          item.lti_context_id ||= SecureRandom.uuid
+          create_tool_settings(hash['tool_setting'], active_proxies.first, item)
         end
       end
 

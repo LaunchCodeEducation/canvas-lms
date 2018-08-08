@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2016 Instructure, Inc.
+# Copyright (C) 2016 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -42,10 +42,10 @@ module Lti
       end
 
       def groups
-        @groups ||= @context.groups.active
-                             .order(:id)
-                             .offset(@page * @per_page)
-                             .limit(@per_page + 1)
+        @groups ||= @context.groups.active.
+          order(:id).
+          offset(@page * @per_page).
+          limit(@per_page + 1)
       end
 
       def generate_member(group)

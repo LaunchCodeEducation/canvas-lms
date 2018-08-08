@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2013 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -146,7 +146,7 @@ class ConferencesController < ApplicationController
   before_action :get_conference, :except => [:index, :create]
 
   # @API List conferences
-  # Retrieve the list of conferences for this context
+  # Retrieve the paginated list of conferences for this context
   #
   # This API returns a JSON object containing the list of conferences,
   # the key for the list of conferences is "conferences"
@@ -184,7 +184,7 @@ class ConferencesController < ApplicationController
     log_asset_access([ "conferences", @context ], "conferences", "other")
     case @context
     when Course
-      @users = User.where(:id => @context.typical_current_enrollments.active_by_date.where.not(:user_id => @current_user).select(:user_id)).
+      @users = User.where(:id => @context.current_enrollments.not_fake.active_by_date.where.not(:user_id => @current_user).select(:user_id)).
         order(User.sortable_name_order_by_clause).to_a
     when Group
       @users = @context.participating_users_in_context.where("users.id<>?", @current_user).order(User.sortable_name_order_by_clause).to_a.uniq
@@ -343,6 +343,26 @@ class ConferencesController < ApplicationController
       respond_to do |format|
         format.html { redirect_to named_context_url(@context, :context_conferences_url) }
         format.json { render :json => @conference }
+      end
+    end
+  end
+
+  def recording
+    if authorized_action(@conference, @current_user, :read)
+      @response = @conference.recording(params[:recording_id]) || {}
+      respond_to do |format|
+        format.html { redirect_to named_context_url(@context, :context_conferences_url) }
+        format.json { render :json => @response }
+      end
+    end
+  end
+
+  def delete_recording
+    if authorized_action(@conference, @current_user, :delete)
+      @response = @conference.delete_recording(params[:recording_id])
+      respond_to do |format|
+        format.html { redirect_to named_context_url(@context, :context_conferences_url) }
+        format.json { render :json => @response, :status => :ok }
       end
     end
   end

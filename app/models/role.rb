@@ -1,10 +1,10 @@
 #
-# Copyright (C) 2012 - 2013 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
 # Canvas is free software: you can redistribute it and/or modify it under
-# the terms of the GNU Affero General Public License as published by the Fr
+# the terms of the GNU Affero General Public License as published by the Free
 # Software Foundation, version 3 of the License.
 #
 # Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
@@ -40,6 +40,10 @@ class Role < ActiveRecord::Base
       end
       super
     end
+
+    def role=(role)
+      super(role&.role_for_shard(self.shard))
+    end
   end
 
   belongs_to :account
@@ -55,11 +59,11 @@ class Role < ActiveRecord::Base
   validates_exclusion_of :name, :in => KNOWN_TYPES, :unless => :built_in?, :message => 'is reserved'
   validate :ensure_non_built_in_name
 
-  def id
-    if self.built_in? && self.shard != Shard.current && role = Role.get_built_in_role(self.name, Shard.current)
-      role.read_attribute(:id)
+  def role_for_shard(target_shard=Shard.current)
+    if self.built_in? && self.shard != target_shard && target_shard_role = Role.get_built_in_role(self.name, target_shard)
+      target_shard_role
     else
-      super
+      self
     end
   end
 
@@ -83,8 +87,7 @@ class Role < ActiveRecord::Base
   def infer_root_account_id
     unless self.account
       self.errors.add(:account_id)
-      throw :abort unless CANVAS_RAILS4_2
-      return false
+      throw :abort
     end
     self.root_account_id = self.account.root_account_id || self.account.id
   end
@@ -153,7 +156,7 @@ class Role < ActiveRecord::Base
     # most roles are going to be built in, so don't do a db search every time
     local_id, shard = Shard.local_id_for(id)
     shard ||= Shard.current
-    role = built_in_roles_by_id(false, shard)[local_id] || Role.shard(shard).where(:id => local_id).first
+    role = built_in_roles_by_id(false, shard)[local_id] || Role.where(:id => id).take
     role
   end
 
@@ -258,7 +261,6 @@ class Role < ActiveRecord::Base
       base_type[:count] = base_counts[base_type[:name]] || 0
       base_type[:custom_roles].each do |custom_role|
         id = custom_role[:id]
-        id = id.to_s if CANVAS_RAILS4_2
         custom_role[:count] = role_counts[id] || 0
       end
     end

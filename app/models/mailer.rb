@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2015 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -39,6 +39,21 @@ class Mailer < ActionMailer::Base
     mail(params) do |format|
       format.text{ render plain: m.body }
       format.html{ render plain: m.html_body } if m.html_body
+    end
+  end
+
+  # if you can't go through Message.deliver, this is a fallback that respects
+  # the notification service.
+  def self.deliver(mail_obj)
+    if Account.site_admin.feature_enabled?(:notification_service)
+      Services::NotificationService.process(
+        "direct:#{SecureRandom.hex(10)}",
+        mail_obj.to_s,
+        "email",
+        mail_obj.to.first
+      )
+    else
+      mail_obj.deliver_now
     end
   end
 

@@ -1,5 +1,23 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 class LiveEventsObserver < ActiveRecord::Observer
   observe :content_export,
+          :content_migration,
           :course,
           :discussion_entry,
           :discussion_topic,
@@ -14,10 +32,16 @@ class LiveEventsObserver < ActiveRecord::Observer
           :attachment,
           :user,
           :user_account_association,
-          :account_notification
+          :account_notification,
+          :course_section,
+          :context_module,
+          :content_tag
 
+  NOP_UPDATE_FIELDS = [ "updated_at", "sis_batch_id" ].freeze
   def after_update(obj)
-    changes = obj.changes
+    changes = obj.saved_changes
+    return nil if changes.except(*NOP_UPDATE_FIELDS).empty?
+
     obj.class.connection.after_transaction_commit do
     case obj
     when ContentExport
@@ -25,6 +49,10 @@ class LiveEventsObserver < ActiveRecord::Observer
         if obj.workflow_state == "exported"
           Canvas::LiveEvents.quiz_export_complete(obj)
         end
+      end
+    when ContentMigration
+      if changes["workflow_state"] && obj.workflow_state == "imported"
+        Canvas::LiveEvents.content_migration_completed(obj)
       end
     when Course
       if changes["syllabus_body"]
@@ -35,6 +63,8 @@ class LiveEventsObserver < ActiveRecord::Observer
       Canvas::LiveEvents.enrollment_updated(obj)
     when EnrollmentState
       Canvas::LiveEvents.enrollment_state_updated(obj)
+    when GroupCategory
+      Canvas::LiveEvents.group_category_updated(obj)
     when Group
       Canvas::LiveEvents.group_updated(obj)
     when GroupMembership
@@ -56,9 +86,19 @@ class LiveEventsObserver < ActiveRecord::Observer
         end
       end
     when Submission
-      Canvas::LiveEvents.submission_updated(obj)
+      if obj.just_submitted?
+        Canvas::LiveEvents.submission_created(obj)
+      elsif !obj.unsubmitted?
+        Canvas::LiveEvents.submission_updated(obj)
+      end
     when User
       Canvas::LiveEvents.user_updated(obj)
+    when CourseSection
+      Canvas::LiveEvents.course_section_updated(obj)
+    when ContextModule
+      Canvas::LiveEvents.module_updated(obj)
+    when ContentTag
+      Canvas::LiveEvents.module_item_updated(obj) if obj.tag_type == "context_module"
     end
     end
   end
@@ -98,6 +138,12 @@ class LiveEventsObserver < ActiveRecord::Observer
       Canvas::LiveEvents.account_notification_created(obj)
     when User
       Canvas::LiveEvents.user_created(obj)
+    when CourseSection
+      Canvas::LiveEvents.course_section_created(obj)
+    when ContextModule
+      Canvas::LiveEvents.module_created(obj)
+    when ContentTag
+      Canvas::LiveEvents.module_item_created(obj) if obj.tag_type == "context_module"
     end
     end
   end

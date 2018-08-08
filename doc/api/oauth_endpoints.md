@@ -6,6 +6,7 @@ OAuth2 Endpoints
 - [GET login/oauth2/auth](#get-login-oauth2-auth)
 - [POST login/oauth2/token](#post-login-oauth2-token)
 - [DELETE login/oauth2/token](#delete-login-oauth2-token)
+- [GET login/session_token](#get-login-session-token)
 
 <a name="get-login-oauth2-auth"></a>
 ## GET login/oauth2/auth
@@ -58,13 +59,11 @@ wrong person in, as <a href="http://homakov.blogspot.com/2012/07/saferweb-most-c
     </tr>
     <tr>
       <td class="mono">scope<span class="label optional"></span></td>
-      <td>This can be used to specify what information the access token
-      will provide access to.  By default an access token will have access to
-      all api calls that a user can make.  The only other accepted value
-      for this at present is '/auth/userinfo'. When used, this will return only
-      the current canvas user's identity. Some OAuth libraries may require a
-      scope parameter to be specified; if so, passing no value for the scope
-      parameter will behave as if no scope parameter was specified.</td>
+      <td>
+        This can be used to specify what information the access token will provide access to.
+        Scopes may be found beneath their corresponding endpoints in the "resources" documentation pages.
+        If the developer key does not require scopes and no scope parameter is specified, the access token will have access to all scopes. If the developer key does require scopes and no scope parameter is specified, Canvas will respond with "invalid_scope."
+      </td>
     </tr>
     <tr>
       <td class="mono">purpose<span class="label optional"></span></td>
@@ -216,7 +215,8 @@ See <a href="http://tools.ietf.org/html/rfc6749#section-4.1.3">Section 4.1.3</a>
   If your application supports logout functionality, you can revoke your own
   access token. This is useful for security reasons, as well as removing your
   application from the list of tokens on the user's profile page. Simply make
-  an authenticated request to the following endpoint:
+  an authenticated request to the following endpoint by including an Authorization
+  header or providing the access_token as a request parameter.
 
   <h3 class="endpoint">DELETE /login/oauth2/token</h3>
 
@@ -236,4 +236,43 @@ See <a href="http://tools.ietf.org/html/rfc6749#section-4.1.3">Section 4.1.3</a>
       </tr>
     </tbody>
   </table>
+</div>
+
+<a name="get-login-session-token"></a>
+## GET login/session_token
+
+
+<div class="method_details">
+
+  If your application needs to begin a normal web session in order to access
+  features not supported via API (such as quiz taking), you can use your API
+  access token in order to get a time-limited URL that can be fed to a
+  browser or web view to begin a new web session.
+
+  <h3 class="endpoint">GET /login/session_token</h3>
+
+  <h4>Parameters</h4>
+  <table>
+    <thead>
+      <tr>
+        <th>Parameter</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="mono">return_to <span class="label optional"></span></td>
+        <td>An optional URL to begin the web session at. Otherwise the user will be sent to the dashboard.</td>
+      </tr>
+    </tbody>
+  </table>
+
+
+  <h4>Example responses</h4>
+
+  <pre class="example_code">
+  {
+    "session_url": "https://canvas.instructure.com/opaque_url"
+  }
+  </pre>
 </div>

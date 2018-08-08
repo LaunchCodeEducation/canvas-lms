@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2017 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -26,13 +26,13 @@ define [
   'jquery.instructure_forms'
   'jqueryui/dialog'
   'jquery.instructure_misc_plugins'
-  'compiled/jquery/fixDialogButtons'
+  '../jquery/fixDialogButtons'
   'vendor/jquery.ba-tinypubsub'
 ], (I18n, numberHelper, $, curveGradesDialogTemplate, htmlEscape) ->
   class CurveGradesDialog
     constructor: ({@assignment, @students, @context_url}) ->
 
-    show: =>
+    show: (onClose) =>
       locals =
         assignment: @assignment
         action: "#{@context_url}/gradebook/update_submission"
@@ -90,6 +90,7 @@ define [
           close: => @$dialog.remove()
         .fixDialogButtons()
 
+      @$dialog.on 'dialogclose', onClose
       @$dialog.parent().find('.ui-dialog-titlebar-close').focus()
       @$dialog.find("#middle_score").bind "blur change keyup focus", @curve
       @$dialog.find("#assign_blanks").change @curve

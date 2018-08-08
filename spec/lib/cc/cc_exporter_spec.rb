@@ -1,33 +1,55 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/cc_spec_helper')
+require File.expand_path(File.dirname(__FILE__) + '/../../lti2_course_spec_helper')
 
 require 'nokogiri'
 
 describe "Common Cartridge exporting" do
+  let(:ccc_schema) do
+    get_ccc_schema
+  end
 
   it "should collect errors and finish running" do
     course = course_model
     user = user_model
     message = "fail"
-    course.stubs(:wiki).raises(message)
+    allow(course).to receive(:wiki_pages).and_raise(message)
     content_export = ContentExport.new
     content_export.context = course
     content_export.user = user
     content_export.save!
 
-    content_export.export_without_send_later
+    expect {
+      content_export.export_without_send_later
+    }.to change(ErrorReport, :count).by 1
 
     expect(content_export.error_messages.length).to eq 1
     error = content_export.error_messages.first
     expect(error.first).to eq "Failed to export wiki pages"
     expect(error.last).to match /ErrorReport id: \d*/
-    expect(ErrorReport.count).to eq 1
     expect(ErrorReport.last.message).to eq message
   end
 
   context "creating .zip exports" do
     include WebMock::API
 
-    before do
+    before :once do
       course_with_teacher(:active_all => true)
       @ce = @course.content_exports.build
       @ce.export_type = ContentExport::COURSE_COPY
@@ -102,8 +124,8 @@ describe "Common Cartridge exporting" do
       @cm1 = @course.context_modules.create!(:name => "another module")
       @att = Attachment.create!(:filename => 'first.txt', :uploaded_data => StringIO.new('ohai'), :folder => Folder.unfiled_folder(@course), :context => @course)
       @att2 = Attachment.create!(:filename => 'second.txt', :uploaded_data => StringIO.new('ohai'), :folder => Folder.unfiled_folder(@course), :context => @course)
-      @wiki = @course.wiki.wiki_pages.create!(:title => "wiki", :body => "ohai")
-      @wiki2 = @course.wiki.wiki_pages.create!(:title => "wiki2", :body => "ohais")
+      @wiki = @course.wiki_pages.create!(:title => "wiki", :body => "ohai")
+      @wiki2 = @course.wiki_pages.create!(:title => "wiki2", :body => "ohais")
       @event = @course.calendar_events.create!(:title => "event", :start_at =>1.week.from_now)
       @event1 = @course.calendar_events.create!(:title => "event2", :start_at =>2.weeks.from_now)
       @bank = @course.assessment_question_banks.create!(:title => 'bank')
@@ -153,24 +175,37 @@ describe "Common Cartridge exporting" do
       expect(doc.at_css("learningOutcomeGroup[identifier=#{mig_id(@log3)}]")).to be_nil
       expect(doc.at_css("learningOutcome[identifier=#{mig_id(@lo)}]")).not_to be_nil
       expect(doc.at_css("learningOutcome[identifier=#{mig_id(@lo2)}]")).to be_nil
+      expect(ccc_schema.validate(doc)).to be_empty
 
       doc = Nokogiri::XML.parse(@zip_file.read("course_settings/assignment_groups.xml"))
       expect(doc.at_css("assignmentGroup[identifier=#{mig_id(@ag)}]")).not_to be_nil
       expect(doc.at_css("assignmentGroup[identifier=#{mig_id(@ag2)}]")).to be_nil
+      expect(ccc_schema.validate(doc)).to be_empty
 
       doc = Nokogiri::XML.parse(@zip_file.read("course_settings/rubrics.xml"))
       expect(doc.at_css("rubric[identifier=#{mig_id(@rubric)}]")).not_to be_nil
       expect(doc.at_css("rubric[identifier=#{mig_id(@rubric2)}]")).to be_nil
+      expect(ccc_schema.validate(doc)).to be_empty
 
       expect(@manifest_doc.at_css("item[identifier=LearningModules] item[identifier=#{mig_id(@cm)}]")).not_to be_nil
       expect(@manifest_doc.at_css("item[identifier=LearningModules] item[identifier=#{mig_id(@cm2)}]")).to be_nil
       doc = Nokogiri::XML.parse(@zip_file.read("course_settings/module_meta.xml"))
       expect(doc.at_css("module[identifier=#{mig_id(@cm)}]")).not_to be_nil
       expect(doc.at_css("module[identifier=#{mig_id(@cm2)}]")).to be_nil
+      expect(ccc_schema.validate(doc)).to be_empty
 
       doc = Nokogiri::XML.parse(@zip_file.read("course_settings/events.xml"))
       expect(doc.at_css("event[identifier=#{mig_id(@event)}]")).not_to be_nil
       expect(doc.at_css("event[identifier=#{mig_id(@event2)}]")).to be_nil
+      expect(ccc_schema.validate(doc)).to be_empty
+    end
+
+    it "should use instfs to host export files if it is enabled" do
+      allow(InstFS).to receive(:enabled?).and_return(true)
+      uuid = "1234-abcd"
+      allow(InstFS).to receive(:direct_upload).and_return(uuid)
+      @ce.export_without_send_later
+      expect(@ce.attachments.first.instfs_uuid).to eq(uuid)
     end
 
     it "should create a quizzes-only export" do
@@ -333,6 +368,17 @@ describe "Common Cartridge exporting" do
       expect(@zip_file.find_entry(path)).not_to be_nil
     end
 
+    it "does not get confused by attachments with absolute paths" do
+      @att = Attachment.create!(:filename => 'first.png', :uploaded_data => StringIO.new('ohai'), :folder => Folder.unfiled_folder(@course), :context => @course)
+      @q1 = @course.quizzes.create(:title => 'quiz1', :description => %Q{<img src="https://example.com/files/#{@att.id}/download?download_frd=1"})
+      @ce.export_type = ContentExport::COMMON_CARTRIDGE
+      run_export
+      doc = Nokogiri::XML.parse(@zip_file.read("#{mig_id(@q1)}/assessment_meta.xml"))
+      description = doc.at_css('description').to_s
+      expect(description).not_to include 'https://example.com%24IMS-CC-FILEBASE%24'
+      expect(description).to include 'img src="%24IMS-CC-FILEBASE%24/unfiled/first.png'
+    end
+
     it "should not fail when answers are missing for FIMB" do
       @q1 = @course.quizzes.create(:title => 'quiz1')
 
@@ -385,6 +431,16 @@ describe "Common Cartridge exporting" do
       doc = Nokogiri::XML.parse(@zip_file.read("course_settings/assignment_groups.xml"))
       expect(doc.at_css("assignmentGroup[identifier=#{mig_id(@ag)}]")).not_to be_nil
       expect(doc.at_css("assignmentGroup[identifier=#{mig_id(@ag2)}]")).not_to be_nil
+      expect(ccc_schema.validate(doc)).to be_empty
+    end
+
+    it "has valid course settings XML" do
+      # include all possible settings, not just changed ones
+      # (if this test fails, you need to add your setting to lib/cc/xsd/cccv1p0.xsd)
+      allow(@course).to receive(:disable_setting_defaults).and_yield
+      run_export
+      doc = Nokogiri::XML.parse(@zip_file.read("course_settings/course_settings.xml"))
+      expect(ccc_schema.validate(doc)).to be_empty
     end
 
     it "should not export syllabus if not selected" do
@@ -411,6 +467,24 @@ describe "Common Cartridge exporting" do
       expect(@manifest_doc.at_css('resource[href="course_settings/syllabus.html"]')).not_to be_nil
     end
 
+    describe "tool proxies" do
+      include_context "lti2_course_spec_helper"
+
+      before(:each) do
+        tool_proxy.context = @course
+        tool_proxy.save!
+      end
+
+      it "should export tool profiles" do
+        run_export
+
+        resource = @manifest_doc.at_css('resource[type="tool_profile"]')
+        expect(resource).not_to be_nil
+        file_path = resource.at_css('file').attribute('href')
+        expect(@zip_file.find_entry(file_path)).not_to be_nil
+      end
+    end
+
     it "should use canvas_export.txt as flag" do
       run_export
 
@@ -426,13 +500,13 @@ describe "Common Cartridge exporting" do
 
     it "should export media tracks" do
       stub_kaltura
-      CanvasKaltura::ClientV3.any_instance.stubs(:startSession)
-      CanvasKaltura::ClientV3.any_instance.stubs(:flavorAssetGetPlaylistUrl).returns('http://www.example.com/blah.flv')
+      allow_any_instance_of(CanvasKaltura::ClientV3).to receive(:startSession)
+      allow_any_instance_of(CanvasKaltura::ClientV3).to receive(:flavorAssetGetPlaylistUrl).and_return('http://www.example.com/blah.flv')
       stub_request(:get, 'http://www.example.com/blah.flv').to_return(body: "", status: 200)
-      CC::CCHelper.stubs(:media_object_info).returns({asset: {id: 1, status: '2'}, filename: 'blah.flv'})
+      allow(CC::CCHelper).to receive(:media_object_info).and_return({asset: {id: 1, status: '2'}, filename: 'blah.flv'})
       obj = @course.media_objects.create! media_id: '0_deadbeef'
       track = obj.media_tracks.create! kind: 'subtitles', locale: 'tlh', content: "Hab SoSlI' Quch!"
-      page = @course.wiki.wiki_pages.create!(:title => "wiki", :body => "ohai")
+      page = @course.wiki_pages.create!(:title => "wiki", :body => "ohai")
       page.body = %Q{<a id="media_comment_0_deadbeef" class="instructure_inline_media_comment video_comment"></a>}
       page.save!
       @ce.export_type = ContentExport::COMMON_CARTRIDGE
@@ -443,6 +517,7 @@ describe "Common Cartridge exporting" do
       expect(@zip_file.read(file_node['href'])).to eql(track.content)
       track_doc = Nokogiri::XML(@zip_file.read('course_settings/media_tracks.xml'))
       expect(track_doc.at_css('media_tracks media track[locale=tlh][kind=subtitles][identifierref=id4164d7d594985594573e63f8ca15975]')).to be_present
+      expect(ccc_schema.validate(track_doc)).to be_empty
     end
 
     it "should export CC 1.3 assignments" do
@@ -480,6 +555,129 @@ describe "Common Cartridge exporting" do
       expect(variant_tag.next_element.name).to eq 'file'
       html_file = variant_tag.next_element.attribute('href').value
       expect(@zip_file.read("#{assignment_id}/test-assignment.html")).to be_include "what?"
+    end
+
+    context 'similarity detection tool associations' do
+      include_context "lti2_course_spec_helper"
+
+      before(:each) do
+        allow_any_instance_of(Lti::AssignmentSubscriptionsHelper).to receive(:create_subscription) { SecureRandom.uuid }
+        allow_any_instance_of(Lti::AssignmentSubscriptionsHelper).to receive(:destroy_subscription) { SecureRandom.uuid }
+        allow(Lti::ToolProxy).to receive(:find_all_proxies_for_context) { Lti::ToolProxy.where(id: tool_proxy.id) }
+        tool_proxy.context = @course
+        tool_proxy.save!
+
+        assignment = @course.assignments.create! name: 'test assignment', submission_types: 'online_upload'
+        assignment.tool_settings_tool = message_handler
+        assignment.save!
+        @ce.export_type = ContentExport::COMMON_CARTRIDGE
+        @ce.save!
+      end
+
+      describe 'attributes' do
+        let(:assignment_xml_doc) do
+          run_export
+          assignment_xml_file = @manifest_doc.at_css("resource[href*='test-assignment.html'] file[href*='.xml']").attr('href')
+          Nokogiri::XML(@zip_file.read(assignment_xml_file))
+        end
+
+        let(:similarity_tool_el) do
+          assignment_xml_doc.elements.first.elements.find { |e| e.name == 'similarity_detection_tool' }
+        end
+
+        it 'exports the vendor code' do
+          expect(similarity_tool_el.attr('vendor_code')).to eq product_family.vendor_code
+        end
+
+        it 'exports the product code' do
+          expect(similarity_tool_el.attr('product_code')).to eq product_family.product_code
+        end
+
+        it 'exports the resource type code' do
+          expect(similarity_tool_el.attr('resource_type_code')).to eq resource_handler.resource_type_code
+        end
+
+        it 'exports the originality report visibility setting' do
+          expect(similarity_tool_el.attr('visibility')).to eq 'immediate'
+        end
+      end
+    end
+
+    context 'tool settings' do
+      include_context "lti2_course_spec_helper"
+
+      let(:custom) do
+        {
+          'custom_var_1' => 'value one',
+          'custom_var_2' => 'value two'
+        }
+      end
+
+      let(:custom_parameters) do
+        {
+          'custom_parameter_1' => 'param value one',
+          'custom_parameter_2' => 'param value two'
+        }
+      end
+
+      let(:assignment_xml_doc) do
+        run_export
+        assignment_xml_file = @manifest_doc.at_css("resource[href*='test-assignment.html'] file[href*='.xml']").attr('href')
+        Nokogiri::XML(@zip_file.read(assignment_xml_file))
+      end
+
+      before(:each) do
+        allow_any_instance_of(Lti::AssignmentSubscriptionsHelper).to receive(:create_subscription) { SecureRandom.uuid }
+        allow_any_instance_of(Lti::AssignmentSubscriptionsHelper).to receive(:destroy_subscription) { SecureRandom.uuid }
+        allow(Lti::ToolProxy).to receive(:find_all_proxies_for_context) { Lti::ToolProxy.where(id: tool_proxy.id) }
+
+        assignment = @course.assignments.create! name: 'test assignment', submission_types: 'online_upload'
+        assignment.tool_settings_tool = message_handler
+        assignment.save!
+
+        tool_proxy.context = @course
+        tool_proxy.save!
+        tool_proxy.tool_settings.create!(
+          context: course,
+          tool_proxy: tool_proxy,
+          resource_link_id: assignment.lti_context_id,
+          custom: custom,
+          custom_parameters: custom_parameters,
+          product_code: tool_proxy.product_family.product_code,
+          vendor_code: tool_proxy.product_family.vendor_code
+        )
+
+        @ce.export_type = ContentExport::COMMON_CARTRIDGE
+        @ce.save!
+      end
+
+      describe 'tool attributes' do
+        it 'exports the vendor code' do
+          expect(assignment_xml_doc.at_css('tool_setting tool_proxy').attribute('vendor_code').value).to eq product_family.vendor_code
+        end
+
+        it 'exports the product code' do
+          expect(assignment_xml_doc.at_css('tool_setting tool_proxy').attribute('product_code').value).to eq product_family.product_code
+        end
+      end
+
+      describe 'custom values' do
+        it 'exports the custom hash' do
+          exported_hash = assignment_xml_doc.css("tool_setting custom property").each_with_object({}) do |el, hash|
+            hash[el.attr('name')] = el.text
+          end
+
+          expect(exported_hash).to eq(custom)
+        end
+
+        it 'exports the custom parameters hash' do
+          exported_hash = assignment_xml_doc.css("tool_setting custom_parameters property").each_with_object({}) do |el, hash|
+            hash[el.attr('name')] = el.text
+          end
+
+          expect(exported_hash).to eq(custom_parameters)
+        end
+      end
     end
 
     it "should export unpublished modules and items" do
@@ -542,7 +740,7 @@ describe "Common Cartridge exporting" do
     end
 
     context "considering rights of provided user" do
-      before do
+      before :once do
         @ag = @course.assignment_groups.create!(:name => 'group1')
         @published = @course.assignments.create!({
           :title => 'Assignment 1', :points_possible => 10, :assignment_group => @ag
@@ -611,7 +809,7 @@ describe "Common Cartridge exporting" do
         assignment = @course.assignments.create!({title: 'assignment', unlock_at: 5.days.from_now})
         quiz = @course.quizzes.create!(title: 'quiz', unlock_at: 5.days.from_now)
         topic = @course.discussion_topics.create!(title: 'topic', unlock_at: 5.days.from_now)
-        page = @course.wiki.wiki_pages.create!(:title => "wiki", :body => "ohai")
+        page = @course.wiki_pages.create!(:title => "wiki", :body => "ohai")
         mod = @course.context_modules.create!(:name => "some module")
         mod.add_item(type: 'page', id: page.id)
         mod.unlock_at = 5.days.from_now
@@ -625,6 +823,21 @@ describe "Common Cartridge exporting" do
         check_resource_node(quiz, CC::CCHelper::ASSESSMENT_TYPE, false)
         check_resource_node(topic, CC::CCHelper::DISCUSSION_TOPIC, false)
         check_resource_node(page, CC::CCHelper::WEBCONTENT, false)
+      end
+
+      describe 'for teachers in concluded courses' do
+        before :once do
+          teacher_in_course :active_all => true
+          @ce.user = @teacher
+          @ce.save!
+          @course.complete!
+        end
+
+        it "still exports topics that are closed for comments" do
+          topic = @course.discussion_topics.create! :locked => true
+          run_export
+          check_resource_node(topic, CC::CCHelper::DISCUSSION_TOPIC, true)
+        end
       end
     end
 

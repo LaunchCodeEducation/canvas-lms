@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../common')
 
 module RubricsCommon
@@ -24,6 +41,39 @@ module RubricsCommon
                                                  [{description: "Good", points: points, id: 'rat1', criterion_id: 'crit1'}]
                                          }], description: 'new rubric description')
     @association = @rubric.associate_with(@assignment, @course, purpose: 'grading', use_for_grading: false)
+  end
+
+  def assignment_with_editable_rubric(points, title = 'My Rubric')
+    @assignment = create_assignment_with_points(points)
+    @rubric = @course.rubrics.build
+    rubric_params = {
+      :title => title,
+      :hide_score_total => false,
+      :criteria => {
+        "0" => {
+          :points => points,
+          :description => "no outcome row",
+          :long_description => 'non outcome criterion',
+          :ratings => {
+            "0" => {
+              :points => points,
+              :description => "Amazing",
+            },
+            "1" => {
+                :points => 3,
+                :description => "Reduced Marks",
+            },
+            "2" => {
+                :points => 0,
+                :description => "No Marks",
+            }
+          }
+        }
+      }
+    }
+    @rubric.update_criteria(rubric_params)
+    @rubric.reload
+    @association = @rubric.associate_with(@assignment, @course, purpose: 'grading', use_for_grading: true)
   end
 
   def edit_rubric_after_updating
@@ -104,7 +154,6 @@ module RubricsCommon
     f('.outcome-link').click
     wait_for_ajaximations
     f('.ui-dialog .btn-primary').click
-    accept_alert
     wait_for_ajaximations
   end
 end

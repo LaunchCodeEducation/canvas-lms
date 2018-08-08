@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -42,12 +42,11 @@ describe SIS::CSV::GroupMembershipImporter do
       "G001,,accepted",
       "G001,U001,bogus")
     expect(GroupMembership.count).to eq 0
-    expect(importer.warnings.map(&:last)).to eq(
+    expect(importer.errors.map(&:last)).to eq(
       ["No group_id given for a group user",
        "No user_id given for a group user",
        "Improper status \"bogus\" for a group user"]
     )
-    expect(importer.errors).to eq []
   end
 
   it "should add users to groups" do
@@ -70,4 +69,32 @@ describe SIS::CSV::GroupMembershipImporter do
     expect(ms.map(&:workflow_state)).to eq %w(deleted deleted)
   end
 
+  it "should add users to groups that the user cannot access" do
+    course = course_factory(account: @account, sis_source_id: 'c001')
+    group_model(context: course, sis_source_id: "G002")
+    importer = process_csv_data(
+      "group_id,user_id,status",
+      "G002,U001,accepted")
+    expect(importer.errors.last.last).to eq "User U001 doesn't have an enrollment in the course of group G002."
+  end
+
+  it 'should create rollback data' do
+    @account.enable_feature!(:refactor_of_sis_imports)
+    batch1 = @account.sis_batches.create! { |sb| sb.data = {} }
+    process_csv_data_cleanly(
+      "group_id,user_id,status",
+      "G001,U001,accepted",
+      batch: batch1
+    )
+    batch2 = @account.sis_batches.create! { |sb| sb.data = {} }
+    process_csv_data_cleanly(
+      "group_id,user_id,status",
+      "G001,U001,deleted",
+      batch: batch2
+    )
+    expect(batch1.roll_back_data.where(previous_workflow_state: 'non-existent').count).to eq 1
+    expect(batch2.roll_back_data.first.updated_workflow_state).to eq 'deleted'
+    batch2.restore_states_for_batch
+    expect(@account.all_groups.where(sis_source_id: 'G001').take.group_memberships.take.workflow_state).to eq 'accepted'
+  end
 end

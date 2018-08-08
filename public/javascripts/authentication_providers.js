@@ -1,4 +1,21 @@
-define([], function(){
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
   var authenticationProviders = {
     hideAllNewAuthTypeForms: function(){
       var newForms = document.querySelectorAll(".auth-form-container--new");
@@ -13,7 +30,7 @@ define([], function(){
       if(form !== null){
         form.style.display = "";
         setTimeout(function(){
-          $(form).find(":text:first").focus();
+          $(form).find(":focusable:first").focus();
           form.scrollIntoView();
         }, 100);
       }
@@ -33,5 +50,5 @@ define([], function(){
     }
   };
 
-  return authenticationProviders;
-});
+  export default authenticationProviders;
+

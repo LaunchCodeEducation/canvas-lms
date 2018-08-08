@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,8 +17,8 @@
 #
 
 define [
-  'compiled/views/outcomes/OutcomesDirectoryView'
-  'compiled/collections/OutcomeCollection'
+  './OutcomesDirectoryView'
+  '../../collections/OutcomeCollection'
 ], (OutcomesDirectoryView, OutcomeCollection) ->
 
   # for working with State Standards in the import dialog

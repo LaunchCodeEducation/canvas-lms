@@ -1,15 +1,35 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'jquery'
-  'underscore'
   'Backbone'
+  'react'
+  'react-dom'
   'jsx/shared/rce/RichContentEditor'
   'jst/wiki/WikiPageEdit'
-  'compiled/views/ValidatedFormView'
-  'compiled/views/wiki/WikiPageDeleteDialog'
-  'compiled/views/wiki/WikiPageReloadView'
+  '../ValidatedFormView'
+  './WikiPageDeleteDialog'
+  './WikiPageReloadView'
   'i18n!pages'
-  'compiled/views/editor/KeyboardShortcuts'
-], ($, _, Backbone, RichContentEditor, template, ValidatedFormView, WikiPageDeleteDialog, WikiPageReloadView, I18n, KeyboardShortcuts) ->
+  '../editor/KeyboardShortcuts'
+  'jsx/due_dates/DueDateCalendarPicker'
+  'jquery.instructure_date_and_time'
+], ($, Backbone, React, ReactDOM, RichContentEditor, template, ValidatedFormView, WikiPageDeleteDialog, WikiPageReloadView, I18n, KeyboardShortcuts, DueDateCalendarPicker) ->
 
   RichContentEditor.preloadRemoteModule()
 
@@ -20,12 +40,15 @@ define [
         '.header-bar-outer-container': '$headerBarOuterContainer'
         '.page-changed-alert': '$pageChangedAlert'
         '.help_dialog': '$helpDialog'
+        '#todo_date_container': '$studentTodoAtContainer'
+        '#student_planner_checkbox': '$studentPlannerCheckbox'
 
       events:
         'click a.switch_views': 'switchViews'
         'click .delete_page': 'deleteWikiPage'
         'click .form-actions .cancel': 'cancel'
         'click .form-actions .save_and_publish': 'saveAndPublish'
+        'click #student_planner_checkbox': 'toggleStudentTodo'
 
     template: template
     className: "form-horizontal edit-form validated-form-view"
@@ -35,11 +58,17 @@ define [
     @optionProperty 'WIKI_RIGHTS'
     @optionProperty 'PAGE_RIGHTS'
 
-    initialize: ->
+    initialize: (options = {}) ->
       super
       @WIKI_RIGHTS ||= {}
       @PAGE_RIGHTS ||= {}
       @on 'success', (args) => window.location.href = @model.get('html_url')
+      @lockedItems = options.lockedItems || {}
+      todoDate = @model.get('todo_date')
+      @studentTodoAtDateValue = if (todoDate)
+        new Date(todoDate)
+      else
+        ''
 
     toJSON: ->
       json = super
@@ -53,12 +82,12 @@ define [
       # rather than requiring the editing_roles to match a
       # string exactly, we check for individual editing roles
       editing_roles = json.editing_roles || ''
-      editing_roles = _.map(editing_roles.split(','), (s) -> s.trim())
-      if _.contains(editing_roles, 'public')
+      editing_roles = editing_roles.split(',').map (s) -> s.trim()
+      if editing_roles.includes('public')
         IS.ANYONE_ROLE = true
-      else if _.contains(editing_roles, 'members')
+      else if editing_roles.includes('members')
         IS.MEMBER_ROLE = true
-      else if _.contains(editing_roles, 'students')
+      else if editing_roles.includes('students')
         IS.STUDENT_ROLE = true
       else
         IS.TEACHER_ROLE = true
@@ -77,6 +106,8 @@ define [
 
       json.assignment = json.assignment?.toView()
 
+      json.content_is_locked = @lockedItems.content
+
       json
 
     onUnload: (ev) =>
@@ -89,11 +120,41 @@ define [
         return warning
 
 
+    # handles the toggling of the student todo date picker
+    toggleStudentTodo: (e) =>
+      @$studentTodoAtContainer.toggle()
+
+    handleStudentTodoUpdate: (newDate) =>
+      @studentTodoAtDateValue = newDate
+      @renderStudentTodoAtDate()
+
+    renderStudentTodoAtDate: () =>
+      elt = @$studentTodoAtContainer[0]
+      if elt
+        ReactDOM.render(React.createElement(DueDateCalendarPicker,
+          dateType: 'todo_date'
+          name: 'student_todo_at'
+          handleUpdate: @handleStudentTodoUpdate
+          rowKey: 'student_todo_at_date'
+          labelledBy: 'student_todo_at_date_label'
+          inputClasses: ''
+          disabled: false
+          isFancyMidnight: true
+          dateValue: @studentTodoAtDateValue
+          labelText: 'Student Planner Date'
+          labelClasses: 'screenreader-only'
+        ), elt)
+
     # After the page loads, ensure the that wiki sidebar gets initialized
     # correctly.
     # @api custom backbone override
     afterRender: ->
       super
+      @renderStudentTodoAtDate()
+
+      if !@toJSON().todo_date?
+        @$studentTodoAtContainer.hide()
+
       RichContentEditor.initSidebar()
       RichContentEditor.loadNewEditor(@$wikiPageBody, { focus: true, manageParent: true })
 
@@ -137,10 +198,19 @@ define [
       errors = {}
 
       if data.title == ''
-        errors["title"] = [
+        errors['title'] = [
           {
             type: 'required'
-            message: I18n.t("errors.require_title",'You must enter a title')
+            message: I18n.t('errors.require_title','You must enter a title')
+          }
+        ]
+
+      studentTodoAtValid = data.student_todo_at? && data.student_todo_at != ''
+      if data.student_planner_checkbox && !studentTodoAtValid
+        errors['student_todo_at'] = [
+          {
+            type: 'required'
+            message: I18n.t('You must enter a date')
           }
         ]
 
@@ -187,6 +257,11 @@ define [
       else
         page_data.assignment = @model.createAssignment(set_assignment: '0')
       page_data.set_assignment = page_data.assignment.get('set_assignment')
+      page_data.student_planner_checkbox = @$studentPlannerCheckbox.is(":checked")
+      if page_data.student_planner_checkbox
+        page_data.student_todo_at = @studentTodoAtDateValue
+      else
+        page_data.student_todo_at = null
 
       page_data.published = true if @shouldPublish
       page_data

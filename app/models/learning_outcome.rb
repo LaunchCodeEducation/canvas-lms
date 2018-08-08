@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -19,6 +19,9 @@
 class LearningOutcome < ActiveRecord::Base
   include Workflow
   include OutcomeAttributes
+  include MasterCourses::Restrictor
+  restrict_columns :state, [:workflow_state]
+
   belongs_to :context, polymorphic: [:account, :course]
   has_many :learning_outcome_results
   has_many :alignments, -> { where("content_tags.tag_type='learning_outcome' AND content_tags.workflow_state<>'deleted'") }, class_name: 'ContentTag'
@@ -27,6 +30,7 @@ class LearningOutcome < ActiveRecord::Base
 
   before_validation :infer_default_calculation_method, :adjust_calculation_int
   before_save :infer_defaults
+  after_save :propagate_changes_to_rubrics
 
   CALCULATION_METHODS = {
     'decaying_average' => "Decaying Average",
@@ -335,6 +339,42 @@ class LearningOutcome < ActiveRecord::Base
   )
 
   scope :global, -> { where(:context_id => nil) }
+
+  def propagate_changes_to_rubrics
+    # exclude new outcomes
+    return if self.saved_change_to_id?
+    return if !self.saved_change_to_data? &&
+      !self.saved_change_to_short_description? &&
+      !self.saved_change_to_description?
+
+    self.send_later_if_production(:update_associated_rubrics)
+  end
+
+  def update_associated_rubrics
+    updateable_rubrics.find_each do |rubric|
+      rubric.update_learning_outcome_criteria(self)
+    end
+  end
+
+  def updateable_rubrics
+    conds = { learning_outcome_id: self.id, content_type: 'Rubric', workflow_state: 'active' }
+    # Find all unassessed, active rubrics aligned to this outcome, referenced by no more than one assignment
+    Rubric.where(id:
+      Rubric.select('rubrics.id').
+        where.not(workflow_state: 'deleted').
+        joins(:learning_outcome_alignments).
+        where(content_tags: conds).
+        joins("LEFT JOIN #{RubricAssociation.quoted_table_name} ra2 ON rubrics.id = ra2.rubric_id AND ra2.purpose = 'grading'").
+        group('rubrics.id').
+        having('COUNT(rubrics.id) < 2')).
+      joins("LEFT JOIN #{RubricAssociation.quoted_table_name} ra2 ON rubrics.id = ra2.rubric_id AND ra2.purpose = 'grading'" \
+            " LEFT JOIN #{RubricAssessment.quoted_table_name} ra3 ON ra2.id = ra3.rubric_association_id").
+      where('ra3.id IS NULL')
+  end
+
+  def updateable_rubrics?
+    updateable_rubrics.exists?
+  end
 
   private
 

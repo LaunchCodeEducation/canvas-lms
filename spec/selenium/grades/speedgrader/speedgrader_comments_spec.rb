@@ -1,7 +1,24 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative "../../common"
 require_relative "../../helpers/speed_grader_common"
 require_relative "../../helpers/assignments_common"
-require_relative "../page_objects/speedgrader_page"
+require_relative "../pages/speedgrader_page"
 
 describe "speed grader" do
   include_context "in-process server selenium tests"
@@ -35,8 +52,6 @@ describe "speed grader" do
 
   context 'manually submitted comments' do
     it "creates a comment on assignment", priority: "1", test_id: 283754 do
-      # pending("failing because it is dependant on an external kaltura system")
-
       student_submission
       get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
 
@@ -54,10 +69,11 @@ describe "speed grader" do
       expect(f("#comment_attachments")).not_to contain_css("input")
 
       # add comment
-      f('#add_a_comment > textarea').send_keys('grader comment')
+      f('#add_a_comment textarea').send_keys('grader comment')
       submit_form('#add_a_comment')
       expect(f('#comments > .comment')).to be_displayed
       expect(f('#comments > .comment')).to include_text('grader comment')
+      expect(f('#add_a_comment textarea').text).to be_empty
 
       # make sure gradebook link works
       expect_new_page_load do
@@ -82,7 +98,7 @@ describe "speed grader" do
       get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
 
       # add comment
-      f('#add_a_comment > textarea').send_keys('grader comment')
+      f('#add_a_comment textarea').send_keys('grader comment')
       submit_form('#add_a_comment')
       expect(f('#comments > .comment')).to be_displayed
       @submission.reload
@@ -114,7 +130,7 @@ describe "speed grader" do
       expect(f("#avatar_image")).not_to have_attribute('src', 'blank.png')
 
       # add comment
-      f('#add_a_comment > textarea').send_keys('grader comment')
+      f('#add_a_comment textarea').send_keys('grader comment')
       submit_form('#add_a_comment')
       expect(f('#comments > .comment')).to be_displayed
       expect(f('#comments > .comment')).to include_text('grader comment')
@@ -146,8 +162,9 @@ describe "speed grader" do
       get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
       expect(f("#avatar_image")).to be_displayed
 
-      f("#settings_link").click
-      f('#hide_student_names').click
+      Speedgrader.click_settings_link
+      Speedgrader.click_options_link
+      Speedgrader.select_hide_student_names
       expect_new_page_load { fj('.ui-dialog-buttonset .ui-button:visible:last').click }
 
       expect(f("#avatar_image")).not_to be_displayed
@@ -158,7 +175,7 @@ describe "speed grader" do
       expect(f('#comments > .comment .author_name')).to include_text('Student')
 
       # add teacher comment
-      f('#add_a_comment > textarea').send_keys('grader comment')
+      f('#add_a_comment textarea').send_keys('grader comment')
       scroll_into_view("#comment_submit_button")
       submit_form('#add_a_comment')
       expect(ff('#comments > .comment')).to have_size(2)
@@ -338,6 +355,7 @@ describe "speed grader" do
       end
 
       it 'should increase the number of published comments', test_id: 1407013, priority: "1" do
+        skip_if_safari(:alert)
         publish_links = ff('#comments .comment.draft .comment_flex > button.submit_comment_button').select(&:displayed?)
 
         expect {
@@ -351,8 +369,8 @@ describe "speed grader" do
 
       it 'replaces the draft comment in the list of comments with a published comment' do
         publish_links = ff('#comments .comment.draft .comment_flex > button.submit_comment_button').select(&:displayed?)
-        comment_count = ff('#comments .comment').size
-        draft_comment_count = ff('#comments .comment.draft').size
+        comment_count = ff('#comments > .comment').size
+        draft_comment_count = ff('#comments > .comment.draft').size
 
         publish_links[0].click
         accept_alert
@@ -362,8 +380,8 @@ describe "speed grader" do
         f('#prev-student-button').click
 
 
-        expect(ff('#comments .comment')).to have_size(comment_count)
-        expect(ff('#comments .comment.draft')).to have_size(draft_comment_count - 1)
+        expect(ff('#comments > .comment')).to have_size(comment_count)
+        expect(ff('#comments > .comment.draft')).to have_size(draft_comment_count - 1)
       end
     end
 

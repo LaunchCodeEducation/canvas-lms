@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../helpers/conversations_common')
 require File.expand_path(File.dirname(__FILE__) + '/../helpers/assignment_overrides')
 
@@ -43,11 +60,11 @@ describe "conversations new" do
     end
 
     it "should check the Journal messages for correct time and sender", priority: "1", test_id: 75701 do
+      skip_if_chrome('fragile in chrome')
       user_session(@teacher)
       conversations
       compose course: @course, subject: 'Christmas', to: [@s1], body: 'The Fat Man cometh.', journal: true, send: true
       time = format_time_for_view(UserNote.last.updated_at)
-      remove_user_session
       get student_user_notes_url
       expect(f('.subject')).to include_text('Christmas')
       expect(f('.user_content').text).to eq 'The Fat Man cometh.'
@@ -56,10 +73,11 @@ describe "conversations new" do
     end
 
     it "should allow an admin to delete a Journal message", priority: "1", test_id: 75703 do
+      skip_if_chrome('fragile in chrome')
+      skip_if_safari(:alert)
       user_session(@teacher)
       conversations
       compose course: @course, subject: 'Christmas', to: [@s1], body: 'The Fat Man cometh.', journal: true, send: true
-      remove_user_session
       get student_user_notes_url
       f('.delete_link').click
       driver.switch_to.alert.accept
@@ -100,6 +118,7 @@ describe "conversations new" do
     end
 
     it "should be allowed on new private conversations with students", priority: "1", test_id: 207094 do
+      skip_if_chrome('fragile in chrome')
       compose course: @course, to: [@s1, @s2], body: 'hallo!', send: false
       checkbox = f('.user_note')
       expect(checkbox).to be_displayed
@@ -112,6 +131,7 @@ describe "conversations new" do
     end
 
     it "should be allowed with student groups", priority: "1", test_id: 207093 do
+      skip_if_chrome('fragile in chrome')
       compose course: @course, to: [@group], body: 'hallo!', send: false
       checkbox = f('.user_note')
       expect(checkbox).to be_displayed
@@ -122,6 +142,7 @@ describe "conversations new" do
     end
 
     it "should not be allowed if disabled", priority: "1", test_id: 207092 do
+      skip_if_chrome('fragile in chrome')
       @course.account.update_attribute(:enable_user_notes, false)
       conversations
       compose course: @course, to: [@s1], body: 'hallo!', send: false
@@ -129,6 +150,7 @@ describe "conversations new" do
     end
 
     it "should not be allowed for students", priority: "1", test_id: 138686 do
+      skip_if_chrome('fragile in chrome')
       user_session(@s1)
       conversations
       compose course: @course, to: [@s2], body: 'hallo!', send: false
@@ -136,6 +158,7 @@ describe "conversations new" do
     end
 
     it "should not be allowed with non-student recipient", priority: "1", test_id: 138687 do
+      skip_if_chrome('fragile in chrome')
       compose course: @course, to: [@teacher], body: 'hallo!', send: false
       expect(f('.user_note')).not_to be_displayed
     end
@@ -185,6 +208,7 @@ describe "conversations new" do
     end
 
     it "should send a message with faculty journal checked", priority: "1", test_id: 75433 do
+      skip_if_chrome('fragile in chrome')
       conversations
       # First verify teacher can send a message with faculty journal entry checked to one student
       compose course: @course, to: [@s1], body: 'hallo!', journal: true, send: true

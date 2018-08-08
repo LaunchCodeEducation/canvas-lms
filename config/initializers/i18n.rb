@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 # loading all the locales has a significant (>30%) impact on the speed of initializing canvas
 # so we skip it in situations where we don't need the locales, such as in development mode and in rails console
 skip_locale_loading = (Rails.env.development? ||
@@ -18,16 +35,12 @@ end
 
 load_path = Rails.application.config.i18n.railties_load_path
 if skip_locale_loading
-  load_path = load_path.map(&:existent).flatten unless CANVAS_RAILS4_2
+  load_path = load_path.map(&:existent).flatten
   load_path.replace(load_path.grep(%r{/(locales|en)\.yml\z}))
 else
   # add the definition file at the end, to trump any weird/invalid stuff in locale-specific files
-  if CANVAS_RAILS4_2
-    load_path << (Rails.root + "config/locales/locales.yml").to_s
-  else
-    yml = "config/locales/locales.yml"
-    load_path << Rails::Paths::Path.new(CanvasRails::Application.instance.paths, yml, [yml])
-  end
+  yml = "config/locales/locales.yml"
+  load_path << Rails::Paths::Path.new(CanvasRails::Application.instance.paths, yml, [yml])
 end
 
 Rails.application.config.i18n.enforce_available_locales = true
@@ -194,8 +207,8 @@ I18n.send(:extend, Module.new {
   # Returns nothing.
   def set_locale_with_localizer
     if localizer
-      self.locale = localizer.call
-      self.localizer = nil
+      local_localizer, self.localizer = localizer, nil
+      self.locale = local_localizer.call
     end
   end
 
@@ -225,8 +238,16 @@ I18n.send(:extend, Module.new {
     backend.send(:lookup, locale.to_s, "fullcalendar_locale") || locale.to_s.downcase
   end
 
+  def rtl?
+    backend.send(:lookup, locale.to_s, "rtl")
+  end
+
   def moment_locale
     backend.send(:lookup, locale.to_s, "moment_locale") || locale.to_s.downcase
+  end
+
+  def dow_offset
+    backend.send(:lookup, locale.to_s, "dow_offset") || 0
   end
 })
 

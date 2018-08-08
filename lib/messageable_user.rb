@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -74,7 +74,7 @@ class MessageableUser < User
     scope = self.
       select(MessageableUser.build_select(options)).
       group(MessageableUser.connection.group_by(*columns)).
-      order(User.sortable_name_order_by_clause + ", users.id")
+      order(User.sortable_name_order_by_clause + Arel.sql(", users.id"))
 
     if options[:strict_checks]
       scope.where(AVAILABLE_CONDITIONS)

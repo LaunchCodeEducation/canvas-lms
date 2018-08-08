@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative '../../helpers/gradebook_common'
 
 describe "gradebook - post grades to SIS" do
@@ -166,70 +183,13 @@ describe "gradebook - post grades to SIS" do
       get "/courses/#{@course.id}/gradebook"
       expect(ff('li.external-tools-dialog')).to have_size(10)
     end
-
-    it "should show as drop down menu when powerschool is configured " \
-      "and an lti tool is installed", priority: "1", test_id: 244962 do
-      Account.default.set_feature_flag!('post_grades', 'on')
-      @course.sis_source_id = 'xyz'
-      @course.save
-      @assignment.post_to_sis = true
-      @assignment.save
-
-      create_post_grades_tool
-
-      get "/courses/#{@course.id}/gradebook"
-      expect(f('li.post-grades-placeholder > a')).to be_present
-      expect(f('li.external-tools-dialog')).to be_present
-
-      expect(f('#post_grades .icon-mini-arrow-down')).to be_displayed
-      move_to_click('button#post_grades')
-      f('a#post-grades-button').click
-      expect(f('.post-grades-dialog')).to be_displayed
-      # close post grade dialog
-      fj('.ui-icon-closethick:visible').click
-
-      expect(f('#post_grades .icon-mini-arrow-down')).to be_displayed
-      move_to_click('button#post_grades')
-      ff('li.external-tools-dialog > a').first.click
-      expect(f('iframe.post-grades-frame')).to be_displayed
-    end
-
-    it "should show menu with powerschool if section configured and selected and lti tools are disabled" do
-      Account.default.set_feature_flag!('post_grades', 'on')
-      @course.sis_source_id = 'xyz'
-      @course.save
-      @assignment.post_to_sis = true
-      @assignment.save
-
-      CourseSection.all.each_with_index do |course_section, index|
-        course_section.sis_source_id = index.to_s
-        course_section.save
-      end
-
-      create_post_grades_tool
-
-      get "/courses/#{@course.id}/gradebook"
-      expect(f('li.post-grades-placeholder > a')).to be_present
-      expect(f('li.external-tools-dialog')).to be_present
-
-      section_id = fj('ul#section-to-show-menu li:nth(3) a label')['for']
-      section_id.slice!('section_option_')
-
-      f('button.section-select-button').click
-      fj('ul#section-to-show-menu li:nth(4)').click
-      expect(f('button#post_grades')).to be_displayed
-
-      f('button#post_grades').click
-      f('li.post-grades-placeholder > a').click
-      expect(f('.post-grades-dialog')).to be_displayed
-    end
   end
-  
+
   context "when new_sis_integrations is enabled" do
     before(:each) do
       Account.default.set_feature_flag!('new_sis_integrations', 'on')
     end
-    
+
     def create_post_grades_tool(opts={})
       course = opts[:course] || @course
       post_grades_tool = course.context_external_tools.create!(
@@ -245,6 +205,12 @@ describe "gradebook - post grades to SIS" do
         }
       )
       post_grades_tool
+    end
+
+    def element_present
+      f('li.post-grades-placeholder > a').displayed?
+      rescue Selenium::WebDriver::Error::NoSuchElementError
+        false
     end
 
     it "should show post grades tools in exports dropdown" do
@@ -267,13 +233,13 @@ describe "gradebook - post grades to SIS" do
       get "/courses/#{@course.id}/gradebook"
       expect(ff('li.external-tools-dialog')).to have_size(10)
     end
-    
-    it "should include the powerschool option in max number of items " \
+
+    it "should not include the powerschool option in max number of items " \
       "in exports dropdown" do
       (0...11).each do |i|
         create_post_grades_tool(name: "test tool #{i}")
       end
-      
+
       Account.default.set_feature_flag!('post_grades', 'on')
       @course.sis_source_id = 'xyz'
       @course.save
@@ -282,9 +248,9 @@ describe "gradebook - post grades to SIS" do
 
       get "/courses/#{@course.id}/gradebook"
       expect(ff('li.external-tools-dialog')).to have_size(9)
-      expect(f('li.post-grades-placeholder > a')).to be_present
+      expect(element_present).to be_falsey
     end
-    
+
     it "should show powerschool option in exports dropdown" do
       Account.default.set_feature_flag!('post_grades', 'on')
       @course.sis_source_id = 'xyz'

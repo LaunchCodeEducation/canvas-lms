@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 - 2017 Instructure, Inc.
+ * Copyright (C) 2016 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -174,6 +174,34 @@ QUnit.module('CourseGradeCalculator.calculate with some assignments and submissi
     ];
   }
 });
+
+test('avoids floating point rounding errors', function () {
+  submissions = [
+    { assignment_id: 201, score: 194.5 },
+    { assignment_id: 202, score: 100.0 },
+    { assignment_id: 203, score: 94.5 },
+    { assignment_id: 204, score: 89.5 }
+  ]
+
+  assignments = [
+    { id: 201, points_possible: 200 },
+    { id: 202, points_possible: 100 },
+    { id: 203, points_possible: 100 },
+    { id: 204, points_possible: 100 }
+  ]
+
+  assignmentGroups = [
+    { id: 301, rules: {}, group_weight: 10, assignments: assignments.slice(0, 1) },
+    { id: 302, rules: {}, group_weight: 10, assignments: assignments.slice(1, 2) },
+    { id: 303, rules: {}, group_weight: 50, assignments: assignments.slice(2, 3) },
+    { id: 304, rules: {}, group_weight: 30, assignments: assignments.slice(3, 4) }
+  ]
+
+  const floatingPointSum = 9.725 + 10 + 47.25 + 26.85
+  const grades = calculateWithoutGradingPeriods('percent')
+  strictEqual(floatingPointSum, 93.82499999999999)
+  strictEqual(grades.current.score, 93.83)
+})
 
 test('includes assignment group grades', function () {
   const grades = calculateWithoutGradingPeriods('points');

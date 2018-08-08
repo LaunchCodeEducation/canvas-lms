@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -8,7 +8,7 @@
 # Software Foundation, version 3 of the License.
 #
 # Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
-# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FORg
 # A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
 # details.
 #
@@ -72,8 +72,7 @@ class Wiki < ActiveRecord::Base
 
     # return an implicitly created page if a page could not be found
     unless page
-      page = self.wiki_pages.temp_record(:title => url.titleize, :url => url)
-      page.wiki = self
+      page = self.wiki_pages.temp_record(:title => url.titleize, :url => url, :context => self.context)
     end
     page
   end
@@ -88,7 +87,7 @@ class Wiki < ActiveRecord::Base
 
   def unset_front_page!
     if self.context.is_a?(Course) && self.context.default_view == 'wiki'
-      self.context.default_view = 'feed'
+      self.context.default_view = nil
       self.context.save
     end
 
@@ -108,7 +107,7 @@ class Wiki < ActiveRecord::Base
 
   def context
     shard.activate do
-      @context ||= self.id && (Course.where(wiki_id: self).first || Group.where(wiki_id: self).first)
+      @context ||= self.id && (self.course || self.group)
     end
   end
 
@@ -166,12 +165,17 @@ class Wiki < ActiveRecord::Base
     self.shard.activate do
       page = WikiPage.new(opts)
       page.wiki = self
+      page.context = self.context
       page.initialize_wiki_page(user)
       page
     end
   end
 
   def find_page(param)
+    # to allow linking to a WikiPage by id (to avoid needing to hit the database to pull its url)
+    if (match = param.match(/\Apage_id:(\d+)\z/))
+      return self.wiki_pages.where(id: match[1].to_i).first
+    end
     self.wiki_pages.not_deleted.where(url: param.to_s).first ||
       self.wiki_pages.not_deleted.where(url: param.to_url).first ||
       self.wiki_pages.not_deleted.where(id: param.to_i).first

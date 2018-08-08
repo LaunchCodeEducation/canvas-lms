@@ -1,12 +1,35 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import $ from 'jquery'
 import React from 'react'
+import ReactDOM from 'react-dom'
+import PropTypes from 'prop-types'
 import ReactModal from 'react-modal'
+import Button from '@instructure/ui-buttons/lib/components/Button'
+import TextInput from '@instructure/ui-forms/lib/components/TextInput'
+import ScreenReaderContent from '@instructure/ui-a11y/lib/components/ScreenReaderContent'
 import I18n from 'i18n!calendar_color_picker'
-import CourseNicknameEdit from 'jsx/shared/CourseNicknameEdit'
+import CourseNicknameEdit from './CourseNicknameEdit'
 import classnames from 'classnames'
 import 'compiled/jquery.rails_flash_notifications'
 
-  var PREDEFINED_COLORS = [
+  export const PREDEFINED_COLORS = [
     {hexcode: '#EF4437', name: I18n.t('Red')},
     {hexcode: '#E71F63', name: I18n.t('Pink')},
     {hexcode: '#8F3E97', name: I18n.t('Purple')},
@@ -24,6 +47,14 @@ import 'compiled/jquery.rails_flash_notifications'
     {hexcode: '#F06291', name: I18n.t('Light Pink')}
   ];
 
+  function shouldApplySwatchBorderColor (color) {
+    return this.props.withBoxShadow || this.state.currentColor !== color.hexcode
+  }
+
+  function shouldApplySelectedStyle (color) {
+    return this.state.currentColor === color.hexcode;
+  }
+
   var ColorPicker = React.createClass({
 
     // ===============
@@ -33,17 +64,43 @@ import 'compiled/jquery.rails_flash_notifications'
     displayName: 'ColorPicker',
 
     propTypes: {
-      isOpen: React.PropTypes.bool,
-      afterUpdateColor: React.PropTypes.func,
-      afterClose: React.PropTypes.func,
-      assetString: React.PropTypes.string.isRequired,
-      hideOnScroll: React.PropTypes.bool,
-      positions: React.PropTypes.object,
-      nonModal: React.PropTypes.bool,
-      hidePrompt: React.PropTypes.bool,
-      currentColor: React.PropTypes.string,
-      nicknameInfo: React.PropTypes.object
+      parentComponent: PropTypes.string.isRequired,
+      colors: PropTypes.arrayOf(
+        PropTypes.shape({
+          hexcode: PropTypes.string.isRequired,
+          name: PropTypes.string.isRequired
+        }).isRequired
+      ),
+      isOpen: PropTypes.bool,
+      afterUpdateColor: PropTypes.func,
+      afterClose: PropTypes.func,
+      assetString: (props, propName, componentName) => {
+        if (props.parentComponent === 'DashboardCardMenu' && props[propName] == null) {
+          return new Error(
+            `Invalid prop '${propName}' supplied to '${componentName}'. ` +
+            `Prop '${propName}' must be present when 'parentComponent' ` +
+            "is 'DashboardCardMenu'. Vaidation failed."
+          );
+        }
+        return undefined;
+      },
+      hideOnScroll: PropTypes.bool,
+      positions: PropTypes.object,
+      nonModal: PropTypes.bool,
+      hidePrompt: PropTypes.bool,
+      currentColor: PropTypes.string,
+      nicknameInfo: PropTypes.object,
+      withAnimation: PropTypes.bool,
+      withArrow: PropTypes.bool,
+      withBorder: PropTypes.bool,
+      withBoxShadow: PropTypes.bool,
+      withDarkCheck: PropTypes.bool,
+      setStatusColor: PropTypes.func,
+      allowWhite: PropTypes.bool,
+      focusOnMount: PropTypes.bool
     },
+
+    hexInputRef: null,
 
     // ===============
     //    LIFECYCLE
@@ -60,22 +117,40 @@ import 'compiled/jquery.rails_flash_notifications'
     getDefaultProps () {
       return {
         currentColor: "#efefef",
-        hideOnScroll: true
+        // hideOnScroll exists because the modal doesn't track its target
+        // when the page scrolls, so we just chose to close it.  However on
+        // mobile, focusing on the hex color textbox opens the keyboard which
+        // triggers a scroll and the modal closed. To work around this, init
+        // hideOnScroll to false if we're on a mobile device, which we detect,
+        // somewhat loosely, by seeing if a TouchEven exists.  The result isn't
+        // great, but it's better than before.
+        // A more permenant fix is in the works, pending a fix to INSTUI Popover.
+        hideOnScroll: function () {
+          try{ document.createEvent("TouchEvent"); return false; }
+          catch(e){ return true; }
+        }(),
+        withAnimation: true,
+        withArrow: true,
+        withBorder: true,
+        withBoxShadow: true,
+        withDarkCheck: false,
+        colors: PREDEFINED_COLORS,
+        setStatusColor: () => {},
+        allowWhite: false,
+        focusOnMount: true
       }
     },
 
     componentDidMount () {
-      this.setFocus();
-
-      if (this.props.hideOnScroll) {
-        $(window).on('scroll', this.closeModal);
+      if (this.props.focusOnMount) {
+        this.setFocus();
       }
+
+      $(window).on('scroll', this.handleScroll);
     },
 
     componentWillUnmount () {
-      if (this.props.hideOnScroll) {
-        $(window).off('scroll', this.closeModal);
-      }
+      $(window).off('scroll', this.handleScroll);
     },
 
     componentWillReceiveProps (nextProps) {
@@ -94,7 +169,7 @@ import 'compiled/jquery.rails_flash_notifications'
       if (this.refs.courseNicknameEdit) {
         this.refs.courseNicknameEdit.focus();
       } else if (this.refs.colorSwatch0) {
-        this.refs.colorSwatch0.getDOMNode().focus();
+        ReactDOM.findDOMNode(this.refs.colorSwatch0).focus();
       }
     },
 
@@ -115,9 +190,7 @@ import 'compiled/jquery.rails_flash_notifications'
     },
 
     setCurrentColor (color) {
-      this.setState({
-        currentColor: color
-      });
+      this.setState({ currentColor: color });
     },
 
     setInputColor (event) {
@@ -146,10 +219,12 @@ import 'compiled/jquery.rails_flash_notifications'
     },
 
     isValidHex (color) {
-      // prevent selection of white (#fff or #ffffff)
-      const whiteHexRe = /^#?([fF]{3}|[fF]{6})$/;
-      if (whiteHexRe.test(color)) {
-        return false;
+      if (!this.props.allowWhite) {
+        // prevent selection of white (#fff or #ffffff)
+        const whiteHexRe = /^#?([fF]{3}|[fF]{6})$/;
+        if (whiteHexRe.test(color)) {
+          return false;
+        }
       }
 
       // ensure hex is valid
@@ -163,37 +238,40 @@ import 'compiled/jquery.rails_flash_notifications'
       }
     },
 
-    onApply (color, event) {
+    onApply (color, _event) {
+      const doneSaving = () => {
+        if (this.isMounted()) {
+          this.setState({ saveInProgress: false });
+        }
+      };
+
+      const handleSuccess = () => {
+        doneSaving();
+        this.closeModal();
+      };
+
+      const handleFailure = () => {
+        doneSaving();
+        $.flashError(I18n.t("Could not save '%{chosenColor}'", {chosenColor: color}));
+      };
+
       if (this.isValidHex(color)) {
-        this.setState({ saveInProgress: true });
-
-        const doneSaving = () => {
-          if (this.isMounted()) {
-            this.setState({
-              saveInProgress: false
-            });
+        this.setState({ saveInProgress: true }, () => {
+          // this is pretty hacky, however until ColorPicker is extracted into an instructure-ui
+          // component this is the simplest way to avoid extracting Course Color specific code
+          if (this.props.parentComponent === 'StatusColorListItem' ||
+              this.props.parentComponent === 'ProficiencyRating') {
+            this.props.setStatusColor(this.state.currentColor, handleSuccess, handleFailure);
+          } else {
+            // both API calls update the same User model and thus need to be performed serially
+            $.when(this.setColorForCalendar(color)).then( () => {
+              $.when(this.setCourseNickname()).then(
+                handleSuccess,
+                handleFailure
+              );
+            }, handleFailure);
           }
-        };
-
-        const handleSuccess = () => {
-          doneSaving();
-          this.closeModal();
-        };
-
-        const handleFailure = () => {
-          doneSaving();
-          $.flashError(I18n.t("Could not save '%{chosenColor}'", {chosenColor: this.state.currentColor}));
-        };
-
-        // both API calls update the same User model and thus need to be performed serially
-        $.when(this.setColorForCalendar(color)).then( () => {
-          $.when(this.setCourseNickname()).then(
-            handleSuccess,
-            handleFailure
-          );
-        },
-          handleFailure
-        );
+        });
       } else {
         $.flashWarning(I18n.t("'%{chosenColor}' is not a valid color.", {chosenColor: this.state.currentColor}));
       }
@@ -203,6 +281,14 @@ import 'compiled/jquery.rails_flash_notifications'
       //reset to the cards current actual displaying color
       this.setCurrentColor(this.props.currentColor);
       this.closeModal();
+    },
+
+    handleScroll() {
+      if (this.props.hideOnScroll) {
+        this.closeModal()
+      } else if (this.state.isOpen){
+        this.hexInputRef.scrollIntoView()
+      }
     },
 
     // ===============
@@ -218,16 +304,25 @@ import 'compiled/jquery.rails_flash_notifications'
     },
 
     renderColorRows () {
-      return PREDEFINED_COLORS.map( (color, idx) => {
-        var colorSwatchStyle = {
-          borderColor: color.hexcode,
-          backgroundColor: color.hexcode
-        };
-
+      return this.props.colors.map( (color, idx) => {
+        var colorSwatchStyle = { backgroundColor: color.hexcode };
+        if (color.hexcode !== '#FFFFFF') {
+          if (shouldApplySwatchBorderColor.call(this, color)) {
+            colorSwatchStyle.borderColor = color.hexcode;
+          }
+        }
+        if (shouldApplySelectedStyle.call(this, color)) {
+          colorSwatchStyle.borderColor = '#73818C';
+          colorSwatchStyle.borderWidth = '2px';
+        }
         var title = color.name + ' (' + color.hexcode + ')';
         var ref = "colorSwatch" + idx;
+        const colorBlockStyles = classnames({
+          ColorPicker__ColorBlock: true,
+          'with-dark-check': this.props.withDarkCheck
+        })
         return (
-          <button className = "ColorPicker__ColorBlock"
+          <button className = {colorBlockStyles}
                   ref = {ref}
                   role = "radio"
                   aria-checked = {this.state.currentColor === color.hexcode}
@@ -236,6 +331,11 @@ import 'compiled/jquery.rails_flash_notifications'
                   onClick = {this.setCurrentColor.bind(null, color.hexcode)}
                   key={color.hexcode}
           >
+            { color.hexcode === '#FFFFFF' &&
+              <svg className="ColorPicker__ColorBlock-line">
+                <line x1="100%" y1="0" x2="0" y2="100%" />
+              </svg>
+            }
             {this.checkMarkIfMatchingColor(color.hexcode)}
             <span className="screenreader-only">{title}</span>
           </button>
@@ -272,7 +372,6 @@ import 'compiled/jquery.rails_flash_notifications'
 
       var inputColorStyle = {
         color: previewColor,
-        borderColor: '#d6d6d6',
         backgroundColor: previewColor
       };
 
@@ -284,26 +383,26 @@ import 'compiled/jquery.rails_flash_notifications'
              aria-hidden = "true"
              tabIndex = "-1"
         >
-        { !this.isValidHex(this.state.currentColor) ?
+        { !this.isValidHex(this.state.currentColor) &&
           <i className="icon-warning" role="presentation"></i>
-          :
-          null
         }
         </div>
       );
     },
 
     pickerBody () {
-      const inputClasses = classnames({
-        'ic-Input': true,
-        'ColorPicker__CustomInput': true,
-        'ic-Input--has-warning': !this.isValidHex(this.state.currentColor)
+      const containerClasses = classnames({
+        ColorPicker__Container: true,
+        'with-animation': this.props.withAnimation,
+        'with-arrow': this.props.withArrow,
+        'with-border': this.props.withBorder,
+        'with-box-shadow': this.props.withBoxShadow
       });
 
       var inputId = "ColorPickerCustomInput-" + this.props.assetString;
 
       return (
-        <div className="ColorPicker__Container" ref="pickerBody">
+        <div className={containerClasses} ref="pickerBody">
           {this.prompt()}
           {this.nicknameEdit()}
           <div className  = "ColorPicker__ColorContainer"
@@ -312,34 +411,39 @@ import 'compiled/jquery.rails_flash_notifications'
             {this.renderColorRows()}
           </div>
 
-          <div className="ColorPicker__CustomInputContainer ic-Input-group">
-
+          <div className="ColorPicker__CustomInputContainer">
             {this.colorPreview()}
-
-            <label className="screenreader-only" htmlFor={inputId}>
-              {I18n.t('Enter a hexcode here to use a custom color.')}
-            </label>
-
-            <input className = {inputClasses}
-                   id = {inputId}
-                   value = {this.state.currentColor}
-                   type = 'text'
-                   maxLength = "7"
-                   minLength = "4"
-                   ref      = "hexInput"
-                   onChange = {this.setInputColor} />
+            <TextInput
+              label={
+                <ScreenReaderContent>
+                  {I18n.t('Enter a hexcode here to use a custom color.')}
+                </ScreenReaderContent>}
+              id={inputId}
+              value={this.state.currentColor}
+              onChange={this.setInputColor}
+              size="small"
+              margin="0 0 0 x-small"
+              inputRef={(r) => {this.hexInputRef = r}}
+            />
           </div>
 
           <div className="ColorPicker__Actions">
-            <button className="Button" onClick={this.onCancel}>
+            <Button
+              size="small"
+              onClick={this.onCancel}
+            >
               {I18n.t('Cancel')}
-            </button>
-            <span>&nbsp;</span>
-            <button className="Button Button--primary"
+            </Button>
+            <Button
+              variant="primary"
+              id="ColorPicker__Apply"
+              size="small"
               onClick = {this.onApply.bind(null, this.state.currentColor)}
-              disabled = {this.state.saveInProgress}>
+              disabled = {this.state.saveInProgress}
+              margin="0 0 0 xxx-small"
+            >
               {I18n.t('Apply')}
-            </button>
+            </Button>
           </div>
         </div>
       );
@@ -351,8 +455,8 @@ import 'compiled/jquery.rails_flash_notifications'
       var styleObj = {
         content: {
           position: 'absolute',
-          left: this.props.positions.left - 254,
-          top: this.props.positions.top - 124,
+          left: this.props.positions.left - 174,
+          top: this.props.positions.top - 96,
           right: 0,
           bottom: 0,
           overflow: 'visible',

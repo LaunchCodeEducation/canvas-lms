@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -18,9 +18,9 @@
 
 define [
   'jquery'
-  'compiled/views/outcomes/OutcomesDirectoryView'
-  'compiled/collections/OutcomeCollection'
-  'compiled/collections/OutcomeGroupCollection'
+  './OutcomesDirectoryView'
+  '../../collections/OutcomeCollection'
+  '../../collections/OutcomeGroupCollection'
 ], ($, OutcomesDirectoryView, OutcomeCollection, OutcomeGroupCollection) ->
 
   # for working with Account Standards in the import dialog

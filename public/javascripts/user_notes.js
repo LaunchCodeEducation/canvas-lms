@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2011 Instructure, Inc.
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,19 +12,17 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-define([
-  'i18n!user_notes',
-  'jquery',
-  'jquery.instructure_forms',
-  'jquery.loadingImg',
-  'jquery.instructure_date_and_time',
-  'jquery.instructure_misc_plugins',
-  'vendor/jquery.pageless' /* pageless */
-], function(I18n, $) {
+import I18n from 'i18n!user_notes'
+import $ from 'jquery'
+import './jquery.instructure_forms'
+import './jquery.loadingImg'
+import './jquery.instructure_date_and_time'
+import './jquery.instructure_misc_plugins'
+import './vendor/jquery.pageless'
 
   if (ENV.user_note_list_pageless_options) {
     $('#user_note_list').pageless(ENV.user_note_list_pageless_options);
@@ -104,4 +102,3 @@ define([
       }
     });
   });
-});

@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2011 Instructure, Inc.
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,20 +12,18 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-define([
-  'i18n!alerts',
-  'jquery', // $
-  'str/htmlEscape',
-  'jquery.ajaxJSON', // ajaxJSON
-  'jquery.instructure_forms', // validateForm, formErrors, errorBox
-  'jquery.instructure_misc_helpers', // replaceTags
-  'vendor/jquery.ba-tinypubsub', // /\.publish/
-  'jqueryui/button' // /\.button/
-], function(I18n, $, htmlEscape) {
+import I18n from 'i18n!alerts'
+import $ from 'jquery'
+import htmlEscape from './str/htmlEscape'
+import './jquery.ajaxJSON'
+import './jquery.instructure_forms' // validateForm, formErrors, errorBox
+import './jquery.instructure_misc_helpers' // replaceTags
+import 'vendor/jquery.ba-tinypubsub' // /\.publish/
+import 'jqueryui/button'
 
   $(function () {
     var $list = $('.alerts_list');
@@ -358,5 +356,3 @@ define([
       $(this).parents('.alert').find('input[name="repetition"]').prop('checked', true);
     });
   });
-});
-

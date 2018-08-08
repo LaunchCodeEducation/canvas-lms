@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -19,14 +19,19 @@
 require File.expand_path(File.dirname(__FILE__) + '/../spec_helper.rb')
 
 describe ContentZipper do
+  before do
+    local_storage!
+  end
+
   describe "zip_assignment" do
     it "processes user names" do
-      s1, s2, s3 = n_students_in_course(3)
+      s1, s2, s3, s4 = n_students_in_course(4)
       s1.update_attribute :sortable_name, 'some_999_, _1234_guy'
       s2.update_attribute :sortable_name, 'other 567, guy 8'
       s3.update_attribute :sortable_name, 'trolololo'
+      s4.update_attribute :sortable_name, 'ünicodemân'
       assignment_model(course: @course)
-      [s1, s2, s3].each { |s|
+      [s1, s2, s3, s4].each { |s|
         submission_model user: s, assignment: @assignment, body: "blah"
       }
       attachment = Attachment.new(display_name: 'my_download.zip')
@@ -39,6 +44,7 @@ describe ContentZipper do
         /other567guy8/,
         /some9991234guy/,
         /trolololo/,
+        /ünicodemân/
       ]
 
       filename = attachment.reload.full_filename
@@ -427,8 +433,8 @@ describe ContentZipper do
       attachment.workflow_state = 'to_be_zipped'
       attachment.context = eportfolio
       attachment.save!
-      Dir.expects(:mktmpdir).once.yields('/tmp')
-      Zip::File.expects(:open).once.with('/tmp/etcpasswd.zip', Zip::File::CREATE)
+      expect(Dir).to receive(:mktmpdir).once.and_yield('/tmp')
+      expect(Zip::File).to receive(:open).once.with('/tmp/etcpasswd.zip', Zip::File::CREATE)
       ContentZipper.process_attachment(attachment, user)
     end
   end
@@ -448,7 +454,7 @@ describe ContentZipper do
 
     it "marks the workflow state as zipping" do
       attachment = Attachment.new display_name: 'jenkins.ppt'
-      attachment.expects(:save!).once
+      expect(attachment).to receive(:save!).once
       ContentZipper.new.mark_attachment_as_zipping!(attachment)
       expect(attachment).to be_zipping
     end
@@ -458,7 +464,7 @@ describe ContentZipper do
 
     it "updates the zip attachment's state to a percentage and save!s it" do
       attachment = Attachment.new display_name: "donuts.jpg"
-      attachment.expects(:save!).once
+      expect(attachment).to receive(:save!).once
       ContentZipper.new.update_progress(attachment,5,10)
       expect(attachment.file_state.to_s).to eq '60' # accounts for zero-indexed arrays
     end
@@ -469,7 +475,7 @@ describe ContentZipper do
     before { @attachment = Attachment.new display_name: "I <3 testing.png" }
     context "when attachment wasn't zipped successfully" do
       it "moves the zip attachment into an error state and save!s it" do
-        @attachment.expects(:save!).once
+        expect(@attachment).to receive(:save!).once
         ContentZipper.new.complete_attachment!(@attachment,"hello")
         expect(@attachment.workflow_state).to eq 'errored'
       end
@@ -477,12 +483,12 @@ describe ContentZipper do
 
     context "attachment was zipped successfully" do
       it "creates uploaded data for the assignment and marks it as available" do
-        @attachment.expects(:save!).once
+        expect(@attachment).to receive(:save!).once
         zip_name = "submissions.zip"
         zip_path = File.join(ActionController::TestCase.fixture_path, zip_name)
         data = "just some stub data"
-        Rack::Test::UploadedFile.expects(:new).with(zip_path, 'application/zip').returns data
-        @attachment.expects(:uploaded_data=).with data
+        expect(Rack::Test::UploadedFile).to receive(:new).with(zip_path, 'application/zip').and_return data
+        expect(@attachment).to receive(:uploaded_data=).with data
         zipper = ContentZipper.new
         zipper.mark_successful!
         zipper.complete_attachment!(@attachment,zip_path)
@@ -497,13 +503,13 @@ describe ContentZipper do
       course_with_teacher(active_all: true)
       attachment = Attachment.new(display_name: 'download.zip')
       quiz = Quizzes::Quiz.new(context: @course)
-      zipper_stub = stub
-      zipper_stub.expects(:zip!).once
+      zipper_stub = double
+      expect(zipper_stub).to receive(:zip!).once
       attachment.context = quiz
-      Quizzes::QuizSubmissionZipper.expects(:new).with(
+      expect(Quizzes::QuizSubmissionZipper).to receive(:new).with(
         quiz: quiz,
         zip_attachment: attachment
-      ).returns zipper_stub
+      ).and_return zipper_stub
       ContentZipper.process_attachment(attachment,quiz)
     end
   end

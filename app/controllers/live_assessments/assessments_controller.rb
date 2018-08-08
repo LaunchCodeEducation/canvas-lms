@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -18,7 +18,6 @@
 
 module LiveAssessments
   # @API LiveAssessments
-  # @beta
   # Manage live assessments
   #
   # @model Assessment
@@ -49,7 +48,6 @@ module LiveAssessments
     before_action :require_context
 
     # @API Create or find a live assessment
-    # @beta
     #
     # Creates or finds an existing live assessment with the given key and aligns it with
     # the linked outcome
@@ -105,9 +103,8 @@ module LiveAssessments
     end
 
     # @API List live assessments
-    # @beta
     #
-    # Returns a list of live assessments.
+    # Returns a paginated list of live assessments.
     #
     # @example_response
     #  {

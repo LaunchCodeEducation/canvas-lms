@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2011 Instructure, Inc.
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,8 +12,8 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 // the purpose of this file is to define a Date.prototype.toISOString method that doesn't return 
@@ -25,7 +25,6 @@
 // this file is the same as http://code.google.com/p/datejs/source/browse/trunk/src/core.js but with 
 // the beginning and ending quotes on the return string removed
 
-define(function () {
 
 if (!Date.prototype.toISOString) {
   /**
@@ -46,4 +45,3 @@ if (!Date.prototype.toISOString) {
             f(this.getUTCSeconds())   + 'Z';
   };
 }
-});

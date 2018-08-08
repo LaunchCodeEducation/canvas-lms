@@ -1,4 +1,21 @@
 # coding: utf-8
+#
+# Copyright (C) 2017 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require 'spec_helper'
 
 describe "ZipPackage" do
@@ -114,6 +131,18 @@ describe "ZipPackage" do
       module2.save!
       zip_package = CC::Exporter::WebZip::ZipPackage.new(@exporter, @course, @student, @cache_key)
       expect(zip_package.parse_module_data.length).to eq 1
+    end
+
+    it "does not include unpublished prerequisites" do
+      module2 = @course.context_modules.create(name: 'second_module')
+      module2.prerequisites = "module_#{@module.id}"
+      module2.save!
+      @module.unpublish
+      zip_package = CC::Exporter::WebZip::ZipPackage.new(@exporter, @course, @student, @cache_key)
+      data = zip_package.parse_module_data
+      expect(data.length).to eq 1
+      expect(data[0][:id]).to eq module2.id
+      expect(data[0][:prereqs]).to eq []
     end
 
     it "should parse module completion requirements settings" do
@@ -810,6 +839,14 @@ describe "ZipPackage" do
             content: nil, assignmentExportId: CC::CCHelper.create_key(quiz.assignment), questionCount: 0,
             timeLimit: nil, attempts: 1, graded: true, pointsPossible: 0.0, dueAt: nil, lockAt: nil, unlockAt: nil
           }]
+      end
+
+      it "should not export quizzes when locked by date" do
+        quiz = @course.quizzes.create!(title: 'Quiz 1', description: "stuff",
+          workflow_state: "available", unlock_at: 3.days.from_now)
+        @module.content_tags.create!(content: quiz, context: @course, indent: 0)
+        course_data = create_zip_package.parse_course_data
+        expect(course_data[:quizzes]).to be_empty
       end
 
       it "should export linked file items in sub-folders" do

@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 'use struct';
 
 define([
@@ -444,7 +462,7 @@ define([
     deepEqual(newState.apiState, {pendingCount: 0, error: undefined}, 'api is no longer in-flight');
     deepEqual(newState.userValidationResult, runningState.userValidationResult, 'userValidationResult');
     deepEqual(newState.usersToBeEnrolled, [], 'usersToBeEnrolled is emptied');
-    equal(newState.usersEnrolled, true, 'usersEnrolled');
+    equal(Boolean(newState.usersEnrolled), true, 'usersEnrolled');
   });
   test('ENROLL_USERS_ERROR', () => {
     const state = _.cloneDeep(INITIAL_STATE);

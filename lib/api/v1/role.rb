@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -25,6 +25,7 @@ module Api::V1::Role
       :id => role.id,
       :role => role.name,
       :label => role.label,
+      :last_updated_at => role.updated_at,
       :base_role_type => (role.built_in? && role.account_role?) ? Role::DEFAULT_ACCOUNT_TYPE : role.base_role_type,
       :workflow_state => role.workflow_state,
       :permissions => {}

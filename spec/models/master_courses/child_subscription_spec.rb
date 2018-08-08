@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2017 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require 'spec_helper'
 
 describe MasterCourses::ChildSubscription do
@@ -15,7 +32,7 @@ describe MasterCourses::ChildSubscription do
     it "should cache the result" do
       enable_cache do
         expect(check).to be_falsey
-        MasterCourses::ChildSubscription.expects(:where).never
+        expect(MasterCourses::ChildSubscription).to receive(:where).never
         expect(check).to be_falsey
         expect(MasterCourses::ChildSubscription.is_child_course?(@course.id)).to be_falsey # should work with ids too
       end
@@ -39,10 +56,10 @@ describe MasterCourses::ChildSubscription do
       child_course = course_factory
       sub = @template.add_child_course!(@course)
 
-      original_page = master_course.wiki.wiki_pages.create!(:title => "blah")
+      original_page = master_course.wiki_pages.create!(:title => "blah")
       mc_tag = @template.create_content_tag_for!(original_page)
 
-      page_copy = child_course.wiki.wiki_pages.create!(:title => "blah", :migration_id => mc_tag.migration_id)
+      page_copy = child_course.wiki_pages.create!(:title => "blah", :migration_id => mc_tag.migration_id)
       child_tag = sub.create_content_tag_for!(page_copy)
 
       sub.destroy!

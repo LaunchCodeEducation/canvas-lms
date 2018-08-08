@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2017 Instructure, Inc.
+/*
+ * Copyright (C) 2017 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,18 +12,20 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-define([
-  'jquery',
-  'str/htmlEscape',
-  'tinymce_plugins/instructure_links/linkable_editor',
-  'jsx/shared/rce/RceCommandShim',
-  'jquery.instructure_misc_helpers',
-  'jqueryui/dialog',
-  'jquery.instructure_misc_plugins'
-], function ($, htmlEscape, LinkableEditor, RceCommandShim) {
+
+import $ from 'jquery'
+import htmlEscape from '../../str/htmlEscape'
+import LinkableEditor from './linkable_editor'
+import {send} from 'jsx/shared/rce/RceCommandShim'
+import '../../jquery.instructure_misc_helpers'
+import 'jqueryui/dialog'
+import '../../jquery.instructure_misc_plugins'
+import YouTubeApi from './youtube_api'
+
+
   // TODO: Allow disabling of inline media as well.  Right now
   // the link is just '#' so disabling it actually ruins it.  It'd
   // be nice if the link were a URL to download the media file.
@@ -166,7 +168,7 @@ define([
               $("#instructure_link_prompt").dialog('close');
               $.findLinkForService($(this).data('service').service, function(data) {
                 $("#instructure_link_prompt").dialog('close');
-                RceCommandShim.send($editor, 'create_link', {
+                send($editor, 'create_link', {
                   title: data.title,
                   url: data.url,
                   classes: priorClasses
@@ -319,6 +321,8 @@ define([
       $box.find(".disable_inline_content").attr('checked', $a.hasClass('inline_disabled')).triggerHandler('change');
       $box.find(".auto_show_inline_content").attr('checked', $a.hasClass('auto_open')).triggerHandler('change');
       $box.find(".insert_button").text("Update Link");
+    } else {
+      $box.find(".prompt").val('').change();
     }
     $box.dialog({
       width: 425,
@@ -336,83 +340,21 @@ define([
       updateLinks.counter = (updateLinks.counter + 1) % 5;
     } else {
       $(ed.getBody()).find("a").each(function() {
-        var $link = $(this);
+        const yt_api = new YouTubeApi()
+        const $link = $(this);
         if ($link.attr('href') && !$link.hasClass('inline_disabled') && $link.attr('href').match(INST.youTubeRegEx)) {
+          const yttFailCnt = +$link.attr('data-ytt-failcnt') || 0
           $link.addClass('youtube_link_to_box');
+          if ($link.text() === $link.attr('href') && yttFailCnt < 1) {
+            yt_api.titleYouTubeText($link)
+          }
         }
       });
     }
-    $(ed.getBody()).find("iframe").each(function() {
-      var $frame = $(this);
-      var $link = $("<img/>");
-      $link.addClass('iframe_placeholder');
-      $link.attr('rel', $frame.attr('src'));
-      $link.attr('style', $frame.attr('style'));
-      $link.css('display', 'block');
-      $link.attr('_iframe_style', $frame.attr('style'));
-      var width = ($frame.attr('width') || $frame.css('width'));
-      if(width == 'auto') { width = null; }
-      if(!width || width == '100%' || width == 'auto') {
-        var edWidth = $(ed.contentAreaContainer).width();
-        $link.attr('width', edWidth - 15);
-        $link.css('width', edWidth - 15);
-        $link.addClass('fullWidth');
-      } else {
-        $link.attr('width', width);
-        $link.css('width', width);
-      }
-      $link.css('margin', 5);
-      var split = [];
-      var src = $frame.attr('src');
-      var sub = "";
-      for(var idx = 0; idx < src.length; idx++) {
-        sub = sub + src[idx];
-        if(src[idx].match(/[^a-zA-Z0-9\.]/) && sub.length > 30) {
-          split.push(sub);
-          sub = "";
-        }
-      }
-      split.push(sub);;
-      $frame.attr('src');
-      $link.attr('alt', "This frame will embed the url:\r\n" + split.join("\r\n"));
-      $link.attr('title', "This frame will embed the url:\r\n" + split.join("\r\n"));
-      var height = $frame.attr('height') || $frame.css('height');
-      if(height == 'auto') { height = null; }
-      if(!height) {
-        $link.attr('height', 300);
-        $link.css('height', 300);
-      } else {
-        $link.attr('height', height);
-        $link.css('height', height);
-      }
-      $link.attr('src', '/images/blank.png');
-      $link.css('background', 'transparent url(/images/iframe.png) no-repeat top left'); //about:blank');
-      $link.css('border', '1px solid #aaa');
-      if($frame.parents("p,div").length == 0) {
-        var $p = $("<p/>");
-        $p.append($link);
-        $link = $p;
-      }
-      $frame.after($link);
-      $frame.remove();
-    }).end()
-    .find(".iframe_placeholder").each(function() {
-      var edWidth = $(ed.contentAreaContainer).width();
-      var $holder = $(this);
-      if($(ed.contentAreaContainer).hasScrollbar() || true) {
-        edWidth -= $(ed.contentAreaContainer).scrollbarWidth();
-      }
-      if($holder.width() > edWidth - 40) {
-        $holder.width(edWidth - 15);
-        if(!$holder.hasClass('fullWidth')) { $holder.addClass('fullWidth'); }
-      } else {
-        if($holder.hasClass('fullWidth')) { $holder.removeClass('fullWidth'); }
-      }
-    });
   }
 
   function initEditor (ed) {
-    if (initializedEditors.get(ed)) {
+    if (initializedEditors.get(ed) || ed.on === undefined) {
       return
     }
     ed.on('PreProcess', function(event) {
@@ -420,14 +362,21 @@ define([
       $(event.node).find("img.iframe_placeholder").each(function() {
         var $holder = $(this);
         var $frame = $("<iframe/>");
+        var height = $holder.attr('height') || $holder.css('height');
+        var width = $holder.hasClass('fullWidth') ? '100%' : $holder.attr('width') || $holder.css('width');
+
+        $holder.attr('width', width);
+        $holder.css('width', width);
         $frame.attr('src', $holder.attr('rel'));
         $frame.attr('style', $holder.attr('_iframe_style'));
-        $frame.height($holder.attr('height') || $holder.css('height'));
-        if($holder.hasClass('fullWidth')) {
-          $holder.attr('width', '100%');
-          $holder.css('width', '100%');
+        if (!$frame[0].style.height.length) {
+          $frame.attr('height', height);
+          $frame.css('height', height);
         }
-        $frame.css('width', $holder.attr('width') || $holder.css('width'));
+        if (!$frame[0].style.width.length) {
+          $frame.attr('width', width);
+          $frame.css('width', width);
+        }
         $(this).after($frame);
         $(this).remove();
       });
@@ -437,7 +386,7 @@ define([
     initializedEditors.set(ed, true)
   }
 
-  return {
+  export default {
     buttonToImg: buttonToImg,
     prepEditorForDialog: prepEditorForDialog,
     buildLinkClasses: buildLinkClasses,
@@ -445,5 +394,4 @@ define([
     renderDialog: renderDialog,
     updateLinks: updateLinks,
     initEditor: initEditor
-  };
-})
+  }

@@ -1,9 +1,26 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18n!assignments',
   'Backbone',
   'jquery',
   'jst/_sisButton',
-  'compiled/util/SisValidationHelper'
+  '../util/SisValidationHelper'
 ], (I18n, Backbone, $, template, SisValidationHelper) ->
 
   class SisButtonView extends Backbone.View
@@ -21,6 +38,11 @@ define [
     # boolean used to determine if due date
     # is required
     @optionProperty 'dueDateRequired'
+
+    # {boolean}
+    # boolean used to determine if name length
+    # is required
+    @optionProperty 'maxNameLengthRequired'
 
     setAttributes: ->
       newSisAttributes = @sisAttributes()
@@ -41,11 +63,14 @@ define [
         dueDate: @model.dueAt()
         name: @model.name()
         maxNameLength: @model.maxNameLength()
+        maxNameLengthRequired: @maxNameLengthRequired
+        allDates: @model.allDates()
       })
       errors = @errorsExist(validationHelper)
       if errors['has_error'] == true && @model.sisIntegrationSettingsEnabled()
         $.flashWarning(errors['message'])
       else if sisUrl
+        @toggleAriaPressed(post_to_sis)
         @model.postToSIS(!post_to_sis)
         @model.save({ override_dates: false }, {
           type: 'POST',
@@ -54,11 +79,16 @@ define [
             @setAttributes()
         })
       else
+        @toggleAriaPressed(post_to_sis)
         @model.postToSIS(!post_to_sis)
         @model.save({ override_dates: false }, {
           success: =>
             @setAttributes()
         })
+
+    toggleAriaPressed: (post_to_sis) =>
+      label = @$el.find('label')
+      label.attr 'aria-pressed', !post_to_sis
 
     errorsExist: (validationHelper) =>
       errors = {}
@@ -97,3 +127,6 @@ define [
       @$input.attr('aria-describedby': labelId)
       @$label.attr('id', labelId)
       @setAttributes()
+
+    toJSON: ->
+      postToSIS: @model.postToSIS()

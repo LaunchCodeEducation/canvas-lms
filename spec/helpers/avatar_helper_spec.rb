@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -34,12 +34,12 @@ describe AvatarHelper do
 
     describe ".avatar_image_attrs" do
       it "accepts a user id" do
-        self.expects(:avatar_url_for_user).with(user).returns("test_url")
+        expect(self).to receive(:avatar_url_for_user).with(user).and_return("test_url")
         expect(avatar_image_attrs(user.id)).to eq ["test_url", user.short_name]
       end
 
       it "accepts a user" do
-        self.expects(:avatar_url_for_user).with(user).returns("test_url")
+        expect(self).to receive(:avatar_url_for_user).with(user).and_return("test_url")
         expect(avatar_image_attrs(user)).to eq ["test_url", user.short_name]
       end
 
@@ -48,7 +48,7 @@ describe AvatarHelper do
       end
 
       it "falls back to blank avatar when user's avatar has been reported during this session" do
-        self.expects(:session).at_least_once.returns({"reported_#{user.id}" => true})
+        expect(self).to receive(:session).at_least(:once).and_return({"reported_#{user.id}" => true})
         expect(avatar_image_attrs(user)).to eq ["/images/messages/avatar-50.png", '']
       end
 
@@ -58,10 +58,13 @@ describe AvatarHelper do
     end
 
     describe ".avatar" do
-      let_once(:user) {user_model}
+      let_once(:user) {user_model(short_name: 'Greta')}
 
-      it "leaves off the href if url is nil" do
-        expect(avatar(user, url: nil)).not_to match(/href/)
+      it "leaves off the href and creates a span if url is nil" do
+        html = avatar(user, url: nil)
+        expect(html).not_to match(/<a/)
+        expect(html).to match(/<span/)
+        expect(html).not_to match(/href/)
       end
 
       it "sets the href to the given url" do
@@ -69,7 +72,7 @@ describe AvatarHelper do
       end
 
       it "links to the context user's page when given a context_code" do
-        self.expects(:context_prefix).with('course_1').returns('/courses/1')
+        expect(self).to receive(:context_prefix).with('course_1').and_return('/courses/1')
         expect(avatar(user, context_code: "course_1")).to match("href=\"/courses/1/users/#{user.id}\"")
       end
 
@@ -79,6 +82,16 @@ describe AvatarHelper do
 
       it "falls back to a blank avatar when the user is nil" do
         expect(avatar(nil)).to match("/images/messages/avatar-50.png")
+      end
+
+      it 'includes screenreader content if supplied' do
+        text = avatar(user, sr_content: 'boogaloo')
+        expect(text).to include("<span class=\"screenreader-only\">boogaloo</span>")
+      end
+
+      it 'defaults the screenreader content to just the display name if sr_content is not supplied' do
+        text = avatar(user)
+        expect(text).to include("<span class=\"screenreader-only\">Greta</span>")
       end
     end
 

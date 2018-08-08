@@ -1,3 +1,21 @@
+<%
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+%>
+
 <% content_for :page_title, t(:page_title, "Rubrics") %>
 <% add_crumb t('#crumbs.rubrics', "Rubrics") %>
 <% content_for :right_side do %>
@@ -9,6 +27,7 @@
 
 <% js_bundle :edit_rubric %>
 <% css_bundle :learning_outcomes %>
+<% css_bundle :proficiency_table %>
 <% content_for :stylesheets do %>
   <style>
     #rubrics .find_rubric_link {
@@ -28,6 +47,9 @@
   <% end %>
 </h1>
 <a href="<%= context_url(@context, :context_rubrics_url) %>" id="add_rubric_url" style="display: none;">&nbsp;</a>
+<% if @context.class.to_s == 'Account' %>
+<div id="rubric_management"></div>
+<% end %>
 <div id="rubrics" class="raw_listing">
   <ul>
   <% @rubric_associations.each do |association| %>
@@ -57,7 +79,7 @@
   <span class="current_user_id" style="display: none;"><%= @current_user.id %></span>
   <a href="<%= context_url(@context, :context_rubrics_url) %>" class="add_rubric_association_url" style="display: none;">&nbsp;</a>
 </div>
+<div id="rubric_attic" style="display: none;"></div>
 <%= render :partial => "shared/find_outcome" %>
 <%= render :partial => "shared/rubric", :object => nil, :locals => {:for_context => true} %>
-<%= render :partial => "shared/rubric_forms" %>
 <%= render :partial => "shared/rubric_criterion_dialog" %>

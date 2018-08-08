@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module AddressBook
 
   # base interface and partial implementation of AddressBook, including
@@ -9,6 +26,7 @@ module AddressBook
   # cache.
   class Base
     def self.inherited(derived)
+      return unless derived.superclass == AddressBook::Base
       derived.prepend(AddressBook::Caching)
     end
 
@@ -73,8 +91,8 @@ module AddressBook
       raise NotImplemented
     end
 
-    # counts the known users in the given context
-    def count_in_context(context)
+    # counts the known users in each of the given contexts
+    def count_in_contexts(contexts)
       raise NotImplemented
     end
 
