@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2015 Instructure, Inc.
+# Copyright (C) 2015 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -58,6 +58,15 @@ describe CourseForMenuPresenter do
       h = cs_presenter.to_h
       expect(h[:originalName]).to eq course.name
       expect(h[:shortName]).to eq 'nickname'
+    end
+
+    it 'returns false for informStudentsOfOverdueSubmissions if the course is not using New Gradebook' do
+      expect(presenter.to_h[:informStudentsOfOverdueSubmissions]).to be false
+    end
+
+    it 'returns true for informStudentsOfOverdueSubmissions if the course is using New Gradebook' do
+      course.enable_feature!(:new_gradebook)
+      expect(presenter.to_h[:informStudentsOfOverdueSubmissions]).to be true
     end
 
     context 'with Dashcard Reordering feature enabled' do

@@ -1,8 +1,25 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module OtherHelperMethods
 
   def stub_kaltura
     # trick kaltura into being activated
-    CanvasKaltura::ClientV3.stubs(:config).returns({
+    allow(CanvasKaltura::ClientV3).to receive(:config).and_return({
                                                        'domain' => 'www.instructuremedia.com',
                                                        'resource_domain' => 'www.instructuremedia.com',
                                                        'partner_id' => '100',
@@ -13,9 +30,9 @@ module OtherHelperMethods
                                                        'kcw_ui_conf' => '1',
                                                        'upload_ui_conf' => '1'
                                                    })
-    kal = mock('CanvasKaltura::ClientV3')
-    kal.stubs(:startSession).returns "new_session_id_here"
-    CanvasKaltura::ClientV3.stubs(:new).returns(kal)
+    kal = double('CanvasKaltura::ClientV3')
+    allow(kal).to receive(:startSession).and_return "new_session_id_here"
+    allow(CanvasKaltura::ClientV3).to receive(:new).and_return(kal)
   end
 
   def page_view(opts={})
@@ -118,5 +135,9 @@ module OtherHelperMethods
 
   def clear_local_storage
     driver.execute_script 'localStorage.clear();'
+  end
+
+  def preload_graphql_schema
+    CanvasSchema.execute("{}")
   end
 end

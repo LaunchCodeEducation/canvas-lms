@@ -1,13 +1,30 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18n!groups'
   'Backbone'
   'underscore'
-  'compiled/views/groups/manage/GroupCategoryDetailView'
-  'compiled/views/groups/manage/GroupsView'
-  'compiled/views/groups/manage/UnassignedUsersView'
-  'compiled/views/groups/manage/AddUnassignedMenu'
+  './GroupCategoryDetailView'
+  './GroupsView'
+  './UnassignedUsersView'
+  './AddUnassignedMenu'
   'jst/groups/manage/groupCategory'
-  'compiled/jquery.rails_flash_notifications'
+  '../../../jquery.rails_flash_notifications'
   'jquery.disableWhileLoading'
 ], (I18n, {View}, _, GroupCategoryDetailView, GroupsView, UnassignedUsersView, AddUnassignedMenu, template) ->
 
@@ -125,4 +142,3 @@ define [
       json.groupsAreSearchable = ENV.IS_LARGE_ROSTER and
                                  not json.randomlyAssignStudentsInProgress
       json
-

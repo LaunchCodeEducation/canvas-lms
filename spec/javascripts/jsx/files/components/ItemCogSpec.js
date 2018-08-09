@@ -1,5 +1,23 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
-  '../../../../coffeescripts/react_files/mockFilesENV.coffee',
+  '../../../../coffeescripts/react_files/mockFilesENV',
   'react',
   'react-dom',
   'react-addons-test-utils',
@@ -75,7 +93,7 @@ define([
     sinon.stub(window, 'confirm').returns(true);
     Simulate.click(ReactDOM.findDOMNode(itemCog.refs.deleteLink));
     ok(window.confirm.calledOnce, 'confirms before deleting');
-    ok(ajaxSpy.calledWithMatch({url: '/api/v1/folders/999', type: 'DELETE', data: {force: 'true'}}), 'sends DELETE to right url');
+    ok(ajaxSpy.calledWithMatch({url: '/api/v1/folders/999', data: {force: 'true'}}), 'sends DELETE to right url');
     $.ajax.restore();
     window.confirm.restore();
   });

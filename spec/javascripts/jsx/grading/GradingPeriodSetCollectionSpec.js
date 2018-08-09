@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 - 2017 Instructure, Inc.
+ * Copyright (C) 2016 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,8 +12,8 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 import _ from 'underscore';
@@ -408,17 +408,13 @@ test('announces number of search results for screen readers', function () {
   const collection = renderComponent();
 
   return Promise.all([this.terms, this.sets]).then(() => {
-    sinon.spy($, 'screenReaderFlashMessageExclusive');
+    const flashStub = this.spy($, 'screenReaderFlashMessageExclusive');
     collection.changeSearchText('201');
-    collection.getVisibleSets();
     const message = '2 sets of grading periods found.';
-    ok($.screenReaderFlashMessageExclusive.calledWith(message));
+    deepEqual(flashStub.firstCall.args, [message, true]);
 
     collection.changeSearchText('');
-    collection.getVisibleSets();
-    ok($.screenReaderFlashMessageExclusive.calledWith('Showing all sets of grading periods.'));
-
-    $.screenReaderFlashMessageExclusive.restore();
+    deepEqual(flashStub.secondCall.args, ['Showing all sets of grading periods.', true]);
   });
 });
 

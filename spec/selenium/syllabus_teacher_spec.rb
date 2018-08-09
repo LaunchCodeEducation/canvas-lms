@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/common')
 require File.expand_path(File.dirname(__FILE__) + '/helpers/public_courses_context')
 require File.expand_path(File.dirname(__FILE__) + '/helpers/files_common')
@@ -70,6 +87,7 @@ describe "course syllabus" do
 
     describe "Accessibility" do
       it "should set focus to the Jump to Today link after clicking Edit the Description", priority:"2", test_id: 237019 do
+        skip('see CNVS-39931')
         f('.edit_syllabus_link').click
         check_element_has_focus(f('.jump_to_today_link'))
       end

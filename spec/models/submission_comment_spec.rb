@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -33,7 +33,7 @@ describe SubmissionComment do
   end
 
   it "should create a new instance given valid attributes" do
-    SubmissionComment.create!(@valid_attributes)
+    expect { SubmissionComment.create!(@valid_attributes) }.not_to raise_error
   end
 
   describe 'notifications' do
@@ -157,6 +157,24 @@ This text has a http://www.google.com link in it...
     expect(@item.stream_item_instances.first.read?).to be_truthy
   end
 
+  it "should mark last_comment_at on the submission" do
+    prepare_test_submission
+    student_comment = @submission.add_comment(:author => @submission.user, :comment => "some comment")
+    expect(@submission.reload.last_comment_at).to be_nil
+
+    draft_comment = @submission.add_comment(:author => @teacher, :comment => "some comment", :draft_comment => true)
+    expect(@submission.reload.last_comment_at).to be_nil
+
+    frd_comment = @submission.add_comment(:author => @teacher, :comment => "some comment")
+    expect(@submission.reload.last_comment_at.to_i).to eq frd_comment.created_at.to_i
+
+    draft_comment.update_attributes(:draft => false, :created_at => 2.days.from_now) # should re-run after update
+    expect(@submission.reload.last_comment_at.to_i).to eq draft_comment.created_at.to_i
+
+    draft_comment.destroy # should re-run after destroy
+    expect(@submission.reload.last_comment_at.to_i).to eq frd_comment.created_at.to_i
+  end
+
   it "should not create a stream item for a provisional comment" do
     prepare_test_submission
     expect {
@@ -168,7 +186,7 @@ This text has a http://www.google.com link in it...
     assignment_model
     se = @course.enroll_student(user_factory)
     @submission = @assignment.submit_homework(se.user, :body => 'some message')
-    MediaObject.expects(:ensure_media_object).with("fake", { :context => se.user, :user => se.user })
+    expect(MediaObject).to receive(:ensure_media_object).with("fake", { :context => se.user, :user => se.user })
     @comment = @submission.add_comment(:author => se.user, :media_comment_type => 'audio', :media_comment_id => 'fake')
   end
 
@@ -282,8 +300,8 @@ This text has a http://www.google.com link in it...
     context 'given a submission with several group comments' do
       let!(:assignment) { @course.assignments.create! }
       let!(:unrelated_assignment) { @course.assignments.create! }
-      let!(:submission) { assignment.submissions.create!(user: @user) }
-      let!(:unrelated_submission) { unrelated_assignment.submissions.create!(user: @user) }
+      let!(:submission) { assignment.submissions.find_by!(user: @user) }
+      let!(:unrelated_submission) { unrelated_assignment.submissions.find_by!(user: @user) }
       let!(:first_comment) do
         submission.submission_comments.create!(
           group_comment_id: 'uuid',
@@ -327,8 +345,8 @@ This text has a http://www.google.com link in it...
     context 'given a submission with several group comments' do
       let!(:assignment) { @course.assignments.create! }
       let!(:unrelated_assignment) { @course.assignments.create! }
-      let!(:submission) { assignment.submissions.create!(user: @user) }
-      let!(:unrelated_submission) { unrelated_assignment.submissions.create!(user: @user) }
+      let!(:submission) { assignment.submissions.find_by!(user: @user) }
+      let!(:unrelated_submission) { unrelated_assignment.submissions.find_by!(user: @user) }
       let!(:first_comment) do
         submission.submission_comments.create!(
           group_comment_id: 'uuid',
@@ -451,6 +469,39 @@ This text has a http://www.google.com link in it...
           change { @submission_comment.submission.reload.submission_comments_count }.
             from(1).to(2)
         )
+      end
+    end
+  end
+
+  describe "#edited_at" do
+    before(:once) do
+      @comment = SubmissionComment.create!(@valid_attributes)
+    end
+
+    it "is nil for newly-created submission comments" do
+      expect(@comment.edited_at).to be_nil
+    end
+
+    it "remains nil if the submission comment is updated but the 'comment' attribute is unchanged" do
+      @comment.update!(draft: true, hidden: true)
+      expect(@comment.edited_at).to be_nil
+    end
+
+    it "is set if the 'comment' attribute is updated on the submission comment" do
+      now = Time.zone.now
+      Timecop.freeze(now) { @comment.update!(comment: "changing the comment!") }
+      expect(@comment.edited_at).to eql now
+    end
+
+    it "is updated on subsequent changes to the 'comment' attribute" do
+      now = Time.zone.now
+      Timecop.freeze(now) { @comment.update!(comment: "changing the comment!") }
+
+      later = 2.minutes.from_now(now)
+      Timecop.freeze(later) do
+        expect { @comment.update!(comment: "and again, changing it!") }.to change {
+          @comment.edited_at
+        }.from(now).to(later)
       end
     end
   end

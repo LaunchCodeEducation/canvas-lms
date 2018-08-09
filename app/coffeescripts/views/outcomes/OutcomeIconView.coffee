@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -20,7 +20,7 @@ define [
   'jquery'
   'underscore'
   'str/htmlEscape'
-  'compiled/views/outcomes/OutcomeIconBase'
+  './OutcomeIconBase'
 ], ($, _, h, OutcomeIconBase) ->
 
   class OutcomeIconView extends OutcomeIconBase

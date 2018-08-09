@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -23,8 +23,9 @@ class GradingStandard < ActiveRecord::Base
   belongs_to :user
   has_many :assignments
 
-  validates_presence_of :context_id, :context_type, :workflow_state, :data
+  validates :context_id, :context_type, :workflow_state, :data, presence: true
   validate :valid_grading_scheme_data
+  validate :full_range_scheme
 
   # version 1 data is an array of [ letter, max_integer_value ]
   # we created a version 2 because this is ambiguous once we added support for
@@ -49,6 +50,7 @@ class GradingStandard < ActiveRecord::Base
   serialize :data
 
   before_save :update_usage_count
+  attr_accessor :default_standard
 
   workflow do
     state :active
@@ -207,7 +209,15 @@ class GradingStandard < ActiveRecord::Base
   def valid_grading_scheme_data
     self.errors.add(:data, 'grading scheme values cannot be negative') if self.data.present? && self.data.any?{ |v| v[1] < 0 }
     self.errors.add(:data, 'grading scheme cannot contain duplicate values') if self.data.present? && self.data.map{|v| v[1]} != self.data.map{|v| v[1]}.uniq
+    self.errors.add(:data, 'a grading scheme name is too long') if self.data.present? && self.data.any?{|v| v[0].length > self.class.maximum_string_length}
   end
+
+  def full_range_scheme
+    if data.present? && data.none? { |datum| datum[1] == 0.0 }
+      errors.add(:data, 'grading schemes must have 0% for the lowest grade')
+    end
+  end
+  private :full_range_scheme
 
   def self.default_grading_standard
     default_grading_scheme.to_a.sort_by{|_, lower_bound| lower_bound}.reverse
@@ -216,8 +226,13 @@ class GradingStandard < ActiveRecord::Base
   def self.default_instance
     gs = GradingStandard.new()
     gs.data = default_grading_scheme
-    gs.title = "Default Grading Scheme"
+    gs.title = 'Default Grading Scheme'
+    gs.default_standard = true
     gs
+  end
+
+  def default_standard?
+    !!default_standard
   end
 
   def self.default_grading_scheme

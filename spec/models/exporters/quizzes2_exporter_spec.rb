@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2017 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../../spec_helper.rb')
 
 describe "Quizzes2 Exporter" do
@@ -60,6 +77,17 @@ describe "Quizzes2 Exporter" do
       expect(assignment.submission_types).to eq 'external_tool'
       expect(assignment.external_tool_tag.url).to eq @tool.url
       expect(assignment.assignment_group.name).to eq Exporters::Quizzes2Exporter::GROUP_NAME
+    end
+
+    it "doesn't fail when exporting an ungraded quiz and SIS grade export is enabled" do
+      @course.enable_feature!(:post_grades)
+      survey_quiz =  @course.quizzes.create!(title: 'blah', quiz_type: 'survey')
+      ce = @course.content_exports.create!(
+        export_type: ContentExport::QUIZZES2,
+        selected_content: survey_quiz.id
+      )
+      exporter = Exporters::Quizzes2Exporter.new(ce)
+      expect { exporter.export }.to change { @course.assignments.count }.by(1)
     end
   end
 end

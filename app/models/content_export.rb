@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -99,7 +99,7 @@ class ContentExport < ActiveRecord::Base
     when USER_DATA
       export_user_data(opts)
     when QUIZZES2
-      return unless root_account.feature_enabled?(:quizzes2_exporter)
+      return unless context.feature_enabled?(:quizzes_next)
       export_quizzes2
     else
       export_course(opts)
@@ -213,9 +213,11 @@ class ContentExport < ActiveRecord::Base
           export_type: QUIZZES2
         )
         self.settings[:quizzes2][:qti_export] = {}
-        self.settings[:quizzes2][:qti_export][:url] = self.attachment.download_url
+        self.settings[:quizzes2][:qti_export][:url] = self.attachment.public_download_url
         self.progress = 100
         mark_exported
+      else
+        mark_failed
       end
     rescue
       add_error("Error running export to Quizzes 2.", $!)
@@ -296,11 +298,15 @@ class ContentExport < ActiveRecord::Base
   end
 
   def create_key(obj, prepend="")
-    if for_master_migration?
+    if for_master_migration? && !is_external_object?(obj)
       master_migration.master_template.migration_id_for(obj, prepend) # because i'm too scared to use normal migration ids
     else
       CC::CCHelper.create_key(obj, prepend)
     end
+  end
+
+  def is_external_object?(obj)
+    obj.is_a?(ContextExternalTool) && obj.context_type == "Account"
   end
 
   # Method Summary
@@ -337,7 +343,7 @@ class ContentExport < ActiveRecord::Base
   #
   # Returns: bool
   def export_symbol?(symbol)
-    return false if symbol == :all_course_settings && for_master_migration?
+    return false if symbol == :all_course_settings && should_skip_course_settings?
     selected_content.empty? || is_set?(selected_content[symbol]) || is_set?(selected_content[:everything])
   end
 
@@ -359,6 +365,18 @@ class ContentExport < ActiveRecord::Base
       end
     end
     @selective_export
+  end
+
+  def should_skip_course_settings?
+    if for_master_migration?
+      if master_migration.migration_settings.has_key?(:copy_settings)
+        !master_migration.migration_settings[:copy_settings]
+      else
+        selective_export?
+      end
+    else
+      false
+    end
   end
 
   def exported_assets
@@ -408,7 +426,7 @@ class ContentExport < ActiveRecord::Base
   alias_method :destroy_permanently!, :destroy
   def destroy
     self.workflow_state = 'deleted'
-    self.attachment.destroy_permanently! if self.attachment
+    self.attachment&.destroy_permanently_plus
     save!
   end
 
@@ -424,6 +442,19 @@ class ContentExport < ActiveRecord::Base
       self.epub_export.update_progress_from_content_export!(val)
     end
     self.job_progress.try(:update_completion!, val)
+  end
+
+  def self.expire_days
+    Setting.get('content_exports_expire_after_days', '30').to_i
+  end
+
+  def self.expire?
+    ContentExport.expire_days > 0
+  end
+
+  def expired?
+    return false unless ContentExport.expire?
+    created_at < ContentExport.expire_days.days.ago
   end
 
   scope :active, -> { where("content_exports.workflow_state<>'deleted'") }
@@ -444,6 +475,13 @@ class ContentExport < ActiveRecord::Base
     ], user)
   }
   scope :without_epub, -> {eager_load(:epub_export).where(epub_exports: {id: nil})}
+  scope :expired, -> {
+    if ContentExport.expire?
+      where('created_at < ?', ContentExport.expire_days.days.ago)
+    else
+      none
+    end
+  }
 
   private
   def is_set?(option)

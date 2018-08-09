@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 - 2014 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -81,7 +81,7 @@ class GroupMembershipsController < ApplicationController
   #
   # @subtopic Group Memberships
   #
-  # List the members of a group.
+  # A paginated list of the members of a group.
   #
   # @argument filter_states[] [String, "accepted"|"invited"|"requested"]
   #   Only list memberships with the given workflow_states. By default it will
@@ -96,7 +96,7 @@ class GroupMembershipsController < ApplicationController
   def index
     if authorized_action(@group, @current_user, :read_roster)
       memberships_route = polymorphic_url([:api_v1, @group, :memberships])
-      scope = @group.group_memberships
+      scope = @group.group_memberships.preload(group: :root_account)
 
       only_states = ALLOWED_MEMBERSHIP_FILTER
       only_states = only_states & params[:filter_states] if params[:filter_states]

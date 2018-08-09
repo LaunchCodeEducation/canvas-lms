@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -130,27 +130,10 @@ describe UsersController do
   describe "#index" do
     it "should render" do
       user_with_pseudonym(:active_all => 1)
-      @johnstclair = @user.update_attributes(:name => 'John St. Clair', :sortable_name => 'St. Clair, John')
-      user_with_pseudonym(:active_all => 1, :username => 'jtolds@instructure.com', :name => 'JT Olds')
-      @jtolds = @user
       Account.default.account_users.create!(user: @user)
       user_session(@user, @pseudonym)
       get account_users_url(Account.default)
       expect(response).to be_success
-      expect(response.body).to match /Olds, JT.*St\. Clair, John/m
-    end
-
-    it "should not show any student view students at the account level" do
-      course_with_teacher(:active_all => true)
-      @fake_student = @course.student_view_student
-
-      site_admin_user(:active_all => true)
-      user_session(@admin)
-
-      get account_users_url Account.default.id
-      body = Nokogiri::HTML(response.body)
-      expect(body.css("#user_#{@fake_student.id}")).to be_empty
-      expect(body.at_css('.users').text).not_to match(/Test Student/)
     end
   end
 
@@ -226,13 +209,12 @@ describe UsersController do
       end
     end
 
-    it "should maintain protocol and domain name in gravatar redirect fallback" do
+    it "should maintain protocol and domain name in default avatar redirect fallback" do
       enable_cache do
         get "http://someschool.instructure.com/images/users/#{User.avatar_key(@user.id)}"
-        expect(response).to redirect_to "https://secure.gravatar.com/avatar/000?s=50&d=#{CGI::escape("http://someschool.instructure.com/images/messages/avatar-50.png")}"
-
+        expect(response).to redirect_to "http://someschool.instructure.com/images/messages/avatar-50.png"
         get "https://otherschool.instructure.com/images/users/#{User.avatar_key(@user.id)}"
-        expect(response).to redirect_to "https://secure.gravatar.com/avatar/000?s=50&d=#{CGI::escape("https://otherschool.instructure.com/images/messages/avatar-50.png")}"
+        expect(response).to redirect_to "https://otherschool.instructure.com/images/messages/avatar-50.png"
       end
     end
 
@@ -242,7 +224,7 @@ describe UsersController do
         orig_size = data.size
 
         get "http://someschool.instructure.com/images/users/#{User.avatar_key(@user.id)}"
-        expect(response).to redirect_to "https://secure.gravatar.com/avatar/000?s=50&d=#{CGI::escape("http://someschool.instructure.com/images/messages/avatar-50.png")}"
+        expect(response).to redirect_to "http://someschool.instructure.com/images/messages/avatar-50.png"
 
         diff = data.select{|k,v|k =~ /avatar_img/}.size - orig_size
         expect(diff).to be > 0
@@ -316,14 +298,14 @@ describe UsersController do
 
   context "media_download url" do
     let(:kaltura_client) do
-      kaltura_client = mock('CanvasKaltura::ClientV3').responds_like_instance_of(CanvasKaltura::ClientV3)
-      CanvasKaltura::ClientV3.stubs(:new).returns(kaltura_client)
+      kaltura_client = instance_double('CanvasKaltura::ClientV3')
+      allow(CanvasKaltura::ClientV3).to receive(:new).and_return(kaltura_client)
       kaltura_client
     end
 
     let(:media_source_fetcher) {
-      media_source_fetcher = mock('MediaSourceFetcher').responds_like_instance_of(MediaSourceFetcher)
-      MediaSourceFetcher.expects(:new).with(kaltura_client).returns(media_source_fetcher)
+      media_source_fetcher = instance_double('MediaSourceFetcher')
+      expect(MediaSourceFetcher).to receive(:new).with(kaltura_client).and_return(media_source_fetcher)
       media_source_fetcher
     }
 
@@ -334,9 +316,9 @@ describe UsersController do
     end
 
     it 'should pass the type down to the media fetcher even with a malformed url' do
-      media_source_fetcher.expects(:fetch_preferred_source_url).
+      expect(media_source_fetcher).to receive(:fetch_preferred_source_url).
           with(media_id: 'someMediaId', file_extension: 'mp4', media_type: nil).
-          returns('http://example.com/media.mp4')
+          and_return('http://example.com/media.mp4')
 
       # this url actually passes "mp4" into params[:format] instead of params[:type] now
       # but we're going to handle it anyway because we're so nice
@@ -344,4 +326,3 @@ describe UsersController do
     end
   end
 end
-

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2016 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -107,6 +107,7 @@ class Quizzes::QuizzesController < ApplicationController
     max_name_length = AssignmentUtil.assignment_max_name_length(@context)
     sis_name = AssignmentUtil.post_to_sis_friendly_name(@context)
     due_date_required_for_account = AssignmentUtil.due_date_required_for_account?(@context)
+    max_name_length_required_for_account = AssignmentUtil.name_length_required_for_account?(@context)
     sis_integration_settings_enabled = AssignmentUtil.sis_integration_settings_enabled?(@context)
 
     hash = {
@@ -117,7 +118,7 @@ class Quizzes::QuizzesController < ApplicationController
         options: quiz_options
       },
       :URLS => {
-        new_quiz_url: context_url(@context, :new_context_quiz_url, :fresh => 1),
+        new_quiz_url: context_url(@context, :context_quizzes_new_url, :fresh => 1),
         question_banks_url: context_url(@context, :context_question_banks_url),
         assignment_overrides: api_v1_course_quiz_assignment_overrides_url(@context)
       },
@@ -129,12 +130,15 @@ class Quizzes::QuizzesController < ApplicationController
       :FLAGS => {
         question_banks: feature_enabled?(:question_banks),
         post_to_sis_enabled: Assignment.sis_grade_export_enabled?(@context),
-        migrate_quiz_enabled:  @domain_root_account.feature_enabled?(:quizzes2_exporter)
+        migrate_quiz_enabled:
+          @context.feature_enabled?(:quizzes_next) &&
+          @context.quiz_lti_tool.present?
       },
       :quiz_menu_tools => external_tools_display_hashes(:quiz_menu),
       :SIS_NAME => sis_name,
       :MAX_NAME_LENGTH => max_name_length,
       :DUE_DATE_REQUIRED_FOR_ACCOUNT => due_date_required_for_account,
+      :MAX_NAME_LENGTH_REQUIRED_FOR_ACCOUNT => max_name_length_required_for_account,
       :SIS_INTEGRATION_SETTINGS_ENABLED => sis_integration_settings_enabled
     }
     if @context.is_a?(Course) && @context.grants_right?(@current_user, session, :read)
@@ -235,7 +239,8 @@ class Quizzes::QuizzesController < ApplicationController
         COURSE_ID: @context.id,
         LOCKDOWN_BROWSER: @quiz.require_lockdown_browser?,
         QUIZ: quiz_json(@quiz,@context,@current_user,session),
-        QUIZZES_URL: course_quizzes_url(@context)
+        QUIZZES_URL: course_quizzes_url(@context),
+        MAX_GROUP_CONVERSATION_SIZE: Conversation.max_group_conversation_size
       }
       append_sis_data(hash)
       js_env(hash)
@@ -264,29 +269,16 @@ class Quizzes::QuizzesController < ApplicationController
 
   def new
     if authorized_action(@context.quizzes.temp_record, @current_user, :create)
-      @assignment = nil
-      @assignment = @context.assignments.active.find(params[:assignment_id]) if params[:assignment_id]
-      @quiz = @context.quizzes.build
-      @quiz.title = params[:title] if params[:title]
-      @quiz.due_at = params[:due_at] if params[:due_at]
-      @quiz.assignment_group_id = params[:assignment_group_id] if params[:assignment_group_id]
-      @quiz.save!
-      # this is a weird check... who can create but not update???
-      if authorized_action(@quiz, @current_user, :update)
-        @assignment = @quiz.assignment
-      end
+      quiz = @context.quizzes.build
+      title = params[:title] || params[:name]
+      quiz.title = title if title
+      quiz.due_at = params[:due_at] if params[:due_at]
+      quiz.assignment_group_id = params[:assignment_group_id] if params[:assignment_group_id]
+      quiz.save!
 
-      max_name_length_required_for_account = AssignmentUtil.name_length_required_for_account?(@context)
-      max_name_length = AssignmentUtil.assignment_max_name_length(@context)
-
-      hash = {
-        :MAX_NAME_LENGTH_REQUIRED_FOR_ACCOUNT => max_name_length_required_for_account,
-        :MAX_NAME_LENGTH => max_name_length,
-        :DUE_DATE_REQUIRED_FOR_ACCOUNT => AssignmentUtil.due_date_required_for_account?(@context),
-      }
-
-      js_env(hash)
-      redirect_to(named_context_url(@context, :edit_context_quiz_url, @quiz))
+      quiz_edit_url = named_context_url(@context, :edit_context_quiz_url, quiz)
+      return render json: { url: quiz_edit_url } if request.xhr?
+      redirect_to(quiz_edit_url)
     end
   end
 
@@ -440,61 +432,76 @@ class Quizzes::QuizzesController < ApplicationController
       end
 
       quiz_params[:lock_at] = nil if quiz_params.delete(:do_lock_at) == 'false'
+      created_quiz = @quiz.created?
 
-      @quiz.with_versioning(false) do
-        @quiz.did_edit if @quiz.created?
+      Assignment.suspend_due_date_caching do
+        @quiz.with_versioning(false) do
+          @quiz.did_edit if @quiz.created?
+        end
       end
+
+      cached_due_dates_changed = @quiz.update_cached_due_dates?(quiz_params[:quiz_type])
 
       # TODO: API for Quiz overrides!
       respond_to do |format|
-        @quiz.transaction do
-          notify_of_update = value_to_boolean(params[:quiz][:notify_of_update])
+        Assignment.suspend_due_date_caching do
+          @quiz.transaction do
+            notify_of_update = value_to_boolean(params[:quiz][:notify_of_update])
 
-          old_assignment = nil
-          if @quiz.assignment.present?
-            old_assignment = @quiz.assignment.clone
-            old_assignment.id = @quiz.assignment.id
+            old_assignment = nil
+            if @quiz.assignment.present?
+              old_assignment = @quiz.assignment.clone
+              old_assignment.id = @quiz.assignment.id
 
-            @quiz.assignment.post_to_sis = params[:post_to_sis] == '1' ? true : false
-          end
-
-          auto_publish = @quiz.published?
-
-          @quiz.with_versioning(auto_publish) do
-            # using attributes= here so we don't need to make an extra
-            # database call to get the times right after save!
-            @quiz.attributes = quiz_params
-            @quiz.infer_times
-            @quiz.content_being_saved_by(@current_user)
-            if auto_publish
-              @quiz.generate_quiz_data
-              @quiz.workflow_state = 'available'
-              @quiz.published_at = Time.now
+              @quiz.assignment.post_to_sis = params[:post_to_sis] == '1' ? true : false
             end
-            @quiz.save!
+
+            auto_publish = @quiz.published?
+
+            @quiz.with_versioning(auto_publish) do
+              # using attributes= here so we don't need to make an extra
+              # database call to get the times right after save!
+              @quiz.attributes = quiz_params
+              @quiz.infer_times
+              @quiz.content_being_saved_by(@current_user)
+              if auto_publish
+                @quiz.generate_quiz_data
+                @quiz.workflow_state = 'available'
+                @quiz.published_at = Time.now
+              end
+              @quiz.save!
+            end
+
+            if old_assignment && @quiz.assignment.present?
+              @quiz.assignment.save
+            end
+
+            unless overrides.nil?
+              update_quiz_and_assignment_versions(@quiz, prepared_batch) # to prevent undoing Quiz#link_assignment_overrides
+              perform_batch_update_assignment_overrides(@quiz, prepared_batch)
+            end
+
+            # quiz.rb restricts all assignment broadcasts if notify_of_update is
+            # false, so we do the same here
+            if @quiz.assignment.present? && old_assignment && (notify_of_update || old_assignment.due_at != @quiz.assignment.due_at)
+              @quiz.assignment.do_notifications!(old_assignment, notify_of_update)
+            end
+            @quiz.reload
+
+            if params[:quiz][:time_limit].present?
+              @quiz.send_later_if_production_enqueue_args(:update_quiz_submission_end_at_times, {
+                priority: Delayed::HIGH_PRIORITY
+              })
+            end
+
+            @quiz.publish! if params[:publish]
           end
-
-          if old_assignment && @quiz.assignment.present?
-            @quiz.assignment.save
-          end
-
-          perform_batch_update_assignment_overrides(@quiz, prepared_batch) unless overrides.nil?
-
-          # quiz.rb restricts all assignment broadcasts if notify_of_update is
-          # false, so we do the same here
-          if @quiz.assignment.present? && old_assignment && (notify_of_update || old_assignment.due_at != @quiz.assignment.due_at)
-            @quiz.assignment.do_notifications!(old_assignment, notify_of_update)
-          end
-          @quiz.reload
-
-          if params[:quiz][:time_limit].present?
-            @quiz.send_later_if_production_enqueue_args(:update_quiz_submission_end_at_times, {
-              priority: Delayed::HIGH_PRIORITY
-            })
-          end
-
-          @quiz.publish! if params[:publish]
         end
+
+        if @quiz.assignment && (@overrides_affected.to_i > 0 || cached_due_dates_changed || created_quiz)
+          DueDateCacher.recompute(@quiz.assignment, update_grades: true)
+        end
+
         flash[:notice] = t("Quiz successfully updated")
         format.html { redirect_to named_context_url(@context, :context_quiz_url, @quiz) }
         format.json { render json: @quiz.as_json(include: {assignment: {include: :assignment_group}}) }
@@ -667,7 +674,7 @@ class Quizzes::QuizzesController < ApplicationController
         redirect_to named_context_url(@context, :context_quiz_url, @quiz)
         return
       end
-      if @quiz.muted? && !@quiz.grants_right?(@current_user, session, :grade)
+      if @quiz.muted? && !@quiz.grants_right?(@current_user, session, :review_grades)
         flash[:notice] = t('notices.cant_view_submission_while_muted', "You cannot view the quiz history while the quiz is muted.")
         redirect_to named_context_url(@context, :context_quiz_url, @quiz)
         return
@@ -700,6 +707,10 @@ class Quizzes::QuizzesController < ApplicationController
           @current_version = (@current_submission.version_number == @submission.version_number)
           @version_number = "current" if @current_version
         end
+        if @submission&.user_id == @current_user.id
+          @submission&.submission&.mark_read(@current_user)
+        end
+
         log_asset_access(@quiz, "quizzes", 'quizzes')
 
         if @quiz.require_lockdown_browser? && @quiz.require_lockdown_browser_for_results? && params[:viewing]
@@ -997,5 +1008,12 @@ class Quizzes::QuizzesController < ApplicationController
 
   def get_quiz_params
     params[:quiz] ? params[:quiz].permit(API_ALLOWED_QUIZ_INPUT_FIELDS[:only]) : {}
+  end
+
+  def update_quiz_and_assignment_versions(quiz, prepared_batch)
+    params = { quiz_id: quiz.id, quiz_version: quiz.version_number,
+               assignment_id: quiz.assignment_id, assignment_version: quiz.assignment&.version_number }
+    prepared_batch[:overrides_to_create].each { |override| override.assign_attributes(params) }
+    prepared_batch[:overrides_to_update].each { |override| override.assign_attributes(params) }
   end
 end

@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define(['jsx/gradebook/DataLoader', 'underscore'], (DataLoader, _) => {
   QUnit.module("Gradebook Data Loader", (hooks) => {
     let savedTrackEvent;
@@ -5,6 +23,7 @@ define(['jsx/gradebook/DataLoader', 'underscore'], (DataLoader, _) => {
     let XHRS, XHR_HANDLERS, handlerIndex;
 
     const ASSIGNMENT_GROUPS = [{id: 1}, {id: 4}];
+    const GRADING_PERIOD_ASSIGNMENTS = { 1401: ['2301'] };
     const STUDENTS_PAGE_1 = [{id: 2}, {id: 5}];
     const STUDENTS_PAGE_2 = [{id: 3}, {id: 7}];
     const SUBMISSIONS_CHUNK_1 = [{id: 99}];
@@ -42,6 +61,7 @@ define(['jsx/gradebook/DataLoader', 'underscore'], (DataLoader, _) => {
       const defaults = {
         assignmentGroupsURL: "/ags",
         assignmentGroupsParams: {ag_params: "ok"},
+        courseId: '1201',
         customColumnsURL: "/customcols",
         studentsURL: "/students",
         studentsPageCb: () => {},
@@ -158,7 +178,7 @@ define(['jsx/gradebook/DataLoader', 'underscore'], (DataLoader, _) => {
         () => {
           const studentIds = studentIdParam([2, 5]);
           respondToXhr(`/submissions?${studentIds}submission_params=blahblahblah`,
-                       200, {}, SUBMISSIONS_CHUNK_1)
+            200, {Link: ''}, SUBMISSIONS_CHUNK_1)
         },
         () => {
           respondToXhr("/students?page=2&student_params=whatever",
@@ -167,7 +187,7 @@ define(['jsx/gradebook/DataLoader', 'underscore'], (DataLoader, _) => {
         () => {
           const studentIds = studentIdParam([3, 7]);
           respondToXhr(`/submissions?${studentIds}submission_params=blahblahblah`,
-                       200, {}, SUBMISSIONS_CHUNK_2)
+            200, {Link: ''}, SUBMISSIONS_CHUNK_2)
         },
       ];
 
@@ -198,6 +218,83 @@ define(['jsx/gradebook/DataLoader', 'underscore'], (DataLoader, _) => {
         ok(submissionsCbCalled === 2);
         submissionsDone();
       });
+    });
+
+    test("requests submissions with pagination", (assert) => {
+      const studentIdParam = (studentIds) => (
+        studentIds.reduce(
+          (str, id) => `${str}student_ids%5B%5D=${id}&`,
+          ""
+        )
+      );
+
+      XHR_HANDLERS = [
+        () => {
+          respondToXhr("/students?student_params=whatever",
+                       200,
+                       {Link: '</students?page=1>; rel="last"'},
+                       STUDENTS_PAGE_1)
+        },
+        () => {
+          const studentIds = studentIdParam([2, 5]);
+          respondToXhr(`/submissions?${studentIds}submission_params=blahblahblah`,
+            200, {Link: '</submissions?page=2>; rel="last"'}, SUBMISSIONS_CHUNK_1)
+        },
+        () => {
+          const studentIds = studentIdParam([2, 5]);
+          respondToXhr(`/submissions?page=2&${studentIds}submission_params=blahblahblah`,
+            200, {Link: ''}, SUBMISSIONS_CHUNK_2)
+        },
+      ];
+
+      const submissionsDone = assert.async();
+
+      let submissionsCbCalled = 0;
+      let submissionsCbValue;
+
+      const submissionsCb = (submissions) => {
+        submissionsCbCalled++;
+        submissionsCbValue = submissions;
+      };
+
+      const dataLoader = callLoadGradebookData({ submissionsChunkCb: submissionsCb });
+      dataLoader.gotSubmissions.then(() => {
+        deepEqual(submissionsCbValue, [...SUBMISSIONS_CHUNK_1, ...SUBMISSIONS_CHUNK_2]);
+        strictEqual(submissionsCbCalled, 1);
+        submissionsDone();
+      });
+    });
+
+    QUnit.module('Grading Period Assignments');
+
+    test('resolves promise with data when grading period assignments are loaded', function (assert) {
+      const responseData = { grading_period_assignments: GRADING_PERIOD_ASSIGNMENTS };
+      XHR_HANDLERS = [
+        () => {
+          respondToXhr('/courses/1201/gradebook/grading_period_assignments', 200, {}, responseData);
+        }
+      ];
+
+      const dataLoader = callLoadGradebookData({ getGradingPeriodAssignments: true });
+      const resolve = assert.async();
+
+      dataLoader.gotGradingPeriodAssignments.then((data) => {
+        deepEqual(data, responseData);
+        resolve();
+      });
+    });
+
+    test('optionally does not request grading period assignments', function () {
+      const responseData = { grading_period_assignments: GRADING_PERIOD_ASSIGNMENTS };
+      XHR_HANDLERS = [
+        () => {
+          respondToXhr('/courses/1201/gradebook/grading_period_assignments', 200, {}, responseData);
+        }
+      ];
+
+      const dataLoader = callLoadGradebookData();
+
+      equal(typeof dataLoader.gotGradingPeriodAssignments, 'undefined');
     });
 
     QUnit.module("Custom Column Data");

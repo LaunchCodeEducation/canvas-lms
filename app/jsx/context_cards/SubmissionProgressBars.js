@@ -1,15 +1,46 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
+import PropTypes from 'prop-types'
 import I18n from 'i18n!student_context_tray'
 import classnames from 'classnames'
-import Heading from 'instructure-ui/lib/components/Heading'
-import Progress from 'instructure-ui/lib/components/Progress'
-import Tooltip from 'instructure-ui/lib/components/Tooltip'
-import Typography from 'instructure-ui/lib/components/Typography'
-import Link from 'instructure-ui/lib/components/Link'
+import Heading from '@instructure/ui-elements/lib/components/Heading'
+import Progress from '@instructure/ui-elements/lib/components/Progress'
+import Tooltip from '@instructure/ui-overlays/lib/components/Tooltip'
+import Text from '@instructure/ui-elements/lib/components/Text'
+import Link from '@instructure/ui-elements/lib/components/Link'
 
   class SubmissionProgressBars extends React.Component {
     static propTypes = {
-      submissions: React.PropTypes.array.isRequired
+      submissions: PropTypes.arrayOf(
+        PropTypes.shape({
+          id: PropTypes.string.isRequired,
+          score: PropTypes.number,
+          user: PropTypes.shape({
+            _id: PropTypes.string.isRequired
+          }).isRequired,
+          assignment: PropTypes.shape({
+            html_url: PropTypes.string.isRequired,
+            points_possible: PropTypes.number,
+          })
+        }).isRequired
+      ).isRequired,
     }
 
     static displayGrade (submission) {
@@ -68,7 +99,7 @@ import Link from 'instructure-ui/lib/components/Link'
     }
 
     render () {
-      const {submissions} = this.props
+      const submissions = this.props.submissions.filter(s => s.grade != null);
       if (submissions.length > 0) {
         return (
           <section
@@ -82,8 +113,8 @@ import Link from 'instructure-ui/lib/components/Link'
                   <Tooltip
                     tip={submission.assignment.name}
                     as={Link}
-                    href={`${submission.assignment.html_url}/submissions/${submission.user_id}`}
-                    placement="left"
+                    href={`${submission.assignment.html_url}/submissions/${submission.user._id}`}
+                    placement="top"
                   >
                     <Progress
                       size="small"
@@ -93,9 +124,9 @@ import Link from 'instructure-ui/lib/components/Link'
                       valueNow={submission.score || 0}
                       formatValueText={() => SubmissionProgressBars.displayScreenreaderGrade(submission)}
                       formatDisplayedValue={() => (
-                        <Typography size="x-small" color="secondary">
+                        <Text size="x-small" color="secondary">
                           {SubmissionProgressBars.displayGrade(submission)}
-                        </Typography>
+                        </Text>
                       )}
                     />
                   </Tooltip>

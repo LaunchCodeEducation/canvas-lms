@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -40,7 +40,10 @@ class InfoController < ApplicationController
 
     links = links.select do |link|
       available_to = link[:available_to] || []
-      available_to.detect { |role| role == 'user' || current_user_roles.include?(role) }
+      available_to.detect do |role|
+        (role == 'user' || current_user_roles.include?(role)) ||
+        (current_user_roles == ['user'] && role == 'unenrolled')
+      end
     end
 
     render :json => links
@@ -54,10 +57,18 @@ class InfoController < ApplicationController
     end
     Tempfile.open("heartbeat", ENV['TMPDIR'] || Dir.tmpdir) { |f| f.write("heartbeat"); f.flush }
 
+    # javascript/css build process didn't die, right?
+    asset_urls = {
+      common_css: css_url_for("common"), # ensures brandable_css_bundles_with_deps exists
+      common_js: ActionController::Base.helpers.javascript_url("#{js_base_url}/common"), # ensures webpack worked
+      revved_url: Canvas::Cdn::RevManifest.gulp_manifest.values.first # makes sure `gulp rev` has ran
+    }
+
     respond_to do |format|
       format.html { render plain: 'canvas ok' }
       format.json { render json:
                                { status: 'canvas ok',
+                                 asset_urls: asset_urls,
                                  revision: Canvas.revision,
                                  installation_uuid: Canvas.installation_uuid } }
     end

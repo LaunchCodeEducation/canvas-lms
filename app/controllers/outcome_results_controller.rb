@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,7 +17,6 @@
 #
 
 # @API Outcome Results
-# @beta
 #
 # API for accessing learning outcome results
 #
@@ -198,7 +197,6 @@ class OutcomeResultsController < ApplicationController
   before_action :require_users
 
   # @API Get outcome results
-  # @beta
   #
   # Gets the outcome results for users and outcomes in the specified context.
   #
@@ -220,12 +218,21 @@ class OutcomeResultsController < ApplicationController
   #   "outcomes.alignments" includes all alignments referenced by outcomes in the
   #   context.
   #
+  # @argument include_hidden [Boolean]
+  #   If true, results that are hidden from the learning mastery gradebook and student rollup
+  #   scores will be included
+  #
   # @example_response
   #    {
   #      outcome_results: [OutcomeResult]
   #    }
   def index
-    @results = find_outcome_results(users: @users, context: @context, outcomes: @outcomes)
+    @results = find_outcome_results(
+      users: @users,
+      context: @context,
+      outcomes: @outcomes,
+      include_hidden: value_to_boolean(params[:include_hidden])
+    )
     @results = Api.paginate(@results, self, api_v1_course_outcome_results_url)
     json = outcome_results_json(@results)
     json[:linked] = linked_include_collections if params[:include].present?
@@ -233,7 +240,6 @@ class OutcomeResultsController < ApplicationController
   end
 
   # @API Get outcome result rollups
-  # @beta
   #
   # Gets the outcome rollups for the users and outcomes in the specified
   # context.
@@ -372,6 +378,11 @@ class OutcomeResultsController < ApplicationController
     outcome_results_include_alignments_json(alignments)
   end
 
+  def include_assignments
+    assignments = @results.map(&:assignment)
+    outcome_results_assignments_json(assignments)
+  end
+
   def require_outcome_context
     reject! "invalid context type" unless @context.is_a?(Course)
 
@@ -430,9 +441,9 @@ class OutcomeResultsController < ApplicationController
         # context and outcome id in order to ensure we get the correct result
         # from the query without rendering the reject! check moot
 
-        @outcomes = ContentTag.learning_outcome_links.active.joins(:learning_outcome_content)
-          .where(content_id: outcome_ids, context_type: @context.class_name, context_id: @context.id)
-          .to_a.uniq{|tag| [tag.context, tag.content_id]}.map(&:learning_outcome_content)
+        @outcomes = ContentTag.learning_outcome_links.active.joins(:learning_outcome_content).
+          where(content_id: outcome_ids, context_type: @context.class_name, context_id: @context.id).
+          to_a.uniq{|tag| [tag.context, tag.content_id]}.map(&:learning_outcome_content)
         reject! "can only include id's of outcomes in the outcome context" if @outcomes.count != outcome_ids.count
       else
         @outcome_links = []

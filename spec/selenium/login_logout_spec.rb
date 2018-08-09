@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/common')
 
 describe "login logout test" do
@@ -20,7 +37,7 @@ describe "login logout test" do
   it "should login successfully with correct username and password", priority: "2" do
     user_with_pseudonym({:active_user => true})
     login_as
-    expect(f('#global_nav_profile_display_name').text).to eq @user.primary_pseudonym.unique_id
+    expect(f('[aria-label="Global navigation tray"] h2').text).to eq @user.primary_pseudonym.unique_id
   end
 
   it "should show error message if wrong credentials are used", priority: "2" do
@@ -85,7 +102,7 @@ describe "login logout test" do
   end
 
   it "should login when a trusted referer exists", priority: "2" do
-    Account.any_instance.stubs(:trusted_referer?).returns(true)
+    allow_any_instance_of(Account).to receive(:trusted_referer?).and_return(true)
     user_with_pseudonym(active_user: true)
     get "/login"
     driver.execute_script "$.cookie('_csrf_token', '', { expires: -1 })"

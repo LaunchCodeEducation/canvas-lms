@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -21,7 +21,7 @@ require 'csv'
 class GradebookImporter
   ASSIGNMENT_PRELOADED_FIELDS = %i/
     id title points_possible grading_type updated_at context_id context_type group_category_id
-    created_at due_at only_visible_to_overrides
+    created_at due_at only_visible_to_overrides moderated_grading
   /.freeze
 
   class NegativeId
@@ -39,6 +39,8 @@ class GradebookImporter
       @i -= 1
     end
   end
+
+  class InvalidHeaderRow < StandardError; end
 
   attr_reader :context, :contents, :attachment, :assignments, :students,
               :submissions, :missing_assignments, :missing_students, :upload
@@ -71,6 +73,22 @@ class GradebookImporter
     end
   end
 
+  CSV::Converters[:decimal_comma_to_period] = -> (field) do
+    if field =~ /^-?[0-9.,]+%?$/
+      # This field is a pure number or percentage => let's normalize it
+      number_parts = field.split(/[,.]/)
+      last_number_part = number_parts.pop
+
+      if number_parts.empty?
+        last_number_part
+      else
+        [number_parts.join(), last_number_part].join('.')
+      end
+    else
+      field
+    end
+  end
+
   def parse!
     # preload a ton of data that presumably we'll be querying
     @context.preload_user_roles!
@@ -95,12 +113,19 @@ class GradebookImporter
       prevented_grading_ungradeable_submission: false
     }
 
-    csv_stream do |row|
-      already_processed = check_for_non_student_row(row)
-      unless already_processed
-        @students << process_student(row)
-        process_submissions(row, @students.last)
+    begin
+      csv_stream do |row|
+        already_processed = check_for_non_student_row(row)
+        unless already_processed
+          @students << process_student(row)
+          process_submissions(row, @students.last)
+        end
       end
+    rescue InvalidHeaderRow
+      @progress.message = "Invalid header row"
+      @progress.workflow_state = "failed"
+      @progress.save
+      return
     end
 
     @missing_assignments = []
@@ -119,8 +144,8 @@ class GradebookImporter
     effective_due_dates = EffectiveDueDates.for_course(@context, @all_assignments.values)
 
     @original_submissions = @context.submissions
-      .preload(assignment: { context: :account })
-      .select(['submissions.id', :assignment_id, :user_id, :score, :excused, :cached_due_date, 'submissions.updated_at'])
+      .preload(:grading_period, assignment: { context: :account })
+      .select(['submissions.id', :assignment_id, :user_id, :grading_period_id, :score, :excused, :cached_due_date, 'submissions.updated_at'])
       .where(assignment_id: assignment_ids, user_id: user_ids)
       .map do |submission|
         is_gradeable = gradeable?(submission: submission, is_admin: is_admin)
@@ -145,9 +170,9 @@ class GradebookImporter
     @students.each do |student|
       student.gradebook_importer_submissions.each do |submission|
         submission_assignment_id = submission.fetch('assignment_id').to_i
-        assignment = original_submissions_by_student
-          .fetch(student.id, {})
-          .fetch(submission_assignment_id, {})
+        assignment = original_submissions_by_student.
+          fetch(student.id, {}).
+          fetch(submission_assignment_id, {})
         submission['original_grade'] = assignment.fetch(:score, nil)
         submission['gradeable'] = assignment.fetch(:gradable, nil)
 
@@ -156,9 +181,10 @@ class GradebookImporter
           new_submission = Submission.new
           new_submission.user = student
           new_submission.assignment = assignment
-          new_submission.cached_due_date =
-            effective_due_dates.find_effective_due_date(student.id, assignment.id).fetch(:due_at, nil)
-          submission['gradeable'] = gradeable?(
+          edd = effective_due_dates.find_effective_due_date(student.id, assignment.id)
+          new_submission.cached_due_date = edd.fetch(:due_at, nil)
+          new_submission.grading_period_id = edd.fetch(:grading_period_id, nil)
+          submission['gradeable'] = !edd.fetch(:in_closed_grading_period, false) && gradeable?(
             submission: new_submission,
             is_admin: is_admin
           )
@@ -247,7 +273,7 @@ class GradebookImporter
   end
 
   def process_header(row)
-    raise "Couldn't find header row" unless header?(row)
+    raise InvalidHeaderRow unless header?(row)
 
     row = strip_non_assignment_columns(row)
     parse_assignments(row) # requires non-assignment columns to be stripped
@@ -291,6 +317,9 @@ class GradebookImporter
 
   def strip_non_assignment_columns(row)
     drop_student_information_columns(row)
+
+    # This regex will also include columns for unposted scores, which
+    # will be one of these values with "Unposted" prepended.
     while row.last =~ /Current Score|Current Points|Current Grade|Final Score|Final Points|Final Grade/
       row.pop
     end
@@ -411,10 +440,34 @@ class GradebookImporter
 
   protected
 
-  CSV_PARSE_OPTIONS = {
-    converters: :nil,
-    skip_lines: /^[, ]*$/
-  }.freeze
+  def identify_delimiter(rows)
+    field_counts = {}
+    %w[; ,].each do |separator|
+      begin
+        field_count_by_row = rows.map { |line| CSV.parse_line(line, col_sep: separator).size }
+
+        # If the number of fields generated by this separator is consistent for all lines,
+        # we should be able to assume it's a valid delimiter for this file
+        field_counts[separator] = field_count_by_row.first if field_count_by_row.uniq.size == 1
+      rescue CSV::MalformedCSVError => e
+      end
+    end
+
+    (field_counts.size == 1 && field_counts.keys.first == ';') ? :semicolon : :comma
+  end
+
+  def semicolon_delimited?(csv_file)
+    first_lines = []
+    File.open(csv_file.path) do |csv|
+      while !csv.eof? && first_lines.size < 3
+        first_lines << csv.readline
+      end
+    end
+
+    return false if first_lines.blank?
+
+    identify_delimiter(first_lines) == :semicolon
+  end
 
   def check_for_non_student_row(row)
     # check if this is the first row, a header row
@@ -441,10 +494,21 @@ class GradebookImporter
 
   def csv_stream
     csv_file = attachment.open(need_local_file: true)
+    is_semicolon_delimited = semicolon_delimited?(csv_file)
+    csv_parse_options = {
+      converters: %i(nil),
+      skip_lines: /^[;, ]*$/,
+      col_sep: is_semicolon_delimited ? ";" : ","
+    }
+
+    if is_semicolon_delimited
+      csv_parse_options[:converters] << :decimal_comma_to_period
+    end
+
     # using "foreach" rather than "parse" processes a chunk of the
     # file at a time rather than loading the whole file into memory
     # at once, a boon for memory consumption
-    CSV.foreach(csv_file.path, CSV_PARSE_OPTIONS) do |row|
+    CSV.foreach(csv_file.path, csv_parse_options) do |row|
       yield row
     end
   end

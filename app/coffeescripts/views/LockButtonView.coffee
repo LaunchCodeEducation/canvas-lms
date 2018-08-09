@@ -1,7 +1,24 @@
+#
+# Copyright (C) 2017 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18n!lock_btn_module'
   'jquery'
-  'compiled/fn/preventDefault'
+  '../fn/preventDefault'
   'Backbone'
   'str/htmlEscape'
   'jquery.instructure_forms'
@@ -144,8 +161,8 @@ define [
     render: ->
       return unless @isMasterCourseContent()
 
+      @$el.attr 'role', 'button'
       if(!@disabled)
-        @$el.attr 'role', 'button'
         @$el.attr 'tabindex', '0'
 
       @$el.html '<i></i><span class="lock-text screenreader-only"></span>'
@@ -162,20 +179,20 @@ define [
         hint:        I18n.t 'Locked'
         label:       @lockedText
         buttonClass: "#{@lockedClass} #{@disabledClass}"
-        iconClass:   'icon-lock'
+        iconClass:   'icon-blueprint-lock'
 
     renderWillUnlock: () ->
       @renderState
-        hint:        I18n.t 'UnLock'
+        hint:        I18n.t 'Unlock'
         label:       @lockedText
         buttonClass: "#{@unlockedClass} #{@disabledClass}"
-        iconClass:   'icon-unlock'
+        iconClass:   'icon-blueprint'
 
     renderUnlocking: () ->
       @renderState
         hint:        I18n.t 'Unlocking...'
         buttonClass: "#{@lockedClass} #{@disabledClass}"
-        iconClass:   'icon-lock'
+        iconClass:   'icon-blueprint-lock'
 
     # when unlocked can..
     renderUnlocked: () ->
@@ -183,29 +200,29 @@ define [
         hint:        I18n.t 'Unlocked'
         label:       @unlockedText
         buttonClass: "#{@unlockedClass} #{@disabledClass}"
-        iconClass:   'icon-unlock'
+        iconClass:   'icon-blueprint'
 
     renderWillLock: () ->
       @renderState
         hint:        I18n.t 'Lock'
         label:       @unlockedText
         buttonClass: "#{@lockedClass} #{@disabledClass}"
-        iconClass:   'icon-lock'
+        iconClass:   'icon-blueprint-lock'
 
     renderLocking: () ->
       @renderState
         hint:        I18n.t 'Locking...'
         buttonClass: "#{@unlockedClass} #{@disabledClass}"
-        iconClass:   'icon-unlock'
-
-
+        iconClass:   'icon-blueprint'
 
     renderState: (options) ->
       @reset()
       @$el.addClass options.buttonClass
       if !@disabled
         @$el.attr 'aria-pressed', options.buttonClass is @lockedClass
-      @$icon.addClass options.iconClass
+      else
+        @$el.attr 'aria-disabled', true
+      @$icon.attr('class', options.iconClass)
 
       @$text.html "#{htmlEscape(options.label || options.hint)}"
 

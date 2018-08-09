@@ -1,15 +1,31 @@
-define([
-  'i18n!content_imports',
-  'compiled/util/processMigrationItemSelections',
-  'jquery' /* $ */,
-  'jquery.ajaxJSON' /* ajaxJSON */,
-  'jquery.instructure_date_and_time' /* dateString, date_field */,
-  'jquery.instructure_forms' /* formSubmit, getFormData, validateForm */,
-  'jquery.instructure_misc_plugins' /* showIf */,
-  'compiled/jquery.rails_flash_notifications',
-  'vendor/date' /* Date.parse */,
-  'jqueryui/progressbar' /* /\.progressbar/ */
-], function(I18n, processMigrationItemSelections, $) {
+/*
+ * Copyright (C) 2012 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+import I18n from 'i18n!content_imports'
+import processMigrationItemSelections from 'compiled/util/processMigrationItemSelections'
+import $ from 'jquery'
+import './jquery.ajaxJSON'
+import './jquery.instructure_date_and_time' /* dateString, date_field */
+import './jquery.instructure_forms' /* formSubmit, getFormData, validateForm */
+import './jquery.instructure_misc_plugins' /* showIf */
+import 'compiled/jquery.rails_flash_notifications'
+import './vendor/date' /* Date.parse */
+import 'jqueryui/progressbar'
 
   $(function () {
     $(".date_field").date_field();
@@ -318,4 +334,3 @@ define([
       }
     });
   });
-});

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -49,7 +49,6 @@ class Quizzes::QuizSubmissionEventsApiController < ApplicationController
     :require_active_quiz_submission
 
   # @API Submit captured events
-  # @beta
   #
   # Store a set of events which were captured during a quiz taking session.
   #
@@ -91,7 +90,6 @@ class Quizzes::QuizSubmissionEventsApiController < ApplicationController
   end
 
   # @API Retrieve captured events
-  # @beta
   #
   # Retrieve the set of events captured during a specific submission attempt.
   #

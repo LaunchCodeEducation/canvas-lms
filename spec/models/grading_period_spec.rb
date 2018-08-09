@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014 - 2016 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -19,7 +19,7 @@
 require_relative '../spec_helper'
 
 describe GradingPeriod do
-  subject(:grading_period) { grading_period_group.grading_periods.build(params) }
+  subject(:grading_period) { grading_period_group.grading_periods.create!(params) }
 
   let(:group_helper) { Factories::GradingPeriodGroupHelper.new }
   let(:account) { Account.create! }
@@ -262,6 +262,74 @@ describe GradingPeriod do
     end
   end
 
+  describe "scope: closed" do
+    around { |example| Timecop.freeze(now, &example) }
+
+    it "includes grading period if the current date is past the close date" do
+      period = grading_period_group.grading_periods.create(
+        title: "Closed Period",
+        start_date: 10.days.ago(now),
+        end_date: 5.days.ago(now),
+        close_date: 3.days.ago(now)
+      )
+      expect(GradingPeriod.closed).to include period
+    end
+
+    it "excludes grading period if the current date is before the close date" do
+      period = grading_period_group.grading_periods.create(
+        title: "A Period",
+        start_date: 10.days.ago(now),
+        end_date: 5.days.ago(now),
+        close_date: 2.days.from_now(now)
+      )
+      expect(GradingPeriod.closed).not_to include period
+    end
+
+    it "excludes grading period if the current date matches the close date" do
+      period = grading_period_group.grading_periods.create(
+        title: "A Period",
+        start_date: 10.days.ago(now),
+        end_date: 5.days.ago(now),
+        close_date: now
+      )
+      expect(GradingPeriod.closed).not_to include period
+    end
+  end
+
+  describe "scope: open" do
+    around { |example| Timecop.freeze(now, &example) }
+
+    it "excludes grading period if the current date is past the close date" do
+      period = grading_period_group.grading_periods.create(
+        title: "Closed Period",
+        start_date: 10.days.ago(now),
+        end_date: 5.days.ago(now),
+        close_date: 3.days.ago(now)
+      )
+      expect(GradingPeriod.open).not_to include period
+    end
+
+    it "includes grading period if the current date is before the close date" do
+      period = grading_period_group.grading_periods.create(
+        title: "A Period",
+        start_date: 10.days.ago(now),
+        end_date: 5.days.ago(now),
+        close_date: 2.days.from_now(now)
+      )
+      expect(GradingPeriod.open).to include period
+    end
+
+    it "includes grading period if the current date matches the close date" do
+      period = grading_period_group.grading_periods.create(
+        title: "A Period",
+        start_date: 10.days.ago(now),
+        end_date: 5.days.ago(now),
+        close_date: now
+      )
+      expect(GradingPeriod.open).to include period
+    end
+  end
+
   describe "#closed?" do
     around { |example| Timecop.freeze(now, &example) }
 
@@ -320,19 +388,61 @@ describe GradingPeriod do
       grading_period.destroy
     end
 
-    it 'does not recalculate course scores if the grading period group is not weighted' do
-      course = Course.create!
-      grading_period_group.enrollment_terms << course.enrollment_term
-      enrollment = student_in_course(course: course)
-      enrollment.scores.create!(grading_period: grading_period)
-      expect(GradeCalculator).not_to receive(:recompute_final_score)
+    it 'runs DueDateCacher for courses from the same enrollment term when the grading period is deleted' do
+      course2 = account.courses.create!
+      course2.enrollment_term = account.enrollment_terms.create!
+      course2.save!
+      student_in_course(course: course2)
+      a = course2.assignments.create!
+      a.submissions.find_by(user_id: @student).update(grading_period_id: grading_period.id)
+      expect(DueDateCacher).to receive(:recompute_course).with(course, any_args)
+      expect(DueDateCacher).not_to receive(:recompute_course).with(course2, any_args)
       grading_period.destroy
+    end
+
+    it 'runs DueDateCacher for courses from the same enrollment term when the grading period set is deleted' do
+      course2 = account.courses.create!
+      course2.enrollment_term = account.enrollment_terms.create!
+      course2.save!
+      student_in_course(course: course2)
+      a = course2.assignments.create!
+      a.submissions.find_by(user_id: @student).update(grading_period_id: grading_period.id)
+      expect(DueDateCacher).to receive(:recompute_course).with(course, any_args)
+      expect(DueDateCacher).not_to receive(:recompute_course).with(course2, any_args)
+      grading_period_group.destroy
     end
 
     it 'does not destroy the set when the last grading period is destroyed (account grading periods)' do
       grading_period.save!
       grading_period.destroy
       expect(grading_period_group).not_to be_deleted
+    end
+
+    it 'updates the grading_period_id to nil on submissions that were in the deleted grading period' do
+      student = User.create!
+      course.enroll_student(student, enrollment_state: :active)
+      grading_period.save!
+      assignment = course.assignments.create!(due_at: 2.hours.from_now(grading_period.start_date))
+      submission = assignment.submissions.find_by(user_id: student)
+      expect { grading_period.destroy }.to change {
+        submission.reload.grading_period_id
+      }.from(grading_period.id).to(nil)
+    end
+
+    it 'places submissions without due dates in the new "last" period if the "last" period was deleted' do
+      student = User.create!
+      course.enroll_student(student, enrollment_state: :active)
+      grading_period.save!
+      other_period = grading_period_group.grading_periods.create!(
+        title: "I will be the last period when the other one is deleted",
+        start_date: 2.days.ago(grading_period.start_date),
+        end_date: 1.day.ago(grading_period.start_date)
+      )
+      assignment = course.assignments.create!
+      submission = assignment.submissions.find_by(user_id: student)
+      expect { grading_period.destroy }.to change {
+        submission.reload.grading_period_id
+      }.from(grading_period.id).to(other_period.id)
     end
 
     context 'course grading periods (legacy support)' do
@@ -496,24 +606,24 @@ describe GradingPeriod do
 
   describe ".current_period_for" do
     let(:account) { Account.new }
-    let(:not_current_grading_period) { mock }
-    let(:current_grading_period) { mock }
+    let(:not_current_grading_period) { double }
+    let(:current_grading_period) { double }
 
     it "returns the current grading period given a context" do
-      GradingPeriod.expects(:for).with(account).returns([not_current_grading_period, current_grading_period])
-      not_current_grading_period.expects(:current?).returns(false)
-      current_grading_period.expects(:current?).returns(true)
+      expect(GradingPeriod).to receive(:for).with(account).and_return([not_current_grading_period, current_grading_period])
+      expect(not_current_grading_period).to receive(:current?).and_return(false)
+      expect(current_grading_period).to receive(:current?).and_return(true)
       expect(GradingPeriod.current_period_for(account)).to eq(current_grading_period)
     end
 
     it "returns nil if grading periods exist for the given context, but none are current" do
-      GradingPeriod.expects(:for).with(account).returns([not_current_grading_period])
-      not_current_grading_period.expects(:current?).returns(false)
+      expect(GradingPeriod).to receive(:for).with(account).and_return([not_current_grading_period])
+      expect(not_current_grading_period).to receive(:current?).and_return(false)
       expect(GradingPeriod.current_period_for(account)).to be_nil
     end
 
     it "returns nil if no grading periods exist for the given context" do
-      GradingPeriod.expects(:for).with(account).returns([])
+      expect(GradingPeriod).to receive(:for).with(account).and_return([])
       expect(GradingPeriod.current_period_for(account)).to be_nil
     end
   end
@@ -804,7 +914,7 @@ describe GradingPeriod do
     end
 
     it 'creates scores for the grading period upon its creation' do
-      expect{ grading_period.save! }.to change{ Score.count }.from(1).to(2)
+      expect{ grading_period.save! }.to change{ Score.count }.by(1)
     end
 
     it 'updates grading period scores when the grading period end date is changed' do
@@ -827,6 +937,27 @@ describe GradingPeriod do
       expect{ grading_period.update!(start_date: 1.day.ago(@assignment.due_at)) }.to change{
         Score.where(grading_period_id: grading_period).first.current_score
       }.from(nil).to(80.0)
+    end
+
+    it 'updates grading period ids on submissions without due dates if the "last" period changes' do
+      student = User.create!
+      course.enroll_student(student, enrollment_state: :active)
+      grading_period.save!
+      other_period = grading_period_group.grading_periods.create!(
+        title: "I will be the last period when the other one changes dates",
+        start_date: 2.days.ago(grading_period.start_date),
+        end_date: 1.day.ago(grading_period.start_date)
+      )
+      assignment = course.assignments.create!
+      submission = assignment.submissions.find_by(user_id: student)
+      expect do
+        grading_period.update!(
+          start_date: 2.days.ago(other_period.start_date),
+          end_date: 1.day.ago(other_period.start_date)
+        )
+      end.to change {
+        submission.reload.grading_period_id
+      }.from(grading_period.id).to(other_period.id)
     end
 
     it 'updates course score when the grading period weight is changed' do

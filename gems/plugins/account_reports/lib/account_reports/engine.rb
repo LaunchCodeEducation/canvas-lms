@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 - 2014 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -22,6 +22,7 @@ module AccountReports
       require 'account_reports/course_reports'
       require 'account_reports/default'
       require 'account_reports/grade_reports'
+      require 'account_reports/outcome_export'
       require 'account_reports/outcome_reports'
       require 'account_reports/report_helper'
       require 'account_reports/sis_exporter'
@@ -89,6 +90,12 @@ module AccountReports
             }
           }
         },
+        'outcome_export_csv' => {
+          title: proc { I18n.t('Outcome Export')},
+          parameters_partial: false,
+          description_partial: true,
+          parameters: {}
+        },
         'outcome_results_csv' => {
           :title => proc { I18n.t(:outcome_results_title, 'Outcome Results') },
           :parameters_partial => true,
@@ -150,6 +157,9 @@ module AccountReports
             :user_observers => {
               :description => 'Get the Provisioning file for user_observers'
             },
+            :admins => {
+              :description => 'Get the Provisioning file for admins'
+            },
             :created_by_sis => {
               :description => 'Only include objects that were created by sis'
             },
@@ -199,6 +209,9 @@ module AccountReports
             :groups => {
               :description => 'Get the SIS file for groups'
             },
+            :group_categories => {
+              :description => 'Get the SIS file for group_categories'
+            },
             :group_membership => {
               :description => 'Get the SIS file for group_membership'
             },
@@ -207,6 +220,9 @@ module AccountReports
             },
             :user_observers => {
               :description => 'Get the SIS file for user_observers'
+            },
+            :admins => {
+              :description => 'Get the SIS file for admins'
             },
             :created_by_sis => {
               :description => 'Only include objects that were created by sis'

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -61,14 +61,14 @@ describe "/quizzes/quizzes/new" do
     end
 
     it 'has a published inditactor when the quiz is published' do
-      @quiz.stubs(:published?).returns true
+      allow(@quiz).to receive(:published?).and_return true
       render 'quizzes/quizzes/new'
       expect(response.inspect).to include("Published")
       expect(response.inspect).not_to include("Not Published")
     end
 
     it 'has a not_published indicator when the quiz is not published' do
-      @quiz.stubs(:published?).returns false
+      allow(@quiz).to receive(:published?).and_return false
       render 'quizzes/quizzes/new'
       expect(response.inspect).to include("Not Published")
     end

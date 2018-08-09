@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module CustomWaitMethods
   def wait_for_dom_ready
     result = driver.execute_async_script(<<-JS)
@@ -45,9 +62,6 @@ module CustomWaitMethods
         });
       }
     JS
-    if result == -2
-      raise "Timed out waiting for ajax requests to finish. (This might mean there was a js error in an ajax callback.)"
-    end
     result
   end
 
@@ -72,6 +86,30 @@ module CustomWaitMethods
   def wait_for_ajaximations
     wait_for_ajax_requests
     wait_for_animations
+  end
+
+  def wait_for_children(selector)
+    has_children = false
+    while has_children == false
+      has_children = element_has_children?(selector)
+      wait_for_dom_ready
+    end
+  end
+
+  def wait_for_stale_element(selector, jquery_selector: false)
+    stale_element = true
+    while stale_element == true
+      begin
+        wait_for_dom_ready
+        if jquery_selector
+          fj(selector)
+        else
+          f(selector)
+        end
+      rescue Selenium::WebDriver::Error::NoSuchElementError
+        stale_element = false
+      end
+    end
   end
 
   def pause_ajax

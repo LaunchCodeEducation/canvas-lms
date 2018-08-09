@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
   'react',
   'jquery',
@@ -125,6 +143,43 @@ define([
     ok(
       c.isActiveBrandConfig(blankConfig.brand_config),
       'the default template is marked active when there is no active brand config'
+    )
+  })
+
+  test('showsTooltipOnCopiedThemes',  function () {
+    const twoSameConfigs = JSON.parse(JSON.stringify(props))
+    twoSameConfigs.sharedBrandConfigs.push({
+      account_id: 123,
+      name: 'Account-shared Theme Copy',
+      id: 124,
+      brand_config: {
+        md5: '00112233445566778899aabbccddeeff',
+      }
+    })
+    const twoDifferentConfigs = JSON.parse(JSON.stringify(props))
+    twoDifferentConfigs.sharedBrandConfigs.push({
+      account_id: 123,
+      name: 'Some Other Theme',
+      id: 125,
+      brand_config: {
+        md5: 'someotherhashstring'
+      }
+    })
+    const oneConfigCollection = new CollectionView(props)
+    const twoSameConfigsCollection = new CollectionView(twoSameConfigs)
+    const twoDifferentConfigsCollection = new CollectionView(twoDifferentConfigs)
+
+    ok(
+      twoSameConfigsCollection.multipleThemesReflectActiveOne(),
+      'true if multiple configs have the same hash value'
+    )
+    notOk(
+      oneConfigCollection.multipleThemesReflectActiveOne(),
+      'false if there is only one config'
+    )
+    notOk(
+      twoDifferentConfigsCollection.multipleThemesReflectActiveOne(),
+      'false when there are two configs with different hash values'
     )
   })
 

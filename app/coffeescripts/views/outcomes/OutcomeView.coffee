@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -21,14 +21,15 @@ define [
   'jsx/shared/helpers/numberHelper'
   'jquery'
   'underscore'
-  'compiled/views/outcomes/OutcomeContentBase'
-  'compiled/views/outcomes/CalculationMethodFormView'
+  './OutcomeContentBase'
+  './CalculationMethodFormView'
   'jst/outcomes/outcome'
   'jst/outcomes/outcomeForm'
   'jst/outcomes/_criterion' # for outcomeForm
+  'jsx/outcomes/ConfirmOutcomeEditModal'
   'jqueryui/dialog'
 ], (I18n, numberHelper, $, _, OutcomeContentBase, CalculationMethodFormView,
-  outcomeTemplate, outcomeFormTemplate, criterionTemplate) ->
+  outcomeTemplate, outcomeFormTemplate, criterionTemplate, confirmOutcomeEditModal) ->
 
   # For outcomes in the main content view.
   class OutcomeView extends OutcomeContentBase
@@ -58,6 +59,37 @@ define [
       @calculationMethodFormView = new CalculationMethodFormView({
         model: @model
       })
+      @originalConfirmableValues = @getFormData()
+
+    submit: (event) ->
+      event?.preventDefault()
+      newData = @getFormData()
+      confirmOutcomeEditModal.showConfirmOutcomeEdit(
+        changed: !_.isEqual(newData, @originalConfirmableValues)
+        assessed: @model.get('assessed')
+        hasUpdateableRubrics: @model.get('has_updateable_rubrics'),
+        modifiedFields: @getModifiedFields(newData)
+        onConfirm: (_confirmEvent) =>
+          super event # super == submit
+      )
+
+    getModifiedFields: (data) ->
+      return
+        masteryPoints: data.mastery_points != numberHelper.parse(@originalConfirmableValues.mastery_points)
+        scoringMethod: !@scoringMethodsEqual(data, @originalConfirmableValues)
+
+    scoringMethodsEqual: (lhs, rhs) ->
+      return false unless lhs.calculation_method == rhs.calculation_method
+      return true if lhs.calculation_method in ['highest', 'latest']
+      numberHelper.parse(lhs.calculation_int) == numberHelper.parse(rhs.calculation_int)
+
+    edit: (event) ->
+      super(event)
+      @originalConfirmableValues = @getFormData()
+      setTimeout (=>
+        # account for text editor possibly updating description
+        @originalConfirmableValues = @getFormData()
+      ), 50
 
     # overriding superclass
     getFormData: ->
@@ -182,18 +214,18 @@ define [
         else # show
           data['points_possible'] ||= 0
           data['mastery_points'] ||= 0
-          can_move = !@readOnly() && ENV.PERMISSIONS?.manage_outcomes
-          can_edit = can_move && @model.isNative() && @model.get('can_edit')
-          can_remove = can_move && @model.outcomeLink.can_unlink
+          can_manage = !@readOnly() && @model.canManage()
+          can_edit = can_manage && @model.isNative()
+          can_unlink = can_manage && @model.outcomeLink.can_unlink
 
           @$el.html outcomeTemplate _.extend data,
-            can_move: can_move,
+            can_manage: can_manage,
             can_edit: can_edit,
-            can_remove: can_remove,
+            can_unlink: can_unlink,
             setQuizMastery: @setQuizMastery,
             useForScoring: @useForScoring,
             isLargeRoster: ENV.IS_LARGE_ROSTER,
-            assessedInContext: @model.outcomeLink.assessed || (@model.isNative() && @model.get('assessed'))
+            assessedInContext: !@readOnly() && (@model.outcomeLink.assessed || (@model.isNative() && @model.get('assessed')))
 
       @$('input:first').focus()
       @screenreaderTitleFocus()

@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2011 Instructure, Inc.
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,17 +12,16 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
+
 // xsslint safeString.identifier frameHeight teaser
 
-define([
-  'compiled/editor/stocktiny',
-  'jquery',
-  'tinymce_plugins/instructure_equella/initializeEquella',
-  'jqueryui/dialog'
-], function(tinymce, $, initializeEquella) {
+import tinymce from 'compiled/editor/stocktiny'
+import $ from 'jquery'
+import initializeEquella from 'tinymce_plugins/instructure_equella/initializeEquella'
+import 'jqueryui/dialog'
 
   tinymce.create('tinymce.plugins.InstructureEquella', {
     init : function(ed, url) {
@@ -50,5 +49,3 @@ define([
 
   // Register plugin
   tinymce.PluginManager.add('instructure_equella', tinymce.plugins.InstructureEquella);
-});
-

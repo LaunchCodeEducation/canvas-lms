@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -31,6 +31,7 @@ module Api::V1::Quiz
       ip_filter
       lock_at
       lockdown_browser_monitor_data
+      locked
       one_question_at_a_time
       one_time_results
       only_visible_to_overrides
@@ -63,23 +64,23 @@ module Api::V1::Quiz
     end
   end
 
-  def quiz_json(quiz, context, user, session, options={})
+  def quiz_json(quiz, context, user, session, options={}, serializer = nil)
     options.merge!(description_formatter: description_formatter(context, user)) unless options[:description_formatter]
     if accepts_jsonapi?
       Canvas::APIArraySerializer.new([quiz],
                          scope: user,
                          session: session,
                          root: :quizzes,
-                         each_serializer: Quizzes::QuizSerializer,
+                         each_serializer: Quizzes::QuizApiSerializer,
                          controller: self,
                          serializer_options: options).as_json
     else
-      Quizzes::QuizSerializer.new(quiz,
-                         scope: user,
-                         session: session,
-                         root: false,
-                         controller: self,
-                         serializer_options: options).as_json
+      (serializer || Quizzes::QuizSerializer).new(quiz,
+                                                  scope: user,
+                                                  session: session,
+                                                  root: false,
+                                                  controller: self,
+                                                  serializer_options: options).as_json
     end
   end
 

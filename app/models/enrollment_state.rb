@@ -1,5 +1,22 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 class EnrollmentState < ActiveRecord::Base
-  belongs_to :enrollment
+  belongs_to :enrollment, inverse_of: :enrollment_state
 
   attr_accessor :skip_touch_user, :user_needs_touch, :is_direct_recalculation
   validates_presence_of :enrollment_id
@@ -60,7 +77,7 @@ class EnrollmentState < ActiveRecord::Base
   end
 
   def pending?
-    %w{pending_active pending_invited}.include?(self.state)
+    %w{pending_active pending_invited creation_pending}.include?(self.state)
   end
 
   def recalculate_state
@@ -91,7 +108,9 @@ class EnrollmentState < ActiveRecord::Base
       # this will at least prevent cached unauthorization
       self.user_needs_touch = true
       unless self.skip_touch_user
-        self.enrollment.user.touch
+        self.class.connection.after_transaction_commit do
+          self.enrollment.user.touch
+        end
       end
     end
   end
@@ -139,10 +158,9 @@ class EnrollmentState < ActiveRecord::Base
   def recalculate_access
     if self.enrollment.view_restrictable?
       self.restricted_access =
-        case self.state
-        when 'pending_invited', 'pending_active'
+        if self.pending?
           self.enrollment.restrict_future_view?
-        when 'completed'
+        elsif self.state == 'completed'
           self.enrollment.restrict_past_view?
         else
           false
@@ -238,7 +256,10 @@ class EnrollmentState < ActiveRecord::Base
     scope = scope.where(:type => enrollment_type) if enrollment_type
     scope.find_ids_in_ranges(:batch_size => ENROLLMENT_BATCH_SIZE) do |min_id, max_id|
       if invalidate_states(scope.where(:id => min_id..max_id)) > 0
-        EnrollmentState.send_later_if_production_enqueue_args(:process_term_states_in_ranges, {:priority => Delayed::LOW_PRIORITY}, min_id, max_id, term, enrollment_type)
+        EnrollmentState.send_later_if_production_enqueue_args(:process_term_states_in_ranges, {
+          :priority => Delayed::LOW_PRIORITY,
+          :n_strand => ['invalidate_states_for_term', term.global_root_account_id]
+        }, min_id, max_id, term, enrollment_type)
       end
     end
   end

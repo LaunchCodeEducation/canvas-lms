@@ -1,16 +1,34 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
+import PropTypes from 'prop-types'
 import _ from 'underscore'
 import $ from 'jquery'
-import Button from 'instructure-ui/lib/components/Button'
+import Button from '@instructure/ui-buttons/lib/components/Button'
 import I18n from 'i18n!grading_periods'
-import ConvertCase from 'convert_case'
-import GradingPeriodSet from 'jsx/grading/GradingPeriodSet'
-import SearchGradingPeriodsField from 'jsx/grading/SearchGradingPeriodsField'
-import SearchHelpers from 'jsx/shared/helpers/searchHelpers'
-import DateHelper from 'jsx/shared/helpers/dateHelper'
-import EnrollmentTermsDropdown from 'jsx/grading/EnrollmentTermsDropdown'
-import NewGradingPeriodSetForm from 'jsx/grading/NewGradingPeriodSetForm'
-import EditGradingPeriodSetForm from 'jsx/grading/EditGradingPeriodSetForm'
+import GradingPeriodSet from '../grading/GradingPeriodSet'
+import SearchGradingPeriodsField from '../grading/SearchGradingPeriodsField'
+import SearchHelpers from '../shared/helpers/searchHelpers'
+import DateHelper from '../shared/helpers/dateHelper'
+import EnrollmentTermsDropdown from '../grading/EnrollmentTermsDropdown'
+import NewGradingPeriodSetForm from '../grading/NewGradingPeriodSetForm'
+import EditGradingPeriodSetForm from '../grading/EditGradingPeriodSetForm'
 import SetsApi from 'compiled/api/gradingPeriodSetsApi'
 import TermsApi from 'compiled/api/enrollmentTermsApi'
 import 'jquery.instructure_misc_plugins'
@@ -37,7 +55,7 @@ import 'jquery.instructure_misc_plugins'
     return "edit-grading-period-set-" + set.id;
   };
 
-  const { bool, string, shape } = React.PropTypes;
+  const { bool, string, shape } = PropTypes;
 
   let GradingPeriodSetCollection = React.createClass({
     propTypes: {
@@ -201,7 +219,8 @@ import 'jquery.instructure_misc_plugins'
           }, {count: numSets}
         );
       }
-      $.screenReaderFlashMessageExclusive(msg);
+      const polite = true;
+      $.screenReaderFlashMessageExclusive(msg, polite);
     },
 
     getVisibleSets() {

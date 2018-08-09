@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -38,7 +38,7 @@ describe DiscussionEntry do
 
     it "should not subscribe the author on create outside of the #subscribe_author method" do
       discussion_topic_participant = topic.discussion_topic_participants.create!(user: @teacher, subscribed: false)
-      DiscussionEntry.any_instance.stubs(subscribe_author: true)
+      allow_any_instance_of(DiscussionEntry).to receive_messages(subscribe_author: true)
       entry
       expect(discussion_topic_participant.reload.subscribed).to be_falsey
     end
@@ -286,7 +286,7 @@ describe DiscussionEntry do
 
     describe "#destroy" do
       it "should call decrement_unread_counts_for_this_entry" do
-        @entry_4.expects(:decrement_unread_counts_for_this_entry)
+        expect(@entry_4).to receive(:decrement_unread_counts_for_this_entry)
         @entry_4.destroy
       end
     end
@@ -409,7 +409,7 @@ describe DiscussionEntry do
     end
 
     it "should use unique_constaint_retry when updating read state" do
-      DiscussionEntry.expects(:unique_constraint_retry).once
+      expect(DiscussionEntry).to receive(:unique_constraint_retry).once
       @entry.change_read_state("read", @student)
     end
   end
@@ -583,6 +583,27 @@ describe DiscussionEntry do
       @entry.reply_from(:user => @teacher, :text => "reply") # should not raise error
       student_in_course(:course => @course)
       expect { @entry.reply_from(:user => @student, :text => "reply") }.to raise_error(IncomingMail::Errors::ReplyToLockedTopic)
+    end
+  end
+
+  context 'stream items' do
+    before(:once) do
+      course_with_student active_all: true
+      @empty_section = @course.course_sections.create!
+      @topic = @course.discussion_topics.build(:title => "topic")
+      @assignment = @course.assignments.build title: @topic.title,
+        submission_types: 'discussion_topic',
+        only_visible_to_overrides: true,
+        title: @topic.title
+      @assignment.assignment_overrides.build set: @empty_section
+      @assignment.saved_by = :discussion_topic
+      @topic.assignment = @assignment
+      @topic.save
+    end
+
+    it "doesn't make stream items for students that aren't assigned" do
+      entry = @topic.reply_from(user: @teacher, text: "...")
+      expect(@student.stream_item_instances).to be_empty
     end
   end
 end

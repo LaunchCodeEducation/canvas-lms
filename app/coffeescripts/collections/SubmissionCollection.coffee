@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,8 +17,8 @@
 #
 
 define [
-  'compiled/collections/PaginatedCollection'
-  'compiled/models/Submission'
+  '../collections/PaginatedCollection'
+  '../models/Submission'
 ], (PaginatedCollection, Submission) ->
 
   class SubmissionCollection extends PaginatedCollection

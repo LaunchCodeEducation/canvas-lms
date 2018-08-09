@@ -1,15 +1,32 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18n!editor'
   'jquery'
   'underscore'
   'str/htmlEscape'
-  'compiled/fn/preventDefault'
-  'compiled/views/DialogBaseView'
+  '../../fn/preventDefault'
+  '../DialogBaseView'
   'jst/tinymce/InsertUpdateImageView'
   'jsx/shared/rce/RceCommandShim'
-  'compiled/views/TreeBrowserView'
-  'compiled/views/RootFoldersFinder'
-  'compiled/views/FindFlickrImageView'
+  '../TreeBrowserView'
+  '../RootFoldersFinder'
+  '../FindFlickrImageView'
 ], (I18n, $, _, h, preventDefault, DialogBaseView, template, RceCommandShim, TreeBrowserView, RootFoldersFinder, FindFlickrImageView) ->
 
   class InsertUpdateImageView extends DialogBaseView
@@ -23,10 +40,12 @@ define [
       'change [name="image[src]"]' : 'onImageUrlChange'
       'tabsshow .imageSourceTabs': 'onTabsshow'
       'dblclick .flickrImageResult, .treeFile' : 'onFileLinkDblclick'
+      'change [name="image[data-decorative]"]': 'onDecorativeChange'
 
     dialogOptions:
       width: 625
       title: I18n.t 'titles.insert_edit_image', 'Insert / Edit Image'
+      destroy: true
 
     toJSON: () ->
       {show_quiz_warning: ENV.SHOW_QUIZ_ALT_TEXT_WARNING}
@@ -47,6 +66,7 @@ define [
           alt: @$selectedNode.attr('alt')
           width: @$selectedNode.width()
           height: @$selectedNode.height()
+          'data-decorative': @$selectedNode.attr('data-decorative')
 
     afterRender: ->
       @$('.imageSourceTabs').tabs()
@@ -96,7 +116,13 @@ define [
         newAttributes = _.defaults attributes,
           width: img.width
           height: img.height
-        @$("[name='image[#{key}]']").val(value) for key, value of newAttributes
+        for key, value of newAttributes
+          if (@$("[name='image[#{key}]']")).attr('type') == 'checkbox'
+            @$("[name='image[#{key}]']").attr('checked', !!value)
+          else
+            @$("[name='image[#{key}]']").val(value)
+        if newAttributes['data-decorative']
+          @$("[name='image[alt]']").attr('disabled', true)
         isValidImage = newAttributes.width && newAttributes.height
         @setAspectRatio()
         dfd.resolve newAttributes
@@ -116,6 +142,10 @@ define [
       for key in ['src',  'alt']
         val = @$("[name='image[#{key}]']").val()
         res[key] = val if val
+      if @$("[name='image[data-decorative]']").is(':checked')
+        res['alt'] = ''
+        res['data-decorative'] = true
+      res['data-mce-src'] = res.src
       res
 
     onFileLinkClick: (event) ->
@@ -137,6 +167,12 @@ define [
       @flickr_link = null
       @setSelectedImage src: $(event.currentTarget).val()
 
+    onDecorativeChange: (event) ->
+      if @$("[name='image[data-decorative]']").is(':checked')
+        @$("[name='image[alt]']").attr('disabled', true)
+      else
+        @$("[name='image[alt]']").removeAttr('disabled')
+
     close: ->
       super
       @restoreCaret()
@@ -152,6 +188,12 @@ define [
 
     update: =>
       @restoreCaret()
-      RceCommandShim.send(@$editor, 'insert_code', @generateImageHtml())
+      if @$selectedNode.is('img')
+        # Kill the alt/decorative props (but they get added back if needed)
+        @$selectedNode.removeAttr('alt')
+        @$selectedNode.removeAttr('data-decorative')
+        @$selectedNode.attr(@getAttributes())
+      else
+        RceCommandShim.send(@$editor, 'insert_code', @generateImageHtml())
       @editor.focus()
       @close()

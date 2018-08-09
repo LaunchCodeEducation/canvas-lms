@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -43,17 +43,24 @@ describe Canvas::Security do
         end
 
         it "should encode with configured encryption key" do
-          jwt = stub
-          jwt.expects(:sign).with(Canvas::Security.encryption_key, :HS256).returns("sometoken")
-          JSON::JWT.stubs(new: jwt)
+          jwt = double
+          expect(jwt).to receive(:sign).with(Canvas::Security.encryption_key, :HS256).and_return("sometoken")
+          allow(JSON::JWT).to receive_messages(new: jwt)
           Canvas::Security.create_jwt({ a: 1 })
         end
 
         it "should encode with the supplied key" do
-          jwt = stub
-          jwt.expects(:sign).with("mykey", :HS256).returns("sometoken")
-          JSON::JWT.stubs(new: jwt)
+          jwt = double
+          expect(jwt).to receive(:sign).with("mykey", :HS256).and_return("sometoken")
+          allow(JSON::JWT).to receive_messages(new: jwt)
           Canvas::Security.create_jwt({ a: 1 }, nil, "mykey")
+        end
+
+        it "should encode with supplied algorithm" do
+          jwt = double
+          expect(jwt).to receive(:sign).with("mykey", :HS512).and_return("sometoken")
+          allow(JSON::JWT).to receive_messages(new: jwt)
+          Canvas::Security.create_jwt({a: 1}, nil, "mykey", :HS512)
         end
       end
 
@@ -129,6 +136,12 @@ describe Canvas::Security do
         )
       end
 
+      it "allows 5 minutes of future clock skew" do
+        back_to_the_future_jwt = test_jwt(exp: 1.hour.from_now, nbf: 1.minutes.from_now, iat: 1.minutes.from_now)
+        body = Canvas::Security.decode_jwt(back_to_the_future_jwt, [ key ])
+        expect(body[:a]).to eq 1
+      end
+
       it "produces an InvalidToken error if string isn't a jwt (even if it looks like one)" do
         # this is an example token which base64_decodes to a thing that looks like a jwt because of the periods
         not_a_jwt = Canvas::Security.base64_decode("1050~LvwezC5Dd3ZK9CR1lusJTRv24dN0263txia3KF3mU6pDjOv5PaoX8Jv4ikdcvoiy")
@@ -197,6 +210,18 @@ describe Canvas::Security do
         expect(Canvas::Security.time_until_login_allowed(@p, '5.5.5.6')).to eq 0
         expect(Canvas::Security.time_until_login_allowed(@p, '5.5.5.5')).to be <= 5
       end
+    end
+  end
+
+  describe '.config' do
+    before { described_class.instance_variable_set(:@config, nil) }
+    after  { described_class.instance_variable_set(:@config, nil) }
+
+    it 'loads config as erb from config/security.yml' do
+      config = "test:\n  encryption_key: <%= ENV['ENCRYPTION_KEY'] %>"
+      expect(File).to receive(:read).with(Rails.root + 'config/security.yml').and_return(config)
+      expect(ENV).to receive(:[]).with('ENCRYPTION_KEY').and_return('secret')
+      expect(Canvas::Security.config).to eq('encryption_key' => 'secret')
     end
   end
 end

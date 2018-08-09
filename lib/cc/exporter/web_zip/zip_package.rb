@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module CC::Exporter::WebZip
   class ZipPackage < CC::Exporter::Epub::FilesDirectory
 
@@ -206,6 +223,7 @@ module CC::Exporter::WebZip
     end
 
     def parse_module_data
+      active_module_ids = Set.new(course.context_modules.active.map(&:id))
       course.context_modules.active.map do |mod|
         unlock_date = force_timezone(mod.unlock_at) if mod.unlock_at &.> Time.now
         {
@@ -213,7 +231,7 @@ module CC::Exporter::WebZip
           name: mod.name,
           status: user_module_status(mod),
           unlockDate: unlock_date,
-          prereqs: mod.prerequisites.map{|pre| pre[:id]},
+          prereqs: mod.prerequisites.map{|pre| pre[:id]}.select{|id| active_module_ids.include?(id)},
           requirement: requirement_type(mod),
           sequential: mod.require_sequential_progress || false,
           exportId: CC::CCHelper.create_key(mod),
@@ -421,8 +439,8 @@ module CC::Exporter::WebZip
         if File.directory?(path)
           add_dir_to_zip(path, base_path)
         else
-          path_in_zip = path.sub(base_path, '')
-          zip_file.add("#{@filename_prefix}/#{path_in_zip}", path)
+          path_in_zip = Pathname(path).relative_path_from(Pathname(base_path))
+          zip_file.add(File.join(@filename_prefix, path_in_zip), path)
         end
       end
     end

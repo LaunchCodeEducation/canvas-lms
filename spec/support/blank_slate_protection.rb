@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative "./call_stack_utils"
 
 module BlankSlateProtection
@@ -15,8 +32,7 @@ module BlankSlateProtection
         $stderr.puts "about performance, use `:once`. `:all` hooks are dangerous because"
         $stderr.puts "they can leave around garbage that affects later specs"
       else
-        $stderr.puts "\e[31mError: Don't create records outside the rspec lifecycle!"
-        $stderr.puts "See: " + location + "\e[0m"
+        $stderr.puts "\e[31mError: Don't create records outside the rspec lifecycle! See: " + location + "\e[0m"
         $stderr.puts
         $stderr.puts "\e[33mTIP:\e[0m move this into a `before`, `let` or `it`. Otherwise it will exist"
         $stderr.puts "before *any* specs start, and possibly be deleted/modified before the"
@@ -40,6 +56,7 @@ module BlankSlateProtection
     r_spec_helper
     add_onceler_hooks
     recreate_persistent_test_shards
+    ensure_built_in_roles
   ].freeze
 
   class << self

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -93,7 +93,7 @@ class Progress < ActiveRecord::Base
       @progress.start
       super
       @progress.reload
-      @progress.complete
+      @progress.complete if @progress.running?
     end
 
     def on_permanent_failure(error)

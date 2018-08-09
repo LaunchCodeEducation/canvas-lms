@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -65,7 +65,7 @@ describe "student interactions links" do
   end
 
   it "should recalculate grades on the first page load" do
-    Enrollment.expects(:recompute_final_score).twice # once for the course, once for the student ('s course)
+    expect(Enrollment).to receive(:recompute_final_score).twice # once for the course, once for the student ('s course)
     enable_cache do
       get "/users/#{@teacher.id}/teacher_activity/course/#{@course.id}"
       expect(response).to be_success

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -114,7 +114,7 @@ class NotificationPolicy < ActiveRecord::Base
     end
     # Load and return user's policies after defaults may or may not have been set.
     # TODO: Don't load policies for retired channels
-    NotificationPolicy.preload(:notification).for(user)
+    user.shard.activate { NotificationPolicy.preload(:notification).for(user) }
   end
 
   # Updates notification policies for a given category in a given communication channel

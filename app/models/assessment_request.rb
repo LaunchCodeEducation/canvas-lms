@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -26,17 +26,25 @@ class AssessmentRequest < ActiveRecord::Base
   belongs_to :assessor, :class_name => 'User'
   belongs_to :rubric_association
   has_many :submission_comments, -> { published }
-  has_many :ignores, as: :asset
+  has_many :ignores, dependent: :destroy, as: :asset
   belongs_to :rubric_assessment
   validates_presence_of :user_id, :asset_id, :asset_type, :workflow_state
 
   before_save :infer_uuid
+  after_save :delete_ignores
   has_a_broadcast_policy
 
   def infer_uuid
     self.uuid ||= CanvasSlug.generate_securish_uuid
   end
   protected :infer_uuid
+
+  def delete_ignores
+    if workflow_state == 'completed'
+      Ignore.where(asset: self, user: assessor).delete_all
+    end
+    true
+  end
 
   set_broadcast_policy do |p|
     p.dispatch :rubric_assessment_submission_reminder
@@ -99,6 +107,9 @@ class AssessmentRequest < ActiveRecord::Base
     self.rubric_assessment.assessor_name rescue ((self.assessor.name rescue nil) || t("#unknown", "Unknown"))
   end
 
+  def incomplete?
+    workflow_state == 'assigned'
+  end
 
   on_create_send_to_streams do
     self.assessor
@@ -126,10 +137,6 @@ class AssessmentRequest < ActiveRecord::Base
 
   def asset_user_name
     self.asset.user.name rescue t("#unknown", "Unknown")
-  end
-
-  def asset_context_name
-    (self.asset.context.name rescue self.asset.assignment.context.name) rescue t("#unknown", "Unknown")
   end
 
   def self.serialization_excludes; [:uuid]; end

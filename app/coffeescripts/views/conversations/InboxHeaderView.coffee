@@ -1,11 +1,28 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'jquery'
   'i18n!conversations'
   'underscore'
   'Backbone'
   'spin.js'
-  'compiled/views/conversations/CourseSelectionView'
-  'compiled/views/conversations/SearchView'
+  '../conversations/CourseSelectionView'
+  '../conversations/SearchView'
   'vendor/bootstrap/bootstrap-dropdown'
   'vendor/bootstrap-select/bootstrap-select'
 ], ($, I18n, _, {View}, Spinner, CourseSelectionView, SearchView) ->
@@ -18,7 +35,6 @@ define [
       '#reply-all-btn'   : '$replyAllBtn'
       '#archive-btn'     : '$archiveBtn'
       '#delete-btn'      : '$deleteBtn'
-      '#type-filter'     : '$typeFilter'
       '#course-filter'   : '$courseFilter'
       '#admin-btn'       : '$adminBtn'
       '#mark-unread-btn' : '$markUnreadBtn'
@@ -39,8 +55,7 @@ define [
       'click #reply-all-btn':     'onReplyAll'
       'click #archive-btn':       'onArchive'
       'click #delete-btn':        'onDelete'
-      'change #type-filter':      'onFilterChange'
-      'change #course-filter':    'onFilterChange'
+      'change #course-filter':    'changeCourseFilter'
       'click #mark-unread-btn':   'onMarkUnread'
       'click #mark-read-btn':   'onMarkRead'
       'click #forward-btn':       'onForward'
@@ -65,7 +80,6 @@ define [
 
     render: () ->
       super()
-      @$typeFilter.selectpicker()
       @courseView = new CourseSelectionView(el: @$courseFilter, courses: @options.courses)
       @searchView = new SearchView(el: @$search)
       @searchView.on('search', @onSearch)
@@ -74,17 +88,19 @@ define [
       @toggleSending(false)
       @updateFilterLabels()
 
+      @courseFilterValue = @$courseFilter.val()
+
     onSearch:      (tokens) => @trigger('search', tokens)
 
     onCompose:     (e) -> @trigger('compose')
 
-    onReply:       (e) -> @trigger('reply')
+    onReply:       (e) -> @trigger('reply', null, '#reply-btn')
 
-    onReplyAll:    (e) -> @trigger('reply-all')
+    onReplyAll:    (e) -> @trigger('reply-all', null, '#reply-all-btn')
 
-    onArchive:     (e) -> @trigger('archive')
+    onArchive:     (e) -> @trigger('archive', '#compose-btn', '#archive-btn')
 
-    onDelete:      (e) -> @trigger('delete')
+    onDelete:      (e) -> @trigger('delete', '#compose-btn', '#delete-btn')
 
     onMarkUnread: (e) ->
       e.preventDefault()
@@ -96,7 +112,7 @@ define [
 
     onForward: (e) ->
       e.preventDefault()
-      @trigger('forward')
+      @trigger('forward', null, '#admin-btn')
 
     onStarToggle: (e) ->
       e.preventDefault()
@@ -153,9 +169,23 @@ define [
 
     filterObj: (obj) -> _.object(_.filter(_.pairs(obj), (x) -> !!x[1]))
 
+    changeTypeFilter: (type) ->
+      @typeFilter = type
+      @onFilterChange()
+
+    changeCourseFilter: () ->
+      # This is getting called not just when the course filter gets changed,
+      # but also when the url changes at all. This if statements limits
+      # the onFilterChange to only be called if the filter was actually
+      # changed.
+      if @courseFilterValue != @$courseFilter.val()
+        @courseFilterValue = @$courseFilter.val()
+        @onFilterChange()
+
+
     onFilterChange: (e) =>
       @searchView?.autocompleteView.setContext(@courseView.getCurrentContext())
-      if @$typeFilter.val() == 'submission_comments'
+      if @typeFilter == 'submission_comments'
         @$search.show()
         @$conversationActions.hide()
         @$submissionCommentActions.show()
@@ -163,17 +193,14 @@ define [
         @$search.show()
         @$conversationActions.show()
         @$submissionCommentActions.hide()
-      @trigger('filter', @filterObj({type: @$typeFilter.val(), course: @$courseFilter.val()}))
+      @trigger('filter', @filterObj({type: @typeFilter, course: @courseFilterValue}))
       @updateFilterLabels()
 
     updateFilterLabels: ->
-      @$typeFilterSelectionLabel = $("##{@$typeFilter.attr('aria-labelledby')}").find('.current-selection-label') unless @$typeFilterSelectionLabel?.length
       @$courseFilterSelectionLabel = $("##{@$courseFilter.attr('aria-labelledby')}").find('.current-selection-label') unless @$courseFilterSelectionLabel?.length
-      @$typeFilterSelectionLabel.text(@$typeFilter.find(':selected').text())
       @$courseFilterSelectionLabel.text(@$courseFilter.find(':selected').text())
 
     displayState: (state) ->
-      @$typeFilter.selectpicker('val', state.type)
       @courseView.setValue(state.course)
       @trigger('course', @courseView.getCurrentContext())
 

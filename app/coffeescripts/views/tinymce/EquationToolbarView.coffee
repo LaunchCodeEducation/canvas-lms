@@ -1,10 +1,27 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
-  'i18n!editor'
   'jquery'
   'Backbone'
   'jst/tinymce/EquationToolbarView'
+  'mathml'
   'mathquill'
-], (I18n, $, Backbone, template) ->
+], ($, Backbone, template, mathml) ->
 
   class EquationToolbarView extends Backbone.View
 
@@ -43,7 +60,7 @@ define [
         
       $('#mathjax-view .mathquill-tab-bar li:first-child').addClass('mathquill-tab-selected')
 
-      $.getScript("//cdnjs.cloudflare.com/ajax/libs/mathjax/2.1/MathJax.js?config=TeX-AMS_HTML.js", @addMathJaxEvents)
+      mathml.loadMathJax('TeX-AMS_HTML.js', @addMathJaxEvents)
 
     addMathJaxEvents: =>
       renderPreview = ->

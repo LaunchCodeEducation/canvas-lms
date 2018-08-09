@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2014 Instructure, Inc.
+# Copyright (C) 2015 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -24,7 +24,7 @@ class Login::CasController < ApplicationController
   protect_from_forgery except: :destroy, with: :exception
 
   before_action :forbid_on_files_domain
-  before_action :run_login_hooks, :check_sa_delegated_cookie, :fix_ms_office_redirects, only: :new
+  before_action :run_login_hooks, :fix_ms_office_redirects, only: :new
 
   delegate :client, to: :aac
 
@@ -64,7 +64,6 @@ class Login::CasController < ApplicationController
         @domain_root_account.pseudonym_sessions.create!(pseudonym, false)
         session[:cas_session] = params[:ticket]
         session[:login_aac] = aac.id
-        pseudonym.claim_cas_ticket(params[:ticket])
 
         successful_login(pseudonym.user, pseudonym)
       else
@@ -106,6 +105,6 @@ class Login::CasController < ApplicationController
   end
 
   def cas_login_url
-    url_for({ controller: 'login/cas', action: :new }.merge(params.slice(:id)))
+    url_for({ controller: 'login/cas', action: :new }.merge(params.permit(:id).to_unsafe_h))
   end
 end

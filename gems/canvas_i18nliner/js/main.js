@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2014 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 var I18nliner = require("i18nliner").default;
 var Commands = I18nliner.Commands;
 var Check = Commands.Check;
@@ -73,6 +91,11 @@ module.exports = {
   I18nliner: I18nliner,
   runCommand: function(argv) {
     argv = require('minimist')(argv);
+    // the unlink/symlink uglieness is a temporary hack to get around our circular
+    // symlinks. we should just remove the symlinks
+    fs.unlinkSync('./public/javascripts/symlink_to_node_modules')
     Commands.run(argv._[0], argv) || process.exit(1);
+    fs.symlinkSync('../../node_modules', './public/javascripts/symlink_to_node_modules')
+
   }
 };

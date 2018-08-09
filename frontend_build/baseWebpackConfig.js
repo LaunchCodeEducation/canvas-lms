@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 if (!process.env.NODE_ENV) process.env.NODE_ENV = 'development'
 
 const glob = require('glob')
@@ -14,19 +32,11 @@ const WebpackHooks = require('./webpackHooks')
 const webpackPublicPath = require('./webpackPublicPath')
 const WebpackCleanupPlugin = require('webpack-cleanup-plugin')
 const HappyPack = require('happypack')
+const momentLocaleBundles = require('./momentBundles')
 require('babel-polyfill')
 
 const root = path.resolve(__dirname, '..')
 const USE_BABEL_CACHE = process.env.NODE_ENV !== 'production' && process.env.DISABLE_HAPPYPACK === '1'
-
-const momentLocaleBundles = glob.sync('moment/locale/**/*.js', {cwd: 'node_modules'}).reduce((memo, filename) =>
-  Object.assign(memo, {[filename.replace(/.js$/, '')]: filename})
-, {})
-
-// Put any custom moment locales here:
-momentLocaleBundles['moment/locale/mi-nz'] = 'custom_moment_locales/mi_nz.js'
-momentLocaleBundles['moment/locale/ht-ht'] = 'custom_moment_locales/ht_ht.js'
-
 
 const happypackPlugins = []
 const getHappyThreadPool = (() => {
@@ -61,8 +71,11 @@ module.exports = {
   // In prod build, don't attempt to continue if there are any errors.
   bail: process.env.NODE_ENV === 'production',
 
-  // This makes the bundle appear split into separate modules in the devtools in dev/test.
-  devtool: process.env.NODE_ENV === 'production' ? undefined : 'eval',
+  // In production, and when not using JS_BUILD_NO_UGLIFY, generate separate sourcemap files.
+  // In development, generate `eval` sourcemaps.
+  devtool: process.env.NODE_ENV === 'production' ?
+    (process.env.JS_BUILD_NO_UGLIFY ? undefined : 'source-map')
+    : ((process.env.COVERAGE || process.env.SENTRY_DSN) ? 'source-map' : 'eval'),
 
   entry: Object.assign({
     vendor: require('./modulesToIncludeInVendorBundle'),
@@ -70,6 +83,11 @@ module.exports = {
   }, bundleEntries, momentLocaleBundles),
 
   output: {
+    // NOTE: hashSalt was added when HashedModuleIdsPlugin was installed, since
+    // chunkhashes are insensitive to moduleid changes. It should be changed again
+    // if this plugin is reconfigured or removed, or if there is another reason to
+    // prevent previously cached assets from being mixed with those from the new build
+    hashSalt: '2018-01-29',
     path: path.join(__dirname, '../public', webpackPublicPath),
 
     // Add /* filename */ comments to generated require()s in the output.
@@ -90,11 +108,6 @@ module.exports = {
       d3: 'd3/d3',
       'node_modules-version-of-backbone': require.resolve('backbone'),
       'node_modules-version-of-react-modal': require.resolve('react-modal'),
-
-      // don't let people import these top-level modules, because then you
-      // get :allthethings: ... you need to import particular components
-      'instructure-icons$': 'invalid',
-      'instructure-ui$': 'invalid',
 
       backbone: 'Backbone',
       timezone$: 'timezone_core',
@@ -124,8 +137,10 @@ module.exports = {
     // The files are expected to have no call to require, define or similar.
     // They are allowed to use exports and module.exports.
     noParse: [
+      /node_modules\/jquery\//,
       /vendor\/md5/,
       /tinymce\/tinymce/, // has 'require' and 'define' but they are from it's own internal closure
+      /i18nliner\/dist\/lib\/i18nliner/ // i18nLiner has a `require('fs')` that it doesn't actually need, ignore it.
     ],
     rules: [
       // to get tinymce to work. see: https://github.com/tinymce/tinymce/issues/2836
@@ -142,17 +157,20 @@ module.exports = {
       },
 
       {
-        test: /vendor\/i18n/,
-        loaders: ['exports-loader?I18n']
-      },
-      {
         test: /\.js$/,
         include: [
+          path.resolve(__dirname, '../public/javascripts'),
           path.resolve(__dirname, '../app/jsx'),
+          path.resolve(__dirname, '../app/coffeescripts'),
           path.resolve(__dirname, '../spec/javascripts/jsx'),
+          path.resolve(__dirname, '../spec/coffeescripts'),
           /gems\/plugins\/.*\/app\/jsx\//
         ],
-        loaders: happify('jsx', [
+        exclude: [
+          path.resolve(__dirname, '../public/javascripts/translations'),
+          /bower\//,
+        ],
+        loaders: happify('babel', [
           `babel-loader?cacheDirectory=${USE_BABEL_CACHE}`
         ])
       },
@@ -197,34 +215,35 @@ module.exports = {
         loader: 'json-loader'
       },
       {
-        test: require.resolve('../public/javascripts/vendor/jquery-1.7.2'),
-        loader: 'exports-loader?window.jQuery'
-      },
-      {
-        test: /vendor\/md5/,
-        loader: 'exports-loader?CryptoJS'
-      },
-      {
         test: /\.css$/,
-        loader: 'style-loader!css-loader'
+        use: ['style-loader', 'css-loader']
+      },
+      {
+        test: /\.(png|svg|gif)$/,
+        loader: 'file-loader'
       }
     ]
   },
 
   plugins: [
 
-    // A lot of our files expect a global `I18n` variable, this will provide it if it is used
-    new webpack.ProvidePlugin({I18n: 'vendor/i18n'}),
+    // return a non-zero exit code if there are any warnings so we don't continue compiling assets if webpack fails
+    function () {
+      this.plugin('done', ({compilation}) => {
+        if (compilation.warnings && compilation.warnings.length) {
+          console.error(compilation.warnings)
+          throw new Error('webpack build had warnings. Failing.')
+        }
+      })
+    },
 
     // sets these environment variables in compiled code.
     // process.env.NODE_ENV will make it so react and others are much smaller and don't run their
     // debug/propType checking in prod.
-    new webpack.DefinePlugin({
-      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
-    }),
+    new webpack.EnvironmentPlugin(['NODE_ENV']),
 
     new WebpackCleanupPlugin({
-      exclude: ["selinimum-manifest.json"]
+      exclude: ['selinimum-manifest.json']
     }),
 
     // handles our custom i18n stuff
@@ -242,6 +261,14 @@ module.exports = {
 
     new WebpackHooks(),
 
+    // avoids warnings caused by
+    // https://github.com/graphql/graphql-language-service/issues/111, should
+    // be removed when that issue is fixed
+    new webpack.IgnorePlugin(/\.flow$/),
+
+    new webpack.HashedModuleIdsPlugin({
+      hashDigestLength: 10
+    })
   ]
   .concat(process.env.SELINIMUM_RUN || process.env.SELINIMUM_CAPTURE ? [
 
@@ -253,7 +280,7 @@ module.exports = {
 
     // don't include any of the moment locales in the common bundle (otherwise it is huge!)
     // we load them explicitly onto the page in include_js_bundles from rails.
-    new webpack.IgnorePlugin(/^\.\/locale$/, /^moment$/),
+    new webpack.IgnorePlugin(/^\.\/locale$/, /moment$/),
 
     // outputs a json file so Rails knows which hash fingerprints to add to each script url
     new ManifestPlugin({fileName: 'webpack-manifest.json'}),

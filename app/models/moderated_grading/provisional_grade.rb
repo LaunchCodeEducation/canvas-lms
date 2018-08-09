@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 class ModeratedGrading::ProvisionalGrade < ActiveRecord::Base
   include Canvas::GradeValidations
 
@@ -28,7 +45,7 @@ class ModeratedGrading::ProvisionalGrade < ActiveRecord::Base
   scope :not_final, -> { where(:final => false)}
 
   def must_be_final_or_student_in_need_of_provisional_grade
-    if !self.final && !self.submission.assignment.student_needs_provisional_grade?(self.submission.user)
+    if !self.final && !self.submission.assignment.can_be_moderated_grader?(self.scorer)
       raise(Assignment::GradeError, "Student already has the maximum number of provisional grades")
     end
   end
@@ -58,9 +75,17 @@ class ModeratedGrading::ProvisionalGrade < ActiveRecord::Base
   end
 
   def grade_attributes
-    self.as_json(:only => [:grade, :score, :graded_at, :scorer_id, :final, :graded_anonymously],
-                 :methods => [:provisional_grade_id, :grade_matches_current_submission],
+    self.as_json(:only => ModeratedGrading::GRADE_ATTRIBUTES_ONLY,
+                 :methods => [:provisional_grade_id, :grade_matches_current_submission, :entered_score, :entered_grade],
                  :include_root => false)
+  end
+
+  def entered_score
+    score
+  end
+
+  def entered_grade
+    grade
   end
 
   def grade_matches_current_submission
@@ -84,6 +109,7 @@ class ModeratedGrading::ProvisionalGrade < ActiveRecord::Base
   end
 
   def publish!
+    submission.grade_posting_in_progress = true
     previously_graded = submission.grade.present? || submission.excused?
     submission.grade = grade
     submission.score = score
@@ -94,6 +120,8 @@ class ModeratedGrading::ProvisionalGrade < ActiveRecord::Base
     previously_graded ? submission.with_versioning(:explicit => true) { submission.save! } : submission.save!
     publish_submission_comments!
     publish_rubric_assessments!
+  ensure
+    submission.grade_posting_in_progress = false
   end
 
   def copy_to_final_mark!(scorer)
@@ -117,13 +145,20 @@ class ModeratedGrading::ProvisionalGrade < ActiveRecord::Base
     final_mark
   end
 
-  def crocodoc_attachment_info(user, attachment)
+  def attachment_info(user, attachment)
     annotators = [submission.user, scorer]
     annotators << source_provisional_grade.scorer if source_provisional_grade
+    url_opts = {
+      enable_annotations: true,
+      moderated_grading_whitelist: annotators.map { |u| u.moderated_grading_ids(true) }
+    }
+
     {
       :attachment_id => attachment.id,
       :crocodoc_url => attachment.crocodoc_available? &&
-                       attachment.crocodoc_url(user, annotators.map(&:crocodoc_id!))
+                       attachment.crocodoc_url(user, url_opts),
+      :canvadoc_url => attachment.canvadoc_available? &&
+                       attachment.canvadoc_url(user, url_opts)
     }
   end
 

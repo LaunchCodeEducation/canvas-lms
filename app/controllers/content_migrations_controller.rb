@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -143,7 +143,8 @@ class ContentMigrationsController < ApplicationController
 
     Folder.root_folders(@context) # ensure course root folder exists so file imports can run
 
-    @migrations = Api.paginate(@context.content_migrations.order("id DESC"), self, api_v1_course_content_migration_list_url(@context))
+    scope = @context.content_migrations.where(child_subscription_id: nil).order('id DESC')
+    @migrations = Api.paginate(scope, self, api_v1_course_content_migration_list_url(@context))
     @migrations.each{|mig| mig.check_for_pre_processing_timeout }
     content_migration_json_hash = content_migrations_json(@migrations, @current_user, session)
 
@@ -171,6 +172,10 @@ class ContentMigrationsController < ApplicationController
       js_env(:OLD_START_DATE => datetime_string(@context.start_at, :verbose))
       js_env(:OLD_END_DATE => datetime_string(@context.conclude_at, :verbose))
       js_env(:SHOW_SELECT => @current_user.manageable_courses.count <= 100)
+      js_env(:CONTENT_MIGRATIONS_EXPIRE_DAYS => ContentMigration.expire_days)
+      js_env(:QUIZZES_NEXT_CONFIGURED_ROOT => @context.root_account.feature_allowed?(:quizzes_next) &&
+             @context.root_account.feature_enabled?(:import_to_quizzes_next))
+      js_env(:QUIZZES_NEXT_ENABLED => @context.feature_enabled?(:quizzes_next) && @context.quiz_lti_tool.present?)
       set_tutorial_js_env
     end
   end
@@ -188,7 +193,7 @@ class ContentMigrationsController < ApplicationController
   def show
     @content_migration = @context.content_migrations.find(params[:id])
     @content_migration.check_for_pre_processing_timeout
-    render :json => content_migration_json(@content_migration, @current_user, session)
+    render :json => content_migration_json(@content_migration, @current_user, session, nil, params[:include])
   end
 
   def migration_plugin_supported?(plugin)
@@ -459,7 +464,7 @@ class ContentMigrationsController < ApplicationController
 
   def update_migration
     @content_migration.update_migration_settings(params[:settings]) if params[:settings]
-    date_shift_params = params[:date_shift_options] ? params[:date_shift_options].to_hash.with_indifferent_access : {}
+    date_shift_params = params[:date_shift_options] ? params[:date_shift_options].to_unsafe_h : {}
     @content_migration.set_date_shift_options(date_shift_params)
 
     params[:selective_import] = false if @plugin.settings && @plugin.settings[:no_selective_import]
@@ -472,7 +477,7 @@ class ContentMigrationsController < ApplicationController
         params[:do_not_run] = true
       end
     elsif params[:copy]
-      copy_options = ContentMigration.process_copy_params(params[:copy].to_hash.with_indifferent_access)
+      copy_options = ContentMigration.process_copy_params(params[:copy]&.to_unsafe_h)
       @content_migration.migration_settings[:migration_ids_to_import] ||= {}
       @content_migration.migration_settings[:migration_ids_to_import][:copy] = copy_options
       @content_migration.copy_options = copy_options
@@ -501,5 +506,4 @@ class ContentMigrationsController < ApplicationController
       render :json => @content_migration.errors, :status => :bad_request
     end
   end
-
 end

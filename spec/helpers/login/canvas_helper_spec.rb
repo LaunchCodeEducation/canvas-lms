@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -22,7 +22,7 @@ describe Login::CanvasHelper do
   describe "#session_timeout_enabled" do
     context "when the sessions plugin is enabled" do 
       before do 
-        PluginSetting.expects(:settings_for_plugin).with('sessions').returns({"session_timeout" => 123})
+        expect(PluginSetting).to receive(:settings_for_plugin).with('sessions').and_return({"session_timeout" => 123})
       end
 
       it "returns true" do
@@ -32,12 +32,31 @@ describe Login::CanvasHelper do
 
     context "when the sessions plugin is disabled" do 
       before do 
-        PluginSetting.expects(:settings_for_plugin).with('sessions').returns(nil)
+        expect(PluginSetting).to receive(:settings_for_plugin).with('sessions').and_return(nil)
       end
 
       it "returns false" do 
         expect(helper.session_timeout_enabled?).to be_falsey
       end
+    end
+  end
+
+  describe '#reg_link_data' do
+    before :once do
+      @domain_root_account = account_model
+    end
+
+    it 'returns the proper template when an auth type is present' do
+      expect(helper.reg_link_data('customAuth')[:template]).to eq 'customauthDialog'
+    end
+
+    it 'returns the proper template without an auth type' do
+      expect(helper.reg_link_data(nil)[:template]).to eq 'parentDialog'
+    end
+
+    it 'returns the proper template when the root account has pairing codes turned on' do
+      @domain_root_account.enable_feature!(:observer_pairing_code)
+      expect(helper.reg_link_data(nil)[:template]).to eq 'newParentDialog'
     end
   end
 end

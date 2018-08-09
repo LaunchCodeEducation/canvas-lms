@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -23,7 +23,6 @@ class CustomDataController < ApplicationController
   before_action :require_custom_data, :except => :set_data
 
   # @API Store custom data
-  # @beta
   # Store arbitrary user data as JSON.
   #
   # Arbitrary JSON data can be stored for a User.
@@ -206,7 +205,7 @@ class CustomDataController < ApplicationController
 
     data = params[:data]
     render(json: {message: 'no data specified'}, status: :bad_request) and return if data.nil?
-    data = data.to_hash.with_indifferent_access if data.is_a?(ActionController::Parameters)
+    data = data.to_unsafe_h if data.is_a?(ActionController::Parameters)
 
     begin
       overwrite = cd.set_data(@scope, data)
@@ -222,7 +221,6 @@ class CustomDataController < ApplicationController
   end
 
   # @API Load custom data
-  # @beta
   # Load custom user data.
   #
   # Arbitrary JSON data can be stored for a User.  This API call
@@ -261,7 +259,6 @@ class CustomDataController < ApplicationController
   end
 
   # @API Delete custom data
-  # @beta
   # Delete custom user data.
   #
   # Arbitrary JSON data can be stored for a User.  This API call

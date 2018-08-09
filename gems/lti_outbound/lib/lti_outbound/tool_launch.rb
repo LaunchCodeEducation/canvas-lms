@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -40,7 +40,6 @@ module LtiOutbound
       @consumer_instance = context.consumer_instance || raise('Consumer instance required for generating LTI content')
 
       @variable_expander = options[:variable_expander] || raise('VariableExpander is required for generating LTI content')
-
       @hash = {}
     end
 
@@ -51,6 +50,7 @@ module LtiOutbound
       hash['ext_ims_lis_basic_outcome_url'] = legacy_outcome_service_url
       hash['ext_outcome_data_values_accepted'] = assignment.return_types.join(',')
       hash['ext_outcome_result_total_score_accepted'] = true
+      hash['ext_outcome_submission_submitted_at_accepted'] = true
       hash['ext_outcomes_tool_placement_url'] = lti_turnitin_outcomes_placement_url
 
       add_assignment_substitutions!(assignment)

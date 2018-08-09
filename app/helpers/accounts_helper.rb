@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -44,5 +44,12 @@ module AccountsHelper
       [I18n.t('#turnitin_settings.originality_report_visible_after_due_date', "After the Due Date"), 'after_due_date'],
       [I18n.t('#turnitin_settings.originality_report_never', "Never"), 'never']
     ]
+  end
+
+  def dashboard_view_options(account)
+    [
+      [I18n.t('Card View'), 'cards'],
+      [I18n.t('Recent Activity'), 'activity'],
+    ].tap { |opts| opts << [I18n.t('List View'), 'planner'] if account.root_account.feature_enabled?(:student_planner)}
   end
 end

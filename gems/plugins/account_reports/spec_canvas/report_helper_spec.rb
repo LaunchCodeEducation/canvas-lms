@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 - 2014 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -30,18 +30,25 @@ end
 
 describe "report helper" do
   let(:account) { Account.default }
-  let(:account_report) { AccountReport.new(:report_type => 'test_report', :account => account) }
+  let(:user) { User.create }
+  let(:account_report) { AccountReport.new(report_type: 'test_report', account: account, user: user) }
   let(:report) { AccountReports::TestReport.new(account_report) }
 
   describe "#send_report" do
     before do
-      AccountReports.stubs(available_reports: {account_report.report_type => {title: 'test_report'}})
-      report.stubs(:report_title).returns('TitleReport')
+      allow(AccountReports).to receive(:available_reports).and_return(account_report.report_type => {title: 'test_report'})
+      allow(report).to receive(:report_title).and_return('TitleReport')
     end
 
     it "Should not break for nil parameters" do
-      AccountReports.expects(:message_recipient)
+      expect(AccountReports).to receive(:message_recipient)
       report.send_report
+    end
+
+    it "Should allow aborting" do
+      account_report.workflow_state = 'deleted'
+      account_report.save!
+      expect{report.write_report(['header']) { |csv| csv << 'hi' }}.to raise_error(/aborted/)
     end
   end
 
@@ -103,7 +110,7 @@ describe "report helper" do
       it 'should add course scope if course is set' do
         courses = Course.all
 
-        report.stubs(:course).returns(@course3)
+        allow(report).to receive(:course).and_return(@course3)
         courses = report.add_course_scope(courses)
         expect(courses.count(:all)).to eq(1)
       end
@@ -111,7 +118,7 @@ describe "report helper" do
       it 'should not add course scope if course is not set' do
         courses = Course.all
 
-        report.stubs(:course).returns(nil)
+        allow(report).to receive(:course).and_return(nil)
         courses = report.add_course_scope(courses)
         expect(courses.count(:all)).to eq(3)
       end
@@ -122,7 +129,7 @@ describe "report helper" do
       it 'should add term scope if term is set' do
         courses = Course.all
 
-        report.stubs(:term).returns(@enrollment_term)
+        allow(report).to receive(:term).and_return(@enrollment_term)
         courses = report.add_term_scope(courses)
         expect(courses.count(:all)).to eq(2)
       end
@@ -130,7 +137,7 @@ describe "report helper" do
       it 'should not add term scope if term is not set' do
         courses = Course.all
 
-        report.stubs(:term).returns(nil)
+        allow(report).to receive(:term).and_return(nil)
         courses = report.add_term_scope(courses)
         expect(courses.count(:all)).to eq(3)
       end

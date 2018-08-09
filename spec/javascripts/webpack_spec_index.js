@@ -1,8 +1,46 @@
-import 'vendor/ie11-polyfill.js'
-import ApplyTheme from 'instructure-ui/lib/components/ApplyTheme'
-import 'instructure-ui/lib/themes/canvas'
-import './support/sinon/sinon-qunit-1.0.0'
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
+import { canvas } from '@instructure/ui-themes/lib'
+import './support/sinon/sinon-qunit-1.0.0'
+import en_US from 'timezone/en_US'
+
+if (process.env.SENTRY_DSN) {
+  // This should allow us to capture more errors rather than just
+  // "Script error"
+  const Raven = require('raven-js')
+  Raven.config(process.env.SENTRY_DSN, {
+    release: process.env.GIT_COMMIT
+  }).install();
+
+  // QUnit is assumed global
+  QUnit.testStart(({module, name}) => {
+    Raven.setExtraContext(); // Clear all extra data from the context.
+    Raven.setExtraContext({
+      spec: `${module}: ${name}`
+    });
+  })
+}
+
+// Handle making sure we load in timezone data to prevent errors.
+(window.__PRELOADED_TIMEZONE_DATA__ || (window.__PRELOADED_TIMEZONE_DATA__ = {}))['en_US'] = en_US
+
+document.dir = 'ltr'
 const fixturesDiv = document.createElement('div')
 fixturesDiv.id = 'fixtures'
 document.body.appendChild(fixturesDiv)
@@ -10,27 +48,36 @@ document.body.appendChild(fixturesDiv)
 if (!window.ENV) window.ENV = {}
 
 // setup the inst-ui default theme
-if (ENV.use_high_contrast) {
-  ApplyTheme.setDefaultTheme('canvas-a11y')
+canvas.use()
+
+const requireAll = context => context.keys().map(context)
+
+if (process.env.JSPEC_PATH) {
+  let isFile = false
+  try {
+    isFile = __webpack_modules__[require.resolveWeak(`../../${process.env.JSPEC_PATH}`)]
+  } catch (e) {}
+  if (isFile) {
+    require(`../../${process.env.JSPEC_PATH}`)
+  } else {
+    requireAll(require.context(`../../${process.env.JSPEC_PATH}`))
+  }
 } else {
-  const brandvars = window.CANVAS_ACTIVE_BRAND_VARIABLES || {}
-  ApplyTheme.setDefaultTheme('canvas', brandvars)
-}
+  if (!process.env.JSPEC_GROUP || (process.env.JSPEC_GROUP === 'coffee')) {
+    // run specs for ember screenreader gradebook
+    requireAll(require.context('../../app/coffeescripts', !!'includeSubdirectories', /\.spec.coffee$/))
 
-function requireAll (requireContext) {
-  return requireContext.keys().map(requireContext);
-}
+    requireAll(require.context('../coffeescripts', !!'includeSubdirectories', /Spec.js$/))
+    requireAll(require.context('../coffeescripts', !!'includeSubdirectories', /Spec.coffee$/))
+  }
 
-if (__SPEC_FILE) {
-  require(__SPEC_FILE)
-} else if (__SPEC_DIR) {
-  requireAll(require.context(__SPEC_DIR, true, /Spec$/))
-} else {
-
-  // run specs for ember screenreader gradebook
-  requireAll(require.context('../../app/coffeescripts', true, /\.spec.coffee$/))
-
-  // run all the specs for the rest of canvas
-  requireAll(require.context('../coffeescripts', true, /Spec.coffee$/))
-  requireAll(require.context('./jsx', true, /Spec$/))
+  // Run the js tests in 2 different groups, half in each.
+  // In testing, the letter "q" was the midpoint. If one of these takes a lot
+  // longer than the other, we can adjust which letter of the alphabet we split on
+  if (!process.env.JSPEC_GROUP || (process.env.JSPEC_GROUP === 'js1')) {
+    requireAll(require.context('./jsx', !!'includeSubdirectories', /[a-q]Spec$/))
+  }
+  if (!process.env.JSPEC_GROUP || (process.env.JSPEC_GROUP === 'js2')) {
+    requireAll(require.context('./jsx', !!'includeSubdirectories', /[^a-q]Spec$/))
+  }
 }

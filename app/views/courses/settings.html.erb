@@ -1,4 +1,22 @@
 <%
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+%>
+
+<%
   content_for :page_title, join_title(t(:page_title, "Course Details"), @context.name)
   css_bundle :course_settings
   js_bundle :course_settings
@@ -14,10 +32,12 @@
   can_see_users = can_do(@context, @current_user, :read_roster, :manage_students, :manage_admin_users)
 
   is_master_course = MasterCourses::MasterTemplate.is_master_course?(@context)
+  blueprint_subscription = @context.master_course_subscriptions.active.first
+  master_course = blueprint_subscription&.master_template&.course
 %>
 
 <% content_for :right_side do %>
-  <%= render :partial => 'settings_sidebar' %>
+  <%= render :partial => 'settings_sidebar', :locals => { :blueprint_subscription => blueprint_subscription } %>
 <% end %>
 
 <h1 class="screenreader-only"><%= t 'course_settings_title', "Course Settings" %></h1>
@@ -32,7 +52,7 @@
       <li id="external_tools_tab"><a href="#tab-tools" id="tab-tools-link"><%= t('tabs.tools', %{Apps}) %></a></li>
     <% end %>
     <% if @publishing_enabled %>
-      <li id="grade_publishing_tab"><a href="#tab-grade-publishing" id="tab-grade-publishing-link"><%= t('tabs.grade_publishing', %{Grade Publishing}) %></a></li>
+      <li id="grade_publishing_tab"><a href="#tab-grade-publishing" id="tab-grade-publishing-link"><%= t('Grade Syncing') %></a></li>
     <% end %>
     <% if @context.root_account.settings[:enable_alerts] && can_do(@context, @current_user, :manage_interaction_alerts) %>
       <li id="alerts_tab"><a href="#tab-alerts" id="tab-alerts-link"><%= t('tabs.alerts', %{Alerts}) %></a></li>
@@ -53,13 +73,13 @@
         <% if @context.unpublishable? %>
           <span data-tooltip title="" id='course-status' class='published-status published pull-right'>
             <%= t('labels.course_status_published', %{Course is Published}) %>
-            <i class="icon-publish"></i>
+            <i class="icon-publish icon-Solid"></i>
           </span>
         <% else %>
           <% unpublish_tooltip = t('tooltips.cannot_unpublish_course', %{You cannot unpublish this course if there are graded student submissions}) %>
           <span data-tooltip title="<%= unpublish_tooltip %>" id='course-status' class='published-status published pull-right'>
             <%= t('labels.course_status_published', %{Course is Published}) %>
-            <i class="icon-publish"></i>
+            <i class="icon-publish icon-Solid"></i>
           </span>
         <% end %>
       <% end %>
@@ -104,17 +124,19 @@
       <tr>
         <td class="form-label nobr"><%= f.blabel :blueprint_course, :en => "Blueprint Course" %></td>
         <td class="nobr">
-          <% if can_manage_master_courses %>
-            <% mc_message = !is_master_course && why_cant_i_enable_master_course(@context) %>
-            <span <% if mc_message %>data-tooltip title="<%= mc_message %>"<% end %>>
-              <div class="ic-Form-control ic-Form-control--checkbox">
-                <%= f.check_box :blueprint, :checked => is_master_course, :disabled => !!mc_message %>
-                <%= f.label :blueprint, :class => 'ic-Label', :en => "Enable course as a Blueprint Course" %>
-              </div>
-            </span>
-            <%= render :partial => 'master_course_restrictions', :locals => {:form => f, :course => @context} %>
+          <% if master_course %>
+            <% if master_course.grants_right? @current_user, session, :read %>
+              <a href="<%= course_url(master_course) %>"><%= master_course.nickname_for(@current_user) %></a>
+            <% else %>
+              <%= master_course.nickname_for(@current_user) %>
+            <% end %>
+            (courses/<%= master_course.id %>)
           <% else %>
-            <span id="course_blueprint"><%= is_master_course ? t("Yes") : t("No") %></span>
+            <% if can_manage_master_courses %>
+              <div id="blueprint_menu"></div>
+            <% else %>
+              <span id="course_blueprint"><%= is_master_course ? t("Yes") : t("No") %></span>
+            <% end %>
           <% end %>
         </td>
       </tr>
@@ -132,11 +154,11 @@
             <% end %>
           <% end %>
         </td>
-      <% if @context.sis_source_id && can_do(@context, @current_user, :read_sis) || can_do(@context, @current_user, :manage_sis) %>
+      <% if @context.sis_source_id && can_do(@context, @current_user, :read_sis) || can_do(@context.root_account, @current_user, :manage_sis) %>
         </tr><tr>
           <td class="form-label"><%= f.blabel :sis_source_id, :en => "SIS ID" %></td>
           <td>
-            <% if can_manage && can_do(@context, @current_user, :manage_sis) %>
+            <% if can_manage && can_do(@context.root_account, @current_user, :manage_sis) %>
               <%= f.text_field :sis_source_id, :style => "width: 202px;", :title => t('sis_source_id', "SIS ID"), :value => @context.sis_source_id %>
             <% else %>
               <span id="course_sis_source_id">
@@ -158,8 +180,8 @@
             <% account_chain = @context.account.account_chain.reverse %>
             <% account_chain.each do |account| %>
               <% if can_do(account, @current_user, :manage_courses) %>
-                <% if account.root_account? && account.all_accounts.count > 500 %>
-                  <a href="<%= context_url(account, :context_sub_accounts_url, :format => :json) %>" id="course_account_id_url" style="display: none;">&nbsp;</a>
+                <% if account.root_account? && account.all_accounts.active.count > Setting.get('course_settings_sub_account_dropdown_limit', '500').to_i %>
+                  <a href="<%= context_url(account, :context_sub_accounts_url, :format => :json, :include_self => "1") %>" id="course_account_id_url" style="display: none;">&nbsp;</a>
                   <input type="hidden" name="course[account_id]" id="course_account_id" value="<%= @context.account_id %>"/>
                   <input type="text" name="account[name]" id="course_account_id_lookup" value="<%= @context.account.name %>" style="width: 150px;"/>
                 <% else %>
@@ -186,7 +208,7 @@
       </tr><tr>
         <td class="form-label"><%= f.blabel :enrollment_term_id, :en => "Term" %></td>
         <td>
-          <% if can_manage && can_do(@context.root_account, @current_user, :manage_courses) %>
+          <% if can_manage && can_do(@context.account, @current_user, :manage_courses) %>
             <select name="course[enrollment_term_id]" id="course_enrollment_term_id">
               <% @context.root_account.enrollment_terms.active.sort_by{|t| t.start_at || CanvasSort::First}.each do |term| %>
                 <option value="<%= term.id %>" <%= 'selected' if term.id == @context.enrollment_term_id %>><%= term.name %></option>
@@ -245,13 +267,10 @@
           <% no_language = t(:no_language_preference, "Not set (user-configurable, defaults to %{language})", :language => available_locales[infer_locale(:context => @context.account)]) %>
           <% if can_manage %>
             <div>
-              <%= f.select :locale, [[no_language, nil]] + available_locales.invert.sort, {:selected => @context.locale}, {:class => 'locale'} %>
+              <%= f.select :locale,
+                           [[no_language, nil]] + available_locales.invert.sort_by { |desc, _| Canvas::ICU.collation_key(desc) },
+                           {:selected => @context.locale}, {:class => 'locale'} %>
               <%= render :partial => 'shared/locale_warning' %>
-              <p> <%= mt :transifex_message, <<-TEXT, :transifex_url => "https://www.transifex.com/instructure/canvas-crowdsource/"
-  Join the [Canvas Translation Community](%{transifex_url})
-  TEXT
-              %>
-              </p>
             </div>
             <div class="aside palign">
               <%= t('language_overrides_preferences', "This will override any user/system language preferences. This is only recommended for foreign language courses") %>
@@ -288,7 +307,7 @@
         <td id="course_grading_scheme">
           <%= f.check_box :grading_standard_enabled, :class => "grading_standard_checkbox", :disabled => !can_manage %>
           <%= f.label :grading_standard_enabled, :en => "Enable course grading scheme" %>
-          <div class="grading_standard_link" style="margin-left: 20px;">
+          <div class="grading_standard_link" style="margin-<%= direction('left') %>: 20px;">
             <a href="#" class="edit_letter_grades_link"><%= @context.grading_standard_enabled? ? t('view_grading_scheme', "view grading scheme") : t('set_grading_scheme', "set grading scheme") %></a>
           </div>
         </td>
@@ -297,7 +316,7 @@
         <td class="form-label"><%= f.label :license, :en => "License" %></td>
         <td colspan="3">
           <% if can_manage %>
-            <% cc, non_cc = Course.licenses.map { |id, attrs| [attrs[:readable_license], id]}.partition{|n, id| id.start_with?('cc')} %>
+            <% cc, non_cc = Course.licenses.map { |id, attrs| [attrs[:readable_license].call, id]}.partition{|n, id| id.start_with?('cc')} %>
             <select name="course[license]" id="course_license">
               <%= options_for_select(non_cc, @context.license) %>
               <%= grouped_options_for_select([[t("Creative Commons Licenses"), cc]], @context.license) %>
@@ -403,8 +422,8 @@
               %>
             <% end %>
           </span>
-          <a href="#" class="course_form course_form_more_options_link" style="padding-left: 20px;"><%= t('links.more_options', %{more options}) %></a>
-          <div class="course_form_more_options" style="display: none; padding-left: 20px;">
+          <a href="#" role="button" class="course_form course_form_more_options_link" style="padding-<%= direction('left') %>: 20px;"><%= t('links.more_options', %{more options}) %></a>
+          <div class="course_form_more_options" style="display: none; padding-<%= direction('left') %>: 20px;">
             <% if @context.self_enrollment_allowed? %>
               <%= f.check_box :self_enrollment, :class => 'self_enrollment_checkbox', :disabled => !can_manage %>
               <label for="course_self_enrollment">
@@ -444,7 +463,7 @@
             <label for="course_default_wiki_editing_roles">
               <%= t(%{can create, rename, and edit course pages by default}) %>
             </label><br/>
-            <div class="changed_default_wiki_editing_roles" style="display: none; padding-left: 20px; font-size: 0.8em;">
+            <div class="changed_default_wiki_editing_roles" style="display: none; padding-<%= direction('left') %>: 20px; font-size: 0.8em;">
               <input type="checkbox" name="update_default_pages" id="update_default_pages"/>
               <label for="update_default_pages"><%= t 'wiki_editing_roles_change_existing', %{Change pages currently editable by "%{current_setting}" to "%{new_setting}".}, :current_setting => content_tag('span', @context.readable_default_wiki_editing_roles), :new_setting => content_tag('span', nbsp, :class => 'default_wiki_editing_roles_change') %></label>
             </div>
@@ -484,20 +503,40 @@
           <% end %>
           <span class="users_count">
             (
-              <%= t 'enrollment_count', 'User', :count => section.enrollments.not_fake.count %><% if section && section.sis_source_id %>,
+              <%= t 'enrollment_count', 'User', :count => section.enrollments.not_fake.where.not(:workflow_state => "rejected").count %><% if section && section.sis_source_id %>,
                 <%= t 'section_sis_id', 'SIS ID: %{section_sis}', :section_sis => section.sis_source_id %>
               <% end %>
             )
           </span>
           <span class="section_links">
             <% if can_do(section, @current_user, :update) && !section.defined_by_sis? %>
-              <a class="no-hover edit_section_link" title="<%= t('links.title.edit_section', %{Edit Section}) %>" href="<%= context_url(@context, :context_section_url, section) %>"><i class="icon-edit standalone-icon"></i><span class="screenreader-only"><%= t('images.alt.edit', %{Edit}) %></span></a>
+              <a class="Button Button--icon-action edit_section_link"
+                role="button"
+                title="<%= t('links.title.edit_section', %{Edit Section}) %>"
+                href="<%= context_url(@context, :context_section_url, section) %>">
+                <i class="icon-edit" aria-hidden="true"></i>
+                <span class="screenreader-only"><%= t('Edit Section "%{name}"', :name => section.name) %></span>
+              </a>
             <% end %>
             <% if can_do(section, @current_user, :delete) %>
               <% if section.deletable? %>
-                <a class="no-hover delete_section_link" title="<%= t('links.title.delete_section', %{Delete Section}) %>" href="<%= context_url(@context, :context_section_url, section) %>"><i class="icon-end standalone-icon"></i><span class="screenreader-only"><%= t('images.alt.delete', %{Delete}) %></span></a>
+                <a class="Button Button--icon-action delete_section_link"
+                  role="button"
+                  title="<%= t('links.title.delete_section', %{Delete Section}) %>"
+                  href="<%= context_url(@context, :context_section_url, section) %>">
+                  <i class="icon-end" aria-hidden="true"></i>
+                  <span class="screenreader-only">
+                    <%= t('Delete Section "%{name}"', :name => section.name) %>
+                  </span>
+                </a>
               <% else %>
-                <a class="no-hover cant_delete_section_link" href="#" title="<%= t('links.title.cant_delete', %{You can't delete sections that have users enrolled}) %>"><i class="icon-end standalone-icon"></i><span class="screenreader-only"><%= t('images.alt.delete', %{Delete}) %></span></a>
+                <a class="Button Button--icon-action cant_delete_section_link"
+                  role="button"
+                  href="#"
+                  title="<%= t('links.title.cant_delete', %{You can't delete sections that have users enrolled}) %>">
+                  <i class="icon-end" aria-hidden="true"></i>
+                  <span class="screenreader-only"><%= t('Delete Section "%{name}"', :name => section.name) %></span>
+                </a>
               <% end %>
             <% end %>
           </span>
@@ -507,8 +546,23 @@
       <li class="section_blank" style="display: none;">
         <a href="<%= context_url(@context, :context_section_url, "{{ id }}") %>" class="name"></a>
         <span class="section_links">
-          <a class="no-hover edit_section_link" href="<%= context_url(@context, :context_section_url, "{{ id }}") %>" title="<%= t('links.title.edit_section', %{Edit Section}) %>"><i class="icon-edit standalone-icon"></i><span class="screenreader-only"><%= t('images.alt.edit', %{Edit}) %></span></a>
-          <a class="delete_section_link" href="<%= context_url(@context, :context_section_url, "{{ id }}") %>" title="<%= t('links.title.delete_section', %{Delete Section}) %>" class="no-hover"><i class="icon-end standalone-icon"></i><span class="screenreader-only"><%= t('images.alt.delete', %{Delete}) %></span></a>
+          <a class="Button Button--icon-action no-hover edit_section_link"
+            role="button"
+            href="<%= context_url(@context, :context_section_url, "{{ id }}") %>"
+            title="<%= t('links.title.edit_section', %{Edit Section}) %>">
+              <i class="icon-edit" aria-hidden="true"></i>
+              <span class="screenreader-only">
+                <%= t('Edit Section "%{name}"', :name => "%%name%%") %>
+              </span>
+          </a>
+          <a class="Button Button--icon-action delete_section_link"
+            role="button"
+            href="<%= context_url(@context, :context_section_url, "{{ id }}") %>"
+            title="<%= t('links.title.delete_section', %{Delete Section}) %>"
+            class="no-hover">
+              <i class="icon-end" aria-hidden="true"></i>
+              <span class="screenreader-only"><%= t('Delete Section "%{name}"', :name => "%%name%%") %></span>
+          </a>
         </span>
         <div class="clear"></div>
       </li>
@@ -561,12 +615,9 @@
             <%= tab[:label] %>
             <div class="admin-links">
               <a class="al-trigger al-trigger-gray" role="button" href="#">
-                <i class="icon-settings"></i>
-                <i class="icon-mini-arrow-down"></i>
+                <i class="icon-more" aria-hidden="true"></i>
                 <span class="screenreader-only">
-                  <span class="screenreader-only">
-                    <%= t('Settings for %{tab_label}', { tab_label: tab[:label]}) %>
-                  </span>
+                  <%= t('Settings for %{tab_label}', { tab_label: tab[:label]}) %>
                 </span>
               </a>
 
@@ -602,9 +653,9 @@
             <%= tab[:label] %>
             <div class="admin-links">
                 <a class="al-trigger al-trigger-gray" role="button" href="#">
-                  <i class="icon-settings"></i>
-                  <i class="icon-mini-arrow-down"></i>
-                  <span class="screenreader-only"><%= t('Settings for %{tab_label}', { tab_label: tab[:label]}) %></span>
+                  <i class="icon-more" aria-hidden="true"></i>
+                  <span class="screenreader-only"><%= t('Settings for %{tab_label}', { tab_label: tab[:label]}) %>
+                  </span>
                 </a>
 
                 <ul id="content-2" class="al-options" role="menu" tabindex="0" aria-hidden="true" aria-expanded="false" aria-activedescendant="content-3">
@@ -626,25 +677,6 @@
         <button type="submit" class="btn btn-primary"><%= t('#buttons.save', %{Save}) %></button>
       </p>
     <% end %>
-    <form id="move_nav_item_form" style="display:none" class="form-dialog" title="Move Navigation Item" aria-hidden='true'>
-      <div class="form-dialog-content">
-        <h2><%= t('move_module.place', "Place ") %> <span id="move_nav_item_name"> </span></h2>
-        <div class="move-nav-item-before-after-container">
-          <input type="radio" name="move_location" value="before" id="move_location_before" class="move-nav-item-label-spacer" /><label class="move-nav-item-label-width" for="move_location_before"><%= t('move_nav_item.before', "Before") %></label>
-            <strong class="move-nav-item-or"><%= t('move_nav_item.or', "OR") %></strong>
-          <input type="radio" name="move_location" value="after" id="move_location_after" class="move-nav-item-label-spacer" /><label class="move-nav-item-label-width" for="move_location_after"><%= t('move_nav_item.after', "After") %></label>
-        </div>
-        <div class="move-nav-item-select-spacer">
-          <label class="move-nav-item-label-width" for="move_nav_item_select"><%= t("Move Item") %></label>
-          <select name="move_nav_item_select" aria-label="<%= t("Move Item") %>" id="move_nav_item_select"></select>
-        </div>
-
-      </div>
-      <div class="form-controls">
-        <button type="button" id="move_nav_item_cancel_btn" class="btn cancel_move_dialog">Cancel</button>
-        <button type="submit" class="btn btn-primary">Move</button>
-      </div>
-    </form>
   </div>
 
   <% end %>
@@ -657,7 +689,7 @@
 
   <% if @publishing_enabled %>
     <div id="tab-grade-publishing">
-      <h2><%= t('headings.grade_publishing', %{Grade Publishing}) %></h2>
+      <h2><%= t('Grade Syncing') %></h2>
       <%= form_tag context_url(@context, :context_publish_to_sis_url), { :id => "publish_to_sis_form", :style => "display: none;" } do %><% end %>
       <a href="#" id="publish_grades_link" class="btn disabled">...</a>
       <ul id="publish_grades_messages"></ul>

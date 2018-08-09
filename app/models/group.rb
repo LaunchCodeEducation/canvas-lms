@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2013 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -36,7 +36,7 @@ class Group < ActiveRecord::Base
   belongs_to :context, polymorphic: [:course, { context_account: 'Account' }]
   belongs_to :group_category
   belongs_to :account
-  belongs_to :root_account, :class_name => "Account"
+  belongs_to :root_account, class_name: 'Account', inverse_of: :all_groups
   has_many :calendar_events, :as => :context, :inverse_of => :context, :dependent => :destroy
   has_many :discussion_topics, -> { where("discussion_topics.workflow_state<>'deleted'").preload(:user).order('discussion_topics.position DESC, discussion_topics.created_at DESC') }, dependent: :destroy, as: :context, inverse_of: :context
   has_many :active_discussion_topics, -> { where("discussion_topics.workflow_state<>'deleted'").preload(:user) }, as: :context, inverse_of: :context, class_name: 'DiscussionTopic'
@@ -55,7 +55,7 @@ class Group < ActiveRecord::Base
   has_many :external_feeds, :as => :context, :inverse_of => :context, :dependent => :destroy
   has_many :messages, :as => :context, :inverse_of => :context, :dependent => :destroy
   belongs_to :wiki
-  has_many :wiki_pages, foreign_key: 'wiki_page', primary_key: 'wiki_page'
+  has_many :wiki_pages, as: :context, inverse_of: :context
   has_many :web_conferences, :as => :context, :inverse_of => :context, :dependent => :destroy
   has_many :collaborations, -> { order("#{Collaboration.quoted_table_name}.title, #{Collaboration.quoted_table_name}.created_at") }, as: :context, inverse_of: :context, dependent: :destroy
   has_many :media_objects, :as => :context, :inverse_of => :context
@@ -70,6 +70,8 @@ class Group < ActiveRecord::Base
   before_save :update_max_membership_from_group_category
 
   after_create :refresh_group_discussion_topics
+
+  after_update :clear_cached_short_name, :if => :saved_change_to_name?
 
   delegate :time_zone, :to => :context
 
@@ -108,10 +110,10 @@ class Group < ActiveRecord::Base
       participating_users_association
   end
 
-  def participating_users_in_context(user_ids = nil, sort: false)
+  def participating_users_in_context(user_ids = nil, sort: false, include_inactive_users: false)
     users = participating_users(user_ids)
     users = users.order_by_sortable_name if sort
-    return users unless self.context.is_a? Course
+    return users unless !include_inactive_users && (self.context.is_a? Course)
     context.participating_users(users.pluck(:id))
   end
 
@@ -181,7 +183,7 @@ class Group < ActiveRecord::Base
   end
 
   def participants(opts={})
-    users = participating_users.uniq.all
+    users = participating_users.distinct.all
     if opts[:include_observers] && self.context.is_a?(Course)
       (users + User.observing_students_in_course(users, self.context)).flatten.uniq
     else
@@ -191,6 +193,10 @@ class Group < ActiveRecord::Base
 
   def context_code
     raise "DONT USE THIS, use .short_name instead" unless Rails.env.production?
+  end
+
+  def inactive?
+    self.context.deleted? || (self.context.is_a?(Course) && self.context.inactive?)
   end
 
   def context_available?
@@ -236,7 +242,7 @@ class Group < ActiveRecord::Base
   def submission?
     if context_type == 'Course'
       assignments = Assignment.for_group_category(group_category_id).active
-      return Submission.where(group_id: id, assignment_id: assignments).exists?
+      return Submission.active.where(group_id: id, assignment_id: assignments).exists?
     end
     false
   end
@@ -411,10 +417,6 @@ class Group < ActiveRecord::Base
     self.group_category.groups.where("id<>?", self).to_a
   end
 
-  def migrate_content_links(html, from_course)
-    Course.migrate_content_links(html, from_course, self)
-  end
-
   attr_accessor :merge_mappings
   attr_accessor :merge_results
   def merge_mapped_id(*args)
@@ -444,13 +446,17 @@ class Group < ActiveRecord::Base
     self.join_level ||= 'invitation_only'
     self.is_public ||= false
     self.is_public = false unless self.group_category.try(:communities?)
+    set_default_account
+  end
+  private :ensure_defaults
+
+  def set_default_account
     if self.context && self.context.is_a?(Course)
       self.account = self.context.account
     elsif self.context && self.context.is_a?(Account)
       self.account = self.context
     end
   end
-  private :ensure_defaults
 
   # update root account when account changes
   def account=(new_account)
@@ -460,11 +466,7 @@ class Group < ActiveRecord::Base
   def account_id=(new_account_id)
     write_attribute(:account_id, new_account_id)
     if self.account_id_changed?
-      if CANVAS_RAILS4_2
-        self.root_account = self.account(true)&.root_account
-      else
-        self.root_account = self.reload_account&.root_account
-      end
+      self.root_account = self.reload_account&.root_account
     end
   end
 
@@ -546,6 +548,9 @@ class Group < ActiveRecord::Base
       can :update and
       can :view_unpublished_items
 
+      given { |user, session| self.context && self.context.grants_all_rights?(user, session, :read_as_admin, :post_to_forum) }
+      can :post_to_forum
+
       given { |user, session| self.context && self.context.grants_right?(user, session, :view_group_pages) }
       can :read and can :read_forum and can :read_announcements and can :read_roster
 
@@ -564,6 +569,12 @@ class Group < ActiveRecord::Base
 
       given {|user, session| self.context && self.context.grants_right?(user, session, :read_sis)}
       can :read_sis
+
+      given {|user, session| self.context && self.context.grants_right?(user, session, :view_user_logins)}
+      can :view_user_logins
+
+      given {|user, session| self.context && self.context.grants_right?(user, session, :read_email_addresses)}
+      can :read_email_addresses
     end
   end
 
@@ -583,7 +594,6 @@ class Group < ActiveRecord::Base
     end
     return false
   end
-  private :can_participate?
 
   def can_join?(user)
     if self.context.is_a?(Course)
@@ -756,6 +766,14 @@ class Group < ActiveRecord::Base
     Folder.unique_constraint_retry do
       @submissions_folder = self.folders.where(parent_folder_id: Folder.root_folders(self).first, submission_context_code: 'root')
         .first_or_create!(name: I18n.t('Submissions'))
+    end
+  end
+
+  def grading_standard_or_default
+    if context.respond_to?(:grading_standard_or_default)
+      context.grading_standard_or_default
+    else
+      GradingStandard.default_instance
     end
   end
 end

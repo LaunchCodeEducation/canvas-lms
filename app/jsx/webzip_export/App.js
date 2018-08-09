@@ -1,11 +1,29 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
 import axios from 'axios'
-import Spinner from 'instructure-ui/lib/components/Spinner'
+import Spinner from '@instructure/ui-elements/lib/components/Spinner'
 import I18n from 'i18n!webzip_exports'
 import splitAssetString from 'compiled/str/splitAssetString'
-import ExportList from 'jsx/webzip_export/components/ExportList'
-import ExportInProgress from 'jsx/webzip_export/components/ExportInProgress'
-import Errors from 'jsx/webzip_export/components/Errors'
+import ExportList from '../webzip_export/components/ExportList'
+import ExportInProgress from '../webzip_export/components/ExportInProgress'
+import Errors from '../webzip_export/components/Errors'
   class WebZipExportApp extends React.Component {
 
     static webZipFormat (webZipExports, newExportId = null) {

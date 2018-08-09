@@ -1,12 +1,32 @@
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import {View} from 'Backbone'
 import $ from 'jquery'
+import 'compiled/jquery.rails_flash_notifications'
+import 'jquery.disableWhileLoading'
 import React from 'react'
 import ReactDOM from 'react-dom'
 import I18n from 'i18n!dashboard'
 import newCourseForm from 'compiled/util/newCourseForm'
 import showMoreTemplate from 'jst/dashboard/show_more_link'
-import DashboardOptionsMenu from 'jsx/dashboard_card/DashboardOptionsMenu'
-import 'jquery.disableWhileLoading'
+import DashboardHeader from '../dashboard/DashboardHeader'
+
 
 if (ENV.DASHBOARD_SIDEBAR_URL) {
   const rightSide = $('#right-side')
@@ -17,16 +37,18 @@ if (ENV.DASHBOARD_SIDEBAR_URL) {
 }
 
 
-const dashboardOptionsMenuContainer = document.getElementById('DashboardOptionsMenu_Container')
-if (dashboardOptionsMenuContainer) {
+const dashboardHeaderContainer = document.getElementById('dashboard_header_container');
+if (dashboardHeaderContainer) {
   ReactDOM.render(
-    <DashboardOptionsMenu
-      recent_activity_dashboard={ENV.PREFERENCES.recent_activity_dashboard}
-      hide_dashcard_color_overlays={ENV.PREFERENCES.hide_dashcard_color_overlays}
+    <DashboardHeader
+      dashboard_view={ENV.PREFERENCES.dashboard_view}
       planner_enabled={ENV.STUDENT_PLANNER_ENABLED}
-      planner_selected={ENV.PREFERENCES.show_planner}
+      flashError={$.flashError}
+      flashMessage={$.flashMessage}
+      screenReaderFlashMessage={$.screenReaderFlashMessage}
+      env={window.ENV}
     />,
-    dashboardOptionsMenuContainer
+    dashboardHeaderContainer
   )
 }
 
@@ -71,7 +93,7 @@ class DashboardView extends View {
     const isExpanded = $category.find('.details_container').is(':visible')
     // go up to stream-category to build the text to display
     const categoryName = $category.data('category')
-    const count = parseInt($category.find('.count:first').text())
+    const count = parseInt($category.find('.count:first').text(), 10)
     const assistiveText = this.getCategoryText(categoryName, count, !isExpanded)
     const $link = $category.find('.toggle-details')
     $link.html(showMoreTemplate({expanded: isExpanded, assistiveText}))
@@ -132,9 +154,8 @@ class DashboardView extends View {
   }
 
   handleDetailsClick (event) {
-    let link
     const row = $(event.target).closest('tr')
-    return link = row.find('a')
+    return row.find('a')
   }
 
   // TODO: switch recent items to client rendering and skip all this

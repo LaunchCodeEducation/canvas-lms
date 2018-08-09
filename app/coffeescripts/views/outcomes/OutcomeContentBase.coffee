@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -20,10 +20,10 @@ define [
   'i18n!outcomes'
   'jquery'
   'underscore'
-  'compiled/views/ValidatedFormView'
-  'compiled/views/editor/KeyboardShortcuts'
+  '../ValidatedFormView'
+  '../editor/KeyboardShortcuts'
   'jsx/shared/rce/RichContentEditor'
-  'compiled/jquery.rails_flash_notifications'
+  '../../jquery.rails_flash_notifications'
   'jquery.disableWhileLoading'
 ], (I18n, $, _, ValidatedFormView, RCEKeyboardShortcuts, RichContentEditor) ->
 
@@ -197,7 +197,7 @@ define [
         @$('input:first').focus()
 
     readOnly: ->
-      @_readOnly || !@model.get('can_edit')
+      @_readOnly
 
     updateTitle: (e) =>
       @model.set 'title', e.currentTarget.value

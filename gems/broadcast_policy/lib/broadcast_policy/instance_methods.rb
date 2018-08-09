@@ -1,7 +1,5 @@
-require "active_support/hash_with_indifferent_access"
-
 #
-# Copyright (C) 2011 - 2017 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -16,14 +14,14 @@ require "active_support/hash_with_indifferent_access"
 #
 # You should have received a copy of the GNU Affero General Public License along
 # with this program. If not, see <http://www.gnu.org/licenses/>.
-#
+
+require "active_support/hash_with_indifferent_access"
+
 module BroadcastPolicy
   module InstanceMethods
 
-    # either we're in an after_save of a new record, or we just
-    # finished saving one
     def just_created
-      changed? ? id_was.nil? : previous_changes.key?(:id) && previous_changes[:id].first.nil?
+      saved_changes? && id_before_last_save.nil?
     end
 
     # Some flags for auditing policy matching
@@ -44,14 +42,38 @@ module BroadcastPolicy
     def with_changed_attributes_from(other)
       return yield unless other
       begin
+        # I'm pretty sure we can stop messing with @changed_attributes once
+        # we're on Rails 5.2 (CANVAS_RAILS5_1)
         frd_changed_attributes = @changed_attributes
         @changed_attributes = ActiveSupport::HashWithIndifferentAccess.new
         other.attributes.each do |key, value|
           @changed_attributes[key] = value if value != attributes[key]
         end
+
+        if defined?(ActiveRecord)
+          frd_mutations_before_last_save = @mutations_before_last_save
+          other_attributes = other.instance_variable_get(:@attributes).deep_dup
+          namespace = CANVAS_RAILS5_1 ? ActiveRecord : ActiveModel
+          @attributes.send(:attributes).each_key do |key|
+            value = @attributes[key]
+            # ignore newly added columns in the db that we don't really know
+            # about yet
+            if other_attributes[key].is_a?(namespace::Attribute.const_get(:Null))
+              other_attributes.instance_variable_get(:@attributes).delete(key)
+              next
+            end
+            if value.value != other_attributes[key].value
+              other_attributes.write_from_user(key, value.value)
+            else
+              other_attributes.write_from_database(key, value.value)
+            end
+          end
+          @mutations_before_last_save = namespace::AttributeMutationTracker.new(other_attributes)
+        end
         yield
       ensure
         @changed_attributes = frd_changed_attributes
+        @mutations_before_last_save = frd_mutations_before_last_save
       end
     end
 
@@ -90,20 +112,20 @@ module BroadcastPolicy
     # writing a condition that much easier.
     def changed_in_state(state, fields: [])
       fields = Array(fields)
-      fields.any? { |field| attribute_changed?(field) } &&
+      fields.any? { |field| saved_change_to_attribute?(field) } &&
         workflow_state == state.to_s &&
-        workflow_state_was == state.to_s
+        workflow_state_before_last_save == state.to_s
     end
 
     def changed_state(new_state=nil, old_state=nil)
       if new_state && old_state
         workflow_state == new_state.to_s &&
-          workflow_state_was == old_state.to_s
+          workflow_state_before_last_save == old_state.to_s
       elsif new_state
         workflow_state.to_s == new_state.to_s &&
-          workflow_state_changed?
+          saved_change_to_workflow_state?
       else
-        workflow_state_changed?
+        saved_change_to_workflow_state?
       end
     end
     alias :changed_state_to :changed_state

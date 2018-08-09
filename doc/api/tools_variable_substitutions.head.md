@@ -38,7 +38,7 @@ richer experience.
 Some substitutions may be used as 'enabled_capabilities' for LTI2 tools. These substitutions have a
 'Launch Parameter' label indicating the parameter name that will be sent in the tool launch if enabled.
 
-For more information on variable substitution, see the [https://www.imsglobal.org/specs/ltiv1p1p1/implementation-guide#toc-9](IMS LTI specification).
+For more information on variable substitution, see the <a href="https://www.imsglobal.org/specs/ltiv1p1p1/implementation-guide#toc-9">IMS LTI specification</a>.
 
 # Usage/Configuration
 Variable substitutions can be configured for a tool in 3 ways:
@@ -70,7 +70,7 @@ curl 'https://<domain>.instructure.com/api/v1/courses/<course_id>/external_tools
 ```
 
 ## Via XML Configuration
-Custom fields can also be <a href="http://canvas.docker/doc/api/file.tools_xml.html">configured via XML</a>.
+Custom fields can also be <a href="/doc/api/file.tools_xml.html">configured via XML</a>.
 
 This would create a tool in a course with custom fields, some of which are specific for a
 particular placement:

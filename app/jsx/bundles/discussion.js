@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2012 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import I18n from 'i18n!discussions'
 import EntryView from 'compiled/views/DiscussionTopic/EntryView'
 import DiscussionFilterState from 'compiled/models/DiscussionFilterState'
@@ -8,19 +26,20 @@ import $ from 'jquery'
 import Backbone from 'Backbone'
 import React from 'react'
 import ReactDOM from 'react-dom'
-import DiscussionTopicKeyboardShortcutModal from 'jsx/discussion_topics/DiscussionTopicKeyboardShortcutModal'
 import MaterializedDiscussionTopic from 'compiled/models/Topic'
 import SideCommentDiscussionTopic from 'compiled/models/SideCommentDiscussionTopic'
 import EntryCollection from 'compiled/collections/EntryCollection'
 import DiscussionTopicToolbarView from 'compiled/views/DiscussionTopic/DiscussionTopicToolbarView'
 import TopicView from 'compiled/views/DiscussionTopic/TopicView'
 import EntriesView from 'compiled/views/DiscussionTopic/EntriesView'
-import CyoeStats from 'jsx/conditional_release_stats/index'
-import LockManager from 'jsx/blueprint_courses/lockManager'
+import SectionsTooltip from 'jsx/shared/SectionsTooltip'
 import 'rubricEditBinding'
 import 'compiled/jquery/sticky'
 import 'compiled/jquery/ModuleSequenceFooter'
-import 'jsx/context_cards/StudentContextCardTrigger'
+import CyoeStats from '../conditional_release_stats/index'
+import LockManager from '../blueprint_courses/apps/LockManager'
+import DiscussionTopicKeyboardShortcutModal from '../discussion_topics/DiscussionTopicKeyboardShortcutModal'
+import '../context_cards/StudentContextCardTrigger'
 
 const lockManager = new LockManager()
 lockManager.init({ itemType: 'discussion_topic', page: 'show' })
@@ -45,6 +64,18 @@ ReactDOM.render(
   <DiscussionTopicKeyboardShortcutModal />,
   document.getElementById('keyboard-shortcut-modal')
 )
+
+// Rendering of the section tooltip
+const container = document.querySelector('#section_tooltip_root')
+const sectionSpecificAnnouncement = (ENV.TOTAL_USER_COUNT || ENV.DISCUSSION.TOPIC.COURSE_SECTIONS)
+if (container && sectionSpecificAnnouncement && !ENV.DISCUSSION.IS_ASSIGNMENT && !ENV.DISCUSSION.IS_GROUP) {
+  ReactDOM.render(
+    <SectionsTooltip
+      totalUserCount={ENV.TOTAL_USER_COUNT}
+      sections={ENV.DISCUSSION.TOPIC.COURSE_SECTIONS}/>,
+    container
+  )
+}
 
 const topicView = new TopicView({
   el: '#main',

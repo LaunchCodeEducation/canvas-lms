@@ -89,11 +89,6 @@ namespace :i18n do
     Hash.send(:include, I18nTasks::HashExtensions) unless Hash.new.kind_of?(I18nTasks::HashExtensions)
 
     locales = I18n.available_locales - [:en]
-    # allow passing of extra, empty locales by including a comma-separated
-    # list of abbreviations in the LOCALES environment variable. e.g.
-    #
-    # LOCALES=hi,ja,pt,zh-hans rake i18n:generate_js
-    locales += ENV['LOCALES'].split(',').map(&:to_sym) if ENV['LOCALES']
     all_translations = I18n.backend.send(:translations)
 
     # copy "real" translations from deprecated locales
@@ -430,7 +425,7 @@ HEADER
       end
 
       puts "Downloading tmp/#{lang}.yml"
-      json = `curl --user #{userpass} #{translation_url}/#{transifex_lang}/`
+      json = `curl -L --user #{userpass} #{translation_url}/#{transifex_lang}/`
       parsed = YAML.load(JSON.parse(json)['content'])
       File.open("tmp/#{lang}.yml", "w") do |file|
         file.write({ lang => parsed[transifex_lang] }.to_yaml)

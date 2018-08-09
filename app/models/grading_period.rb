@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2015 - 2016 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -21,6 +21,7 @@ class GradingPeriod < ActiveRecord::Base
 
   belongs_to :grading_period_group, inverse_of: :grading_periods
   has_many :scores, -> { active }
+  has_many :submissions, -> { active }
 
   validates :title, :start_date, :end_date, :close_date, :grading_period_group_id, presence: true
   validates :weight, numericality: true, allow_nil: true
@@ -31,7 +32,7 @@ class GradingPeriod < ActiveRecord::Base
   before_validation :adjust_close_date_for_course_period
   before_validation :ensure_close_date
 
-  after_save :recompute_scores, if: :dates_or_weight_changed?
+  after_save :recompute_scores, if: :dates_or_weight_or_workflow_state_changed?
   after_destroy :destroy_grading_period_set, if: :last_remaining_legacy_period?
   after_destroy :destroy_scores
   scope :current, -> do
@@ -42,6 +43,9 @@ class GradingPeriod < ActiveRecord::Base
       now
     )
   end
+
+  scope :closed, -> { where("grading_periods.close_date < ?", Time.zone.now) }
+  scope :open, -> { where("grading_periods.close_date IS NULL OR grading_periods.close_date >= ?", Time.zone.now) }
 
   scope :grading_periods_by, ->(context_with_ids) do
     joins(:grading_period_group).where(grading_period_groups: context_with_ids).readonly(false)
@@ -171,7 +175,6 @@ class GradingPeriod < ActiveRecord::Base
     scores.find_ids_in_ranges do |min_id, max_id|
       scores.where(id: min_id..max_id).update_all(workflow_state: :deleted)
     end
-    recompute_scores if grading_period_group.weighted
   end
 
   def destroy_grading_period_set
@@ -239,43 +242,26 @@ class GradingPeriod < ActiveRecord::Base
   end
 
   def recompute_scores
-    gp_id = time_boundaries_changed? ? id : nil
+    dates_or_workflow_state_changed = time_boundaries_changed? || saved_change_to_workflow_state?
+
     if course_group?
-      recompute_score_for(grading_period_group.course, gp_id)
+      course = grading_period_group.course
+      course.recompute_student_scores(update_all_grading_period_scores: dates_or_workflow_state_changed)
+      DueDateCacher.recompute_course(course) if dates_or_workflow_state_changed
     else
-      self.send_later_if_production(:recompute_scores_for_term_courses, gp_id) # there could be a lot of courses here
+      grading_period_group.recompute_scores_for_each_term(dates_or_workflow_state_changed)
     end
-  end
-
-  def recompute_scores_for_term_courses(grading_period_id)
-    term_ids = grading_period_group.enrollment_terms.pluck(:id)
-    Course.active.where(enrollment_term_id: term_ids).find_in_batches do |courses|
-      courses.each do |course|
-        recompute_score_for(course, grading_period_id)
-      end
-    end
-  end
-
-  def recompute_score_for(course, grading_period_id)
-    course.recompute_student_scores(
-      # different assignments could fall in this period if time
-      # boundaries changed so we need to recalculate scores.
-      # otherwise, weight must have changed, in which case we
-      # do not need to recompute the grading period scores (we
-      # only need to recompute the overall course score)
-      grading_period_id: grading_period_id,
-      update_all_grading_period_scores: false)
   end
 
   def weight_actually_changed?
-    grading_period_group.weighted && weight_changed?
+    grading_period_group.weighted && saved_change_to_weight?
   end
 
   def time_boundaries_changed?
-    start_date_changed? || end_date_changed?
+    saved_change_to_start_date? || saved_change_to_end_date?
   end
 
-  def dates_or_weight_changed?
-    time_boundaries_changed? || weight_actually_changed?
+  def dates_or_weight_or_workflow_state_changed?
+    time_boundaries_changed? || weight_actually_changed? || saved_change_to_workflow_state?
   end
 end

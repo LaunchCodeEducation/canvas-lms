@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -34,14 +34,14 @@ describe "/gradebooks/gradebook" do
     if course_allows && permissions_allow
       assign(:post_grades_tools, [{type: :post_grades}])
     end
-    @course.expects(:allows_grade_publishing_by).with(@user).returns(course_allows)
-    @course.expects(:grants_any_right?).returns(permissions_allow) if course_allows
+    expect(@course).to receive(:allows_grade_publishing_by).with(@user).and_return(course_allows)
+    expect(@course).to receive(:grants_any_right?).and_return(permissions_allow) if course_allows
     render "/gradebooks/gradebook"
     expect(response).not_to be_nil
     if course_allows && permissions_allow
-      expect(response.body).to match /Publish grades to SIS/
+      expect(response.body).to match(/Sync grades to SIS/)
     else
-      expect(response.body).not_to match /Publish grades to SIS/
+      expect(response.body).not_to match(/Sync grades to SIS/)
     end
   end
 

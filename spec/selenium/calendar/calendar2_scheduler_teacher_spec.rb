@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../common')
 require File.expand_path(File.dirname(__FILE__) + '/../helpers/calendar2_common')
 require File.expand_path(File.dirname(__FILE__) + '/../helpers/scheduler_common')
@@ -92,21 +109,22 @@ describe "scheduler" do
       }
       # assert options are checked
       open_edit_dialog
-      expect(f('[type=checkbox][name="per_slot_option"]').selected?).to be_truthy
-      expect(f('[type=checkbox][name="participant_visibility"]').selected?).to be_truthy
-      expect(f('[type=checkbox][name="max_appointments_per_participant_option"]').selected?).to be_truthy
+      expect(limit_timeslot_checkbox.selected?).to be_truthy
+      expect(allow_visibility_checkbox.selected?).to be_truthy
+      expect(limit_participation_checkbox.selected?).to be_truthy
 
       # uncheck the options
-      f('[type=checkbox][name="per_slot_option"]').click
-      f('[type=checkbox][name="participant_visibility"]').click
-      f('[type=checkbox][name="max_appointments_per_participant_option"]').click
+      limit_timeslot_checkbox.click
+      allow_visibility_checkbox.click
+      limit_participation_checkbox.click
+
       submit_dialog('.ui-dialog-buttonset', '.ui-button')
       wait_for_ajaximations
       # assert options are not checked
       open_edit_dialog
-      expect(f('[type=checkbox][name="per_slot_option"]').selected?).to be_falsey
-      expect(f('[type=checkbox][name="participant_visibility"]').selected?).to be_falsey
-      expect(f('[type=checkbox][name="max_appointments_per_participant_option"]').selected?).to be_falsey
+      expect(limit_timeslot_checkbox.selected?).to be_falsey
+      expect(allow_visibility_checkbox.selected?).to be_falsey
+      expect(limit_participation_checkbox.selected?).to be_falsey
     end
 
     it "should send messages to appropriate participants", priority: "1", test_id: 140192 do
@@ -174,7 +192,7 @@ describe "scheduler" do
       ])
       get "/calendar2#view_name=scheduler"
       click_appointment_link
-      expect(f('.agenda-event__item .agenda-event__item-container')).to be_present
+      expect(agenda_item).to be_present
     end
 
     it "should validate the appointment group shows on all views after a student signed up", priority: "1", test_id: 1729408 do
@@ -190,7 +208,7 @@ describe "scheduler" do
       f('#week').click
       expect(f('.fc-content .fc-title').text).to include('new appointment group')
       f('#agenda').click
-      expect(f('.agenda-event__item .agenda-event__item-container').text).to include('new appointment group')
+      expect(agenda_item.text).to include('new appointment group')
     end
 
     it "should not allow limiting the max appointments per participant to less than 1", priority: "1", test_id: 140194 do
@@ -200,7 +218,6 @@ describe "scheduler" do
       # invalid max_appointments
       max_appointments_input = f('[name="max_appointments_per_participant"]')
       replace_content(max_appointments_input, '0')
-
       f('.ui-dialog-buttonset .Button--primary').click
       assert_error_box('[name="max_appointments_per_participant"]')
     end
@@ -213,8 +230,7 @@ describe "scheduler" do
 
       get "/calendar2#view_name=scheduler"
       f(".appointment-group-item:nth-child(1) .view_calendar_link").click
-
-      f('.agenda-event__item .agenda-event__item-container').click
+      agenda_item.click
 
       expect(ff('#attendees li')).to have_size(1)
 
@@ -234,7 +250,7 @@ describe "scheduler" do
 
       f(".appointment-group-item:nth-child(1) .view_calendar_link").click
 
-      f('.agenda-event__item .agenda-event__item-container').click
+      agenda_item.click
 
       expect(ff('#attendees li')).to have_size(2)
 
@@ -243,7 +259,7 @@ describe "scheduler" do
       f('.ui-dialog-buttonset .btn-primary').click
       expect(ff('#attendees li')).to have_size(1)
 
-      f('.agenda-event__item .agenda-event__item-container').click
+      agenda_item.click
 
       expect(ff('#attendees li')).to have_size(1)
     end
@@ -267,7 +283,7 @@ describe "scheduler" do
       get "/calendar2#view_name=scheduler"
 
       f(".appointment-group-item:nth-child(1) .view_calendar_link").click
-      fj('.agenda-event__item .agenda-event__item-container').click
+      agenda_item.click
       expect(ff('#attendees li')).to have_size 2
 
       # delete the first appointment
@@ -275,7 +291,7 @@ describe "scheduler" do
       f('.ui-dialog-buttonset .btn-primary').click
       expect(ff('#attendees li')).to have_size 1
 
-      f('.agenda-event__item .agenda-event__item-container').click
+      agenda_item.click
       expect(ff('#attendees li')).to have_size 1
     end
 

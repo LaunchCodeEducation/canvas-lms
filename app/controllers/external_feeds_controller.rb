@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -74,7 +74,7 @@ class ExternalFeedsController < ApplicationController
 
   # @API List external feeds
   #
-  # Returns the list of External Feeds this course or group.
+  # Returns the paginated list of External Feeds this course or group.
   #
   # @example_request
   #     curl https://<canvas>/api/v1/courses/<course_id>/external_feeds \

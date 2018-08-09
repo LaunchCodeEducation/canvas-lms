@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -32,13 +32,11 @@ module Lti
         c.account = account
       end
     }
-    let(:root_account) { Account.new }
+    let(:root_account) { Account.create! }
     let(:account) {
-      Account.new.tap do |a|
-        a.root_account = root_account
-      end
+      Account.create!(root_account: root_account)
     }
-    let(:user) { User.new }
+    let(:user) { User.create! }
 
     def set_up_persistance!
       @shard1.activate { user.save! }
@@ -109,8 +107,8 @@ module Lti
     describe '#all_roles' do
 
       it 'converts multiple roles' do
-        subject.stubs(:course_enrollments).returns([StudentEnrollment.new, TeacherEnrollment.new, DesignerEnrollment.new, ObserverEnrollment.new, TaEnrollment.new, AccountUser.new])
-        user.stubs(:roles).returns(['user', 'student', 'teacher', 'admin'])
+        allow(subject).to receive(:course_enrollments).and_return([StudentEnrollment.new, TeacherEnrollment.new, DesignerEnrollment.new, ObserverEnrollment.new, TaEnrollment.new, AccountUser.new])
+        allow(user).to receive(:roles).and_return(['user', 'student', 'teacher', 'admin'])
         roles = subject.all_roles
         expect(roles).to include LtiOutbound::LTIRoles::System::USER
         expect(roles).to include LtiOutbound::LTIRoles::Institution::STUDENT
@@ -125,12 +123,12 @@ module Lti
 
       it "returns none if no user" do
         helper = SubstitutionsHelper.new(course, root_account, nil)
-        expect(helper.all_roles).to eq [LtiOutbound::LTIRoles::System::NONE]
+        expect(helper.all_roles).to eq LtiOutbound::LTIRoles::System::NONE
       end
 
       it 'converts multiple roles for lis 2' do
-        subject.stubs(:course_enrollments).returns([StudentEnrollment.new, TeacherEnrollment.new, DesignerEnrollment.new, ObserverEnrollment.new, TaEnrollment.new, AccountUser.new])
-        user.stubs(:roles).returns(['user', 'student', 'teacher', 'admin'])
+        allow(subject).to receive(:course_enrollments).and_return([StudentEnrollment.new, TeacherEnrollment.new, DesignerEnrollment.new, ObserverEnrollment.new, TaEnrollment.new, AccountUser.new])
+        allow(user).to receive(:roles).and_return(['user', 'student', 'teacher', 'admin'])
         roles = subject.all_roles('lis2')
         expect(roles).to include 'http://purl.imsglobal.org/vocab/lis/v2/system/person#User'
         expect(roles).to include 'http://purl.imsglobal.org/vocab/lis/v2/institution/person#Student'
@@ -145,16 +143,24 @@ module Lti
 
       it "returns none if no user for lis 2" do
         helper = SubstitutionsHelper.new(course, root_account, nil)
-        expect(helper.all_roles('lis2')).to eq ['http://purl.imsglobal.org/vocab/lis/v2/person#None']
+        expect(helper.all_roles('lis2')).to eq 'http://purl.imsglobal.org/vocab/lis/v2/person#None'
       end
 
       it "includes main and subrole for TeachingAssistant" do
-        subject.stubs(:course_enrollments).returns([TaEnrollment.new])
+        allow(subject).to receive(:course_enrollments).and_return([TaEnrollment.new])
         roles = subject.all_roles('lis2')
         expected_roles = ["http://purl.imsglobal.org/vocab/lis/v2/membership/instructor#TeachingAssistant",
                           "http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor",
                           "http://purl.imsglobal.org/vocab/lis/v2/system/person#User"]
         expect(roles.split(',')).to match_array expected_roles
+      end
+
+      it 'does not include admin role if user has a sub-account admin user record in deleted account' do
+        sub_account = account.sub_accounts.create!
+        sub_account.account_users.create!(user: user, role: admin_role)
+        sub_account.destroy!
+        roles = subject.all_roles
+        expect(roles).not_to include 'urn:lti:instrole:ims/lis/Administrator'
       end
     end
 
@@ -195,6 +201,14 @@ module Lti
         enrollment = account.account_users.create!(:user => user)
 
         expect(subject.account_enrollments).to eq [enrollment]
+      end
+
+      it 'does not return deleted account enrollments' do
+        set_up_persistance!
+        enrollment = account.account_users.create!(:user => user)
+        enrollment.destroy
+
+        expect(subject.account_enrollments).to eq []
       end
 
       it 'returns enrollments in an account chain for a user' do
@@ -337,12 +351,26 @@ module Lti
         @c2 = Course.create!
         @c2.root_account = root_account
         @c2.account = account
+        @c2.lti_context_id = 'def'
         @c2.save!
 
         course.content_migrations.create!.tap do |cm|
           cm.context = course
           cm.workflow_state = 'imported'
           cm.source_course = @c2
+          cm.save!
+        end
+
+        @c3 = Course.create!
+        @c3.root_account = root_account
+        @c3.account = account
+        @c3.lti_context_id = 'hij'
+        @c3.save!
+
+        @c1.content_migrations.create!.tap do |cm|
+          cm.context = @c1
+          cm.workflow_state = 'imported'
+          cm.source_course = @c3
           cm.save!
         end
       end
@@ -352,7 +380,55 @@ module Lti
       end
 
       it "should return previous lti context_ids" do
-        expect(subject.previous_lti_context_ids).to eq 'abc'
+        expect(subject.previous_lti_context_ids.split(",")).to match_array %w{abc def}
+      end
+    end
+
+    describe '#recursively_fetch_previous_course_ids_and_context_ids' do
+      before do
+        course.save!
+        @c1 = Course.create!
+        @c1.root_account = root_account
+        @c1.account = account
+        @c1.lti_context_id = 'abc'
+        @c1.save
+
+        course.content_migrations.create!.tap do |cm|
+          cm.context = course
+          cm.workflow_state = 'imported'
+          cm.source_course = @c1
+          cm.save!
+        end
+
+        @c2 = Course.create!
+        @c2.root_account = root_account
+        @c2.account = account
+        @c2.lti_context_id = 'def'
+        @c2.save!
+
+        course.content_migrations.create!.tap do |cm|
+          cm.context = course
+          cm.workflow_state = 'imported'
+          cm.source_course = @c2
+          cm.save!
+        end
+
+        @c3 = Course.create!
+        @c3.root_account = root_account
+        @c3.account = account
+        @c3.lti_context_id = 'ghi'
+        @c3.save!
+
+        @c1.content_migrations.create!.tap do |cm|
+          cm.context = @c1
+          cm.workflow_state = 'imported'
+          cm.source_course = @c3
+          cm.save!
+        end
+      end
+
+      it "should return previous lti context_ids" do
+        expect(subject.recursively_fetch_previous_lti_context_ids.split(",")).to match_array %w{abc def ghi}
       end
     end
 
@@ -440,7 +516,15 @@ module Lti
             expect(substitution_helper.email).to eq sis_email
           end
 
-          it "returns the users email if there isn't an sis email" do
+          it "returns the sis_email when set via tool_configuration" do
+            tool.settings[:prefer_sis_email] = nil
+            tool.settings[:tool_configuration] = { prefer_sis_email: 'true' }
+            tool.save!
+            sis_pseudonym
+            expect(substitution_helper.email).to eq sis_email
+          end
+
+          it "returns the users email if there isn't a sis email" do
             expect(substitution_helper.email).to eq user.email
           end
 

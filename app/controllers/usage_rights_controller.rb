@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2014 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -139,14 +139,14 @@ class UsageRightsController < ApplicationController
   end
 
   # @API List licenses
-  # Lists licenses that can be applied
+  # A paginated list of licenses that can be applied
   #
   # @returns [License]
   def licenses
     # there are no per-context licenses yet, but let's pretend like there are, for future expandability
     if authorized_action(@context, @current_user, :read)
       render json: UsageRights.licenses.map { |license, data|
-        { id: license, name: data[:readable_license], url: data[:license_url] }
+        { id: license, name: data[:readable_license].call, url: data[:license_url] }
       }
     end
   end

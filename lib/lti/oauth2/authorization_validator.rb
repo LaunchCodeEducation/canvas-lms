@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2017 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require 'json/jwt'
 
 module Lti
@@ -45,8 +62,7 @@ module Lti
           tp = ToolProxy.where(guid: unverified_jwt[:sub], workflow_state: 'active').first
           return nil unless tp.present?
           developer_key = tp.product_family.developer_key
-          raise InvalidAuthJwt, "the Tool Proxy must be associated to a developer key" if developer_key.blank?
-          raise InvalidAuthJwt, "the Developer Key is not active" unless developer_key.active?
+          raise InvalidAuthJwt, "the Developer Key is not active" if developer_key.present? && !developer_key.active?
           ims_tool_proxy = IMS::LTI::Models::ToolProxy.from_json(tp.raw_data)
           if (ims_tool_proxy.enabled_capabilities & ['Security.splitSecret', 'OAuth.splitSecret']).blank?
             raise InvalidAuthJwt, "the Tool Proxy must be using a split secret"
@@ -74,7 +90,7 @@ module Lti
       def jwt_secret
         secret = tool_proxy&.shared_secret
         secret ||= developer_key&.api_key
-        secret ||= RegistrationRequestService.retrieve_registration_password(@context, unverified_jwt[:sub])
+        secret ||= (RegistrationRequestService.retrieve_registration_password(@context, unverified_jwt[:sub]) || {})[:reg_password]
         return secret if secret.present?
         raise SecretNotFound, "either the tool proxy or developer key were not found"
       end
@@ -95,10 +111,6 @@ module Lti
 
       def validate_exp(exp)
         exp_time = Time.zone.at(exp)
-        max_exp_limit = Setting.get('lti.oauth2.authorize.max.expiration', 1.minute.to_s).to_i.seconds
-        if exp_time > max_exp_limit.from_now
-          raise InvalidAuthJwt, "the 'exp' must not be any further than #{max_exp_limit.seconds} seconds in the future"
-        end
         raise InvalidAuthJwt, "the JWT has expired" if exp_time < Time.zone.now
       end
 

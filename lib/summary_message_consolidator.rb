@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -59,7 +59,7 @@ class SummaryMessageConsolidator
     DelayedMessage.
       where("workflow_state = ? AND send_at <= ?", 'pending', Time.now.to_s(:db)).
       where(batch). # hash condition will properly handle the case where root_account_id is null
-      all.map(&:id)
+      pluck(:id)
   end
 
 end

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -26,8 +26,8 @@ describe FeatureFlags do
   let(:t_course) { course_with_teacher(user: t_user, account: t_sub_account, active_all: true).course }
 
   before do
-    User.any_instance.stubs(:set_default_feature_flags)
-    Feature.stubs(:definitions).returns({
+    allow_any_instance_of(User).to receive(:set_default_feature_flags)
+    allow(Feature).to receive(:definitions).and_return({
       'root_account_feature' => Feature.new(feature: 'root_account_feature', applies_to: 'RootAccount', state: 'off'),
       'account_feature' => Feature.new(feature: 'account_feature', applies_to: 'Account', state: 'on'),
       'course_feature' => Feature.new(feature: 'course_feature', applies_to: 'Course', state: 'allowed'),
@@ -65,6 +65,19 @@ describe FeatureFlags do
 
     it "should return nil if the feature doesn't apply" do
       expect(t_course.lookup_feature_flag('user_feature')).to be_nil
+    end
+
+    it "should return nil if the visible_on returns false" do
+      feature = double(
+        "Feature double",
+        feature: 'some_feature',
+        visible_on: ->(_) { return false },
+        state: 'allowed'
+      )
+      expect(feature).to receive(:applies_to_object).and_return(true)
+      allow(Feature.definitions).to receive(:[]).and_call_original
+      expect(Feature.definitions).to receive(:[]).with('some_feature').and_return(feature)
+      expect(t_course.lookup_feature_flag('some_feature')).to be_nil
     end
 
     it "should return defaults when no flags exist" do
@@ -117,7 +130,7 @@ describe FeatureFlags do
         t_sub_account.feature_flags.create! feature: 'course_feature', state: 'on'
         t_root_account.feature_flags.create! feature: 'course_feature', state: 'off'
         expect(t_sub_account.lookup_feature_flag('course_feature').context).to eql t_root_account
-        Account.any_instance.expects(:feature_flag).never
+        expect_any_instance_of(Account).to receive(:feature_flag).never
         expect(t_sub_account.lookup_feature_flag('course_feature').context).to eql t_root_account
       end
     end
@@ -159,7 +172,7 @@ describe FeatureFlags do
 
         it "should cache the nil of the feature beneath the root account" do
           expect(t_course.lookup_feature_flag('root_opt_in_feature')).to be_nil
-          Account.any_instance.expects(:feature_flag).never
+          expect_any_instance_of(Account).to receive(:feature_flag).never
           expect(t_course.lookup_feature_flag('root_opt_in_feature')).to be_nil
         end
       end
@@ -338,7 +351,7 @@ describe FeatureFlags do
       enable_cache do
         t_root_account.feature_flag('course_feature2')
         expect(Rails.cache).to be_exist(t_root_account.feature_flag_cache_key('course_feature2'))
-        t_root_account.expects(:feature_flags).never
+        expect(t_root_account).to receive(:feature_flags).never
         t_root_account.feature_flag('course_feature2')
       end
     end

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -24,7 +24,7 @@ class UserMergeData < ActiveRecord::Base
   scope :splitable, -> { where('created_at > ?', split_time) }
 
   def self.split_time
-    Time.zone.now - Setting.get('user_merge_to_split_time', 180.days.to_i).to_i
+    Time.zone.now - Setting.get('user_merge_to_split_time', '180').to_i.days
   end
 
   def add_more_data(objects, user: nil, workflow_state: nil)

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative '../../common'
 require_relative '../../helpers/grading_schemes_common'
 
@@ -74,6 +91,7 @@ describe "grading standards" do
   end
 
   it "should allow setting a grading standard for a course", priority: "1", test_id: 217600 do
+    skip_if_safari(:alert)
     course_with_teacher_logged_in
 
     @standard = @course.grading_standards.create!(:title => "some standard", :standard_data => {:a => {:name => 'A', :value => '95'}, :b => {:name => 'B', :value => '80'}, :f => {:name => 'F', :value => ''}})
@@ -146,7 +164,7 @@ describe "grading standards" do
     std.find_element(:css, ".edit_grading_standard_button").click
     std.find_element(:css, "button.save_button")
     wait_for_ajax_requests
-    expect(@standard.reload.data.length).to eq 3
+    expect(@standard.reload.data.length).to eq 4
   end
 
   context 'course settings' do

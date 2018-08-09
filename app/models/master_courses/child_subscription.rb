@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 class MasterCourses::ChildSubscription < ActiveRecord::Base
   belongs_to :master_template, :class_name => "MasterCourses::MasterTemplate"
   belongs_to :child_course, :class_name => "Course"
@@ -24,7 +41,7 @@ class MasterCourses::ChildSubscription < ActiveRecord::Base
   self.content_tag_association = :child_content_tags
 
   def invalidate_course_cache
-    if self.workflow_state_changed?
+    if self.saved_change_to_workflow_state?
       Rails.cache.delete(self.class.course_cache_key(self.child_course))
     end
   end
@@ -86,7 +103,11 @@ class MasterCourses::ChildSubscription < ActiveRecord::Base
       c.context_external_tools,
       c.discussion_topics,
       c.quizzes,
-      c.wiki.wiki_pages
+      c.wiki_pages
     ]
+  end
+
+  def last_migration_id
+    child_course.content_migrations.where(child_subscription_id: self).order('id desc').limit(1).pluck(:id).first
   end
 end

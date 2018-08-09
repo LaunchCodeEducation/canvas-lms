@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2014 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -42,7 +42,7 @@ class ContextModulesController < ApplicationController
     def modules_cache_key
       @modules_cache_key ||= begin
         visible_assignments = @current_user.try(:assignment_and_quiz_visibilities, @context)
-        cache_key_items = [@context.cache_key, @can_edit, 'all_context_modules_draft_9', collection_cache_key(@modules), Time.zone, Digest::MD5.hexdigest(visible_assignments.to_s)]
+        cache_key_items = [@context.cache_key, @can_edit, @is_student, @can_view_unpublished, 'all_context_modules_draft_10', collection_cache_key(@modules), Time.zone, Digest::MD5.hexdigest(visible_assignments.to_s)]
         cache_key = cache_key_items.join('/')
         cache_key = add_menu_tools_to_cache_key(cache_key)
         cache_key = add_mastery_paths_to_cache_key(cache_key, @context, @modules, @current_user)
@@ -51,14 +51,16 @@ class ContextModulesController < ApplicationController
 
     def load_modules
       @modules = @context.modules_visible_to(@current_user)
+      @modules.each(&:check_for_stale_cache_after_unlocking!)
       @collapsed_modules = ContextModuleProgression.for_user(@current_user).for_modules(@modules).pluck(:context_module_id, :collapsed).select{|cm_id, collapsed| !!collapsed }.map(&:first)
 
       @can_edit = can_do(@context, @current_user, :manage_content)
+      @is_student = @context.grants_right?(@current_user, session, :participate_as_student)
+      @can_view_unpublished = @context.grants_right?(@current_user, session, :read_as_admin)
 
       modules_cache_key
 
-      @is_student = @context.grants_right?(@current_user, session, :participate_as_student)
-      @is_cyoe_on = ConditionalRelease::Service.enabled_in_context?(@context)
+      @is_cyoe_on = @current_user && ConditionalRelease::Service.enabled_in_context?(@context)
       if allow_web_export_download?
         @allow_web_export_download = true
         @last_web_export = @context.web_zip_exports.visible_to(@current_user).order('epub_exports.created_at').last
@@ -73,6 +75,7 @@ class ContextModulesController < ApplicationController
       module_file_details = load_module_file_details if @context.grants_right?(@current_user, session, :manage_content)
       js_env :course_id => @context.id,
         :CONTEXT_URL_ROOT => polymorphic_path([@context]),
+        :DUPLICATE_ENABLED => @domain_root_account.feature_enabled?(:duplicate_modules),
         :FILES_CONTEXTS => [{asset_string: @context.asset_string}],
         :MODULE_FILE_DETAILS => module_file_details,
         :MODULE_FILE_PERMISSIONS => {
@@ -81,10 +84,12 @@ class ContextModulesController < ApplicationController
         }
 
       if master_courses?
+        is_master_course = MasterCourses::MasterTemplate.is_master_course?(@context)
         is_child_course = MasterCourses::ChildSubscription.is_child_course?(@context)
-        if is_child_course # todo: someday expose master side data via here too
+        if is_master_course || is_child_course
           js_env(:MASTER_COURSE_SETTINGS => {
-            :HAS_MASTER_COURSE_SUBSCRIPTION => is_child_course,
+            :IS_MASTER_COURSE => is_master_course,
+            :IS_CHILD_COURSE => is_child_course,
             :MASTER_COURSE_DATA_URL => context_url(@context, :context_context_modules_master_course_info_url)
           })
         end
@@ -116,7 +121,7 @@ class ContextModulesController < ApplicationController
 
       if item.present? && item.published? && item.context_module.published?
         rules = ConditionalRelease::Service.rules_for(@context, @current_user, item, session)
-        rule = conditional_release(item, conditional_release_rules: rules)
+        rule = conditional_release_rule_for_module_item(item, conditional_release_rules: rules)
 
         # locked assignments always have 0 sets, so this check makes it not return 404 if locked
         # but instead progress forward and return a warning message if is locked later on
@@ -262,6 +267,9 @@ class ContextModulesController < ApplicationController
     if authorized_action(@context.context_modules.temp_record, @current_user, :update)
       m = @context.context_modules.not_deleted.first
 
+      # A hash where the key is the module id and the value is the module position
+      order_before = Hash[@context.context_modules.not_deleted.pluck(:id, :position)]
+
       m.update_order(params[:order].split(","))
       # Need to invalidate the ordering cache used by context_module.rb
       @context.touch
@@ -269,8 +277,12 @@ class ContextModulesController < ApplicationController
       # I'd like to get rid of this saving every module, but we have to
       # update the list of prerequisites since a reorder can cause
       # prerequisites to no longer be valid
-      @modules = @context.context_modules.not_deleted
-      @modules.each{|m| m.save_without_touching_context }
+      @modules = @context.context_modules.not_deleted.to_a
+      @modules.each do |m|
+        m.updated_at = Time.now
+        m.save_without_touching_context
+        Canvas::LiveEvents.module_updated(m) if m.position != order_before[m.id]
+      end
       @context.touch
 
       # # Background this, not essential that it happen right away
@@ -306,15 +318,18 @@ class ContextModulesController < ApplicationController
     return not_found unless master_courses?
     if authorized_action(@context, @current_user, :read_as_admin)
       info = {}
-      if MasterCourses::ChildSubscription.is_child_course?(@context)
-        tag_scope = @context.module_items_visible_to(@current_user)
+      is_child_course = MasterCourses::ChildSubscription.is_child_course?(@context)
+      is_master_course = MasterCourses::MasterTemplate.is_master_course?(@context)
+
+      if is_child_course || is_master_course
+        tag_scope = @context.module_items_visible_to(@current_user).where(:content_type => %w{Assignment Attachment DiscussionTopic Quizzes::Quiz WikiPage})
         tag_scope = tag_scope.where(:id => params[:tag_id]) if params[:tag_id]
         tag_ids = tag_scope.pluck(:id)
         restriction_info = {}
         if tag_ids.any?
-          MasterCourses::MasterContentTag.fetch_module_item_restrictions(tag_ids).each do |tag_id, restrictions|
-            restriction_info[tag_id] = restrictions.any?{|k, v| v} ? 'locked' : 'unlocked' # might need to elaborate in the future
-          end
+          restriction_info = is_child_course ?
+            MasterCourses::MasterContentTag.fetch_module_item_restrictions_for_child(tag_ids) :
+            MasterCourses::MasterContentTag.fetch_module_item_restrictions_for_master(tag_ids)
         end
         info[:tag_restrictions] = restriction_info
       end
@@ -438,7 +453,7 @@ class ContextModulesController < ApplicationController
       affected_items = []
       items = order.map{|id| tags.detect{|t| t.id == id.to_i } }.compact.uniq
       items.each_with_index do |item, idx|
-        item.position = idx
+        item.position = idx + 1
         item.context_module_id = @module.id
         if item.changed?
           item.skip_touch = true
@@ -516,8 +531,10 @@ class ContextModulesController < ApplicationController
         graded: @tag.graded?,
         content_details: content_details(@tag, @current_user),
         assignment_id: @tag.assignment.try(:id),
-        is_cyoe_able: cyoe_able?(@tag)
+        is_cyoe_able: cyoe_able?(@tag),
+        is_duplicate_able: @tag.duplicate_able?,
       )
+      @context.touch
       render json: json
     end
   end

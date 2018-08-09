@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2011 Instructure, Inc.
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,24 +12,23 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-define([
-  'i18n!gradebook',
-  'jquery',
-  'underscore',
-  'str/htmlEscape',
-  'jsx/shared/helpers/numberHelper',
-  'jsx/gradebook/uploads/wait_for_processing',
-  'jsx/gradebook/uploads/process_gradebook_upload',
-  'jsx/gradebook/shared/helpers/GradeFormatHelper',
-  'vendor/slickgrid' /* global Slick */,
-  'vendor/slickgrid/slick.editors' /* global.Slick.Editors */,
-  'jquery.instructure_forms' /* errorBox */,
-  'jquery.instructure_misc_helpers' /* /\.detect/ */,
-  'jquery.templateData' /* fillTemplateData */
-], function (I18n, $, _, htmlEscape, numberHelper, waitForProcessing, ProcessGradebookUpload, GradeFormatHelper) {
+import I18n from 'i18n!gradebook'
+import $ from 'jquery'
+import _ from 'underscore'
+import htmlEscape from './str/htmlEscape'
+import numberHelper from 'jsx/shared/helpers/numberHelper'
+import waitForProcessing from 'jsx/gradebook/uploads/wait_for_processing'
+import ProcessGradebookUpload from 'jsx/gradebook/uploads/process_gradebook_upload'
+import GradeFormatHelper from 'jsx/gradebook/shared/helpers/GradeFormatHelper'
+import './vendor/slickgrid' /* global Slick */
+import './vendor/slickgrid/slick.editors' /* global.Slick.Editors */
+import './jquery.instructure_forms' /* errorBox */
+import './jquery.instructure_misc_helpers' /* /\.detect/ */
+import './jquery.templateData' /* fillTemplateData */
+
   var GradebookUploader = {
     createGeneralFormatter: function (attribute) {
       return function (row, cell, value) {
@@ -381,5 +380,4 @@ define([
     }
   };
 
-  return GradebookUploader;
-});
+export default GradebookUploader;

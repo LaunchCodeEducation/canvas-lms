@@ -1,27 +1,28 @@
-//
-// Copyright (C) 2017 Instructure, Inc.
-//
-// This file is part of Canvas.
-//
-// Canvas is free software: you can redistribute it and/or modify it under
-// the terms of the GNU Affero General Public License as published by the Free
-// Software Foundation, version 3 of the License.
-//
-// Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
-// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
-// A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
-// details.
-//
-// You should have received a copy of the GNU Affero General Public License along
-// with this program. If not, see <http://www.gnu.org/licenses/>.
-//
+/*
+ * Copyright (C) 2017 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
 define([
   'react',
+  'prop-types',
   'react-dom',
   'enzyme',
   'jsx/gradezilla/individual-gradebook/components/GradebookSelector'
-], (React, ReactDOM, { mount }, GradebookSelector) => {
+], (React, PropTypes, ReactDOM, { mount }, GradebookSelector) => {
   QUnit.module('GradebookSelector', {
     setup () {
       this.setLocationStub = this.stub(GradebookSelector.prototype, 'setLocation');
@@ -40,12 +41,12 @@ define([
 
   test('#selectDefaultGradebook calls setLocation', function () {
     this.wrapper.find('select').simulate('change', { target: { value: 'default-gradebook' } });
-    const url = `${this.wrapper.props().courseUrl}/gradebook/change_gradebook_version?version=gradezilla`;
+    const url = `${this.wrapper.props().courseUrl}/gradebook/change_gradebook_version?version=default`;
     ok(this.setLocationStub.withArgs(url).calledOnce);
   });
 
-  test('#selectGradeHistory calls setLocation', function () {
-    this.wrapper.find('select').simulate('change', { target: { value: 'grade-history' } });
+  test('#selectGradebookHistory calls setLocation', function () {
+    this.wrapper.find('select').simulate('change', { target: { value: 'gradebook-history' } });
     const url = `${this.wrapper.props().courseUrl}/gradebook/history`;
     ok(this.setLocationStub.withArgs(url).calledOnce);
   });
@@ -59,8 +60,8 @@ define([
         </ic-tabs>;
 
       ICTabs.propTypes = {
-        firstOnClick: React.PropTypes.func.isRequired,
-        secondOnClick: React.PropTypes.func.isRequired,
+        firstOnClick: PropTypes.func.isRequired,
+        secondOnClick: PropTypes.func.isRequired,
       };
 
       this.firstOnClickStub = this.stub();
@@ -143,8 +144,8 @@ define([
   });
 
 
-  test('Grade History is fourth', function () {
-    equal(this.menuItems[3].textContent, 'Grade History…');
+  test('Gradebook History is fourth', function () {
+    equal(this.menuItems[3].textContent, 'Gradebook History…');
   });
 
   QUnit.module('Menu Items Rendered with Learning Mastery Disabled', {
@@ -171,7 +172,7 @@ define([
     equal(this.menuItems[1].textContent, 'Gradebook…');
   });
 
-  test('Grade History Menu Item is third in the PopoverMenu', function () {
-    equal(this.menuItems[2].textContent, 'Grade History…');
+  test('Gradebook History Menu Item is third in the Menu', function () {
+    equal(this.menuItems[2].textContent, 'Gradebook History…');
   });
 });

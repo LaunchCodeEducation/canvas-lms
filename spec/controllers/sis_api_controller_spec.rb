@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2017 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../spec_helper')
 
 describe SisApiController do
@@ -12,7 +29,7 @@ describe SisApiController do
     end
 
     it 'responds with 400 when sis_assignments is disabled' do
-      get 'sis_assignments', course_id: course.id
+      get 'sis_assignments', params: {course_id: course.id}
 
       parsed_json = json_parse(response.body)
       expect(response.code).to eq "400"
@@ -25,7 +42,7 @@ describe SisApiController do
       end
 
       it 'responds with 200' do
-        get 'sis_assignments', course_id: course.id
+        get 'sis_assignments', params: {course_id: course.id}
 
         parsed_json = json_parse(response.body)
         expect(response.code).to eq "200"
@@ -36,7 +53,7 @@ describe SisApiController do
         assignment_model(course: course, workflow_state: 'published')
         assignment = assignment_model(course: course, post_to_sis: true, workflow_state: 'published')
 
-        get 'sis_assignments', course_id: course.id
+        get 'sis_assignments', params: {course_id: course.id}
 
         parsed_json = json_parse(response.body)
         expect(parsed_json.size).to eq 1
@@ -55,14 +72,14 @@ describe SisApiController do
         end
 
         it 'does not include student overrides by default' do
-          get 'sis_assignments', course_id: course.id
+          get 'sis_assignments', params: {course_id: course.id}
 
           parsed_json = json_parse(response.body)
           expect(parsed_json.first).not_to have_key('user_overrides')
         end
 
         it 'does includes student override data by including student_overrides' do
-          get 'sis_assignments', course_id: course.id, include: ['student_overrides']
+          get 'sis_assignments', params: {course_id: course.id, include: ['student_overrides']}
 
           parsed_json = json_parse(response.body)
           expect(parsed_json.first['user_overrides'].size).to eq 1

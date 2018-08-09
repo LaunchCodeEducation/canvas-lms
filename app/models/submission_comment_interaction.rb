@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2015 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -28,9 +28,6 @@ class SubmissionCommentInteraction
         submissions: { user_id: student_or_ids }
       }).
       maximum(:created_at)
-    if CANVAS_RAILS4_2
-      result = result.map { |(key, value)| [key.map(&:to_i), value] }.to_h
-    end
     result
   end
 end

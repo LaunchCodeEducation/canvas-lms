@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2017 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '../../../apis/lti/lti2_api_spec_helper')
 require File.expand_path(File.dirname(__FILE__) + '../../../../lib/lti/assignment_subscriptions_helper')
 
@@ -41,7 +58,13 @@ describe Lti::AssignmentSubscriptionsHelper do
 
   describe '#create_subscription' do
     let(:subscription_helper) { Lti::AssignmentSubscriptionsHelper.new(tool_proxy, @assignment) }
-    let(:event_types) { %w(submission_created plagiarism_resubmit submission_updated).freeze }
+    let(:event_types) do
+       %w(submission_created
+          plagiarism_resubmit
+          submission_updated
+          assignment_created
+          assignment_updated).freeze
+    end
     before(:each) do
       @assignment.tool_settings_tool = message_handler
       @assignment.save!

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module ConferencesCommon
 
   def conferences_index_page
@@ -15,6 +32,30 @@ module ConferencesCommon
   def end_first_conference_in_list
     end_conference_button.click
     close_modal_if_present
+  end
+
+  def delete_recording_button(recording)
+    f('a.delete_recording_link', recording)
+  end
+
+  def delete_first_recording_in_first_conference_in_list
+    conference = first_conference_in_list(new_conference_list)
+    recording = first_recording_in_conference(conference)
+    delete_recording_button(recording).click
+    close_modal_if_present
+  end
+
+  def first_recording_in_conference(conference)
+    f('li.recording', conference)
+  end
+
+  def first_conference_in_list(conference_list)
+    f('li.conference', conference_list)
+  end
+
+  def show_recordings_in_first_conference_in_list
+    conference = first_conference_in_list(new_conference_list)
+    f('a.element_toggler', conference).click
   end
 
   def new_conference_list
@@ -41,6 +82,22 @@ module ConferencesCommon
     expect(concluded_conference_list).to include_text 'There are no concluded conferences'
   end
 
+  def verify_conference_includes_recordings
+    expect(first_conference_in_list(new_conference_list)).to include_text 'Recording'
+  end
+
+  def verify_conference_does_not_include_recordings
+    expect(first_conference_in_list(new_conference_list)).not_to include_text 'Recording'
+  end
+
+  def verify_conference_includes_recordings_with_statistics
+    expect(first_conference_in_list(new_conference_list)).to include_text 'statistics'
+  end
+
+  def verify_conference_does_not_include_recordings_with_statistics
+    expect(first_conference_in_list(new_conference_list)).not_to include_text 'statistics'
+  end
+
   def initialize_wimba_conference_plugin
     PluginSetting.create!(
       name: 'wimba',
@@ -56,6 +113,31 @@ module ConferencesCommon
       user: @user,
       context: @course,
       duration: duration
+    )
+  end
+
+  def initialize_big_blue_button_conference_plugin(domain = 'bbb.instructure.com', secret = 'secret')
+    PluginSetting.create!(
+      name: 'big_blue_button',
+      settings: {
+        domain: domain,
+        secret: secret,
+        recording_enabled: true
+      }
+    )
+  end
+
+  def create_big_blue_button_conference(conference_key = 'instructure_web_conference_defaultkey', title = 'BigBlueButton Conference', duration=60, record=true)
+    BigBlueButtonConference.create!(
+      conference_key: conference_key,
+      title: title,
+      user: @user,
+      context: @course,
+      duration: duration,
+      conference_type: 'BigBlueButton',
+      settings: {
+        record: record
+      }
     )
   end
 
@@ -139,4 +221,13 @@ module ConferencesCommon
     conf.close
     conf.save!
   end
+
+  def big_blue_button_mock_response(request = '', response = '')
+    filename = 'big_blue_button'
+    filename += '_' + request unless request.empty?
+    filename += '_' + response unless response.empty?
+    filename += '.xml'
+    File.read(File.expand_path(File.dirname(__FILE__) + '/../../fixtures/files/conferences/' + filename))
+  end
+
 end

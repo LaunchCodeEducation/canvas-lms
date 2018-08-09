@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 class Profile < ActiveRecord::Base
   belongs_to :context, polymorphic: [:course], exhaustive: false
   belongs_to :root_account, :class_name => 'Account'
@@ -12,9 +29,6 @@ class Profile < ActiveRecord::Base
   validates_uniqueness_of :path, :scope => :root_account_id
   validates_uniqueness_of :context_id, :scope => :context_type
   validates_inclusion_of :visibility, :in => %w{ public unlisted private }
-
-  self.abstract_class = true
-  self.table_name = 'profiles'
 
   def title=(title)
     write_attribute(:title, title)
@@ -70,8 +84,6 @@ class Profile < ActiveRecord::Base
     super
     context_type = klass.name.sub(/Profile\z/, '')
     klass.class_eval { alias_method context_type.downcase.underscore, :context }
-    klass.instance_eval { def table_name; "profiles"; end }
-    klass.default_scope -> { where(:context_type => context_type) }
   end
 
   self.inheritance_column = :context_type

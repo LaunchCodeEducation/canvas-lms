@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016 Instructure, Inc.
+# Copyright (C) 2016 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,7 +17,6 @@
 #
 
 # @API Rubrics
-# @beta
 #
 # API for accessing rubric information.
 #
@@ -69,7 +68,7 @@
 #         "assessments": {
 #           "description": "If an assessment type is included in the 'include' parameter, includes an array of rubric assessment objects for a given rubric, based on the assessment type requested. If the user does not request an assessment type this key will be absent.",
 #           "type": "array",
-#           "$ref": "RubricAssessment"
+#           "items": { "$ref": "RubricAssessment" }
 #         }
 #       }
 #     }
@@ -124,11 +123,13 @@
 #         },
 #         "data": {
 #           "description": "(Optional) If 'full' is included in the 'style' parameter, returned assessments will have their full details contained in their data hash. If the user does not request a style, this key will be absent.",
-#           "type": "array"
+#           "type": "array",
+#           "items": { "type": "object" }
 #         },
 #         "comments": {
 #           "description": "(Optional) If 'comments_only' is included in the 'style' parameter, returned assessments will include only the comments portion of their data hash. If the user does not request a style, this key will be absent.",
-#           "type": "array"
+#           "type": "array",
+#           "items": { "type": "string" }
 #         }
 #       }
 #     }
@@ -162,9 +163,10 @@ class RubricsApiController < ApplicationController
   def show
     return unless authorized_action(@context, @current_user, :manage_rubrics)
     if !@context.errors.present?
-      assessments = get_rubric_assessment(params[:include])
+      assessments = rubric_assessments
       render json: rubric_json(@rubric, @current_user, session,
-                  assessments: assessments, style: params[:style])
+             assessments: assessments,
+             style: params[:style])
     else
       render json: @context.errors, status: :bad_request
     end
@@ -176,14 +178,19 @@ class RubricsApiController < ApplicationController
     @rubric = Rubric.find(params[:id])
   end
 
-  def get_rubric_assessment(type)
-    case type
-      when 'assessments'
-        RubricAssessment.where(rubric_id: @rubric.id)
-      when 'graded_assessments'
-        RubricAssessment.where(rubric_id: @rubric.id, assessment_type: 'grading')
-      when 'peer_assessments'
-        RubricAssessment.where(rubric_id: @rubric.id, assessment_type: 'peer_review')
+  def rubric_assessments
+    scope = if @context.is_a? Course
+              RubricAssessment.for_course_context(@context.id).where(rubric_id: @rubric.id)
+            else
+              RubricAssessment.where(rubric_id: @rubric.id)
+            end
+    case params[:include]
+    when 'assessments'
+      scope
+    when 'graded_assessments'
+      scope.where(assessment_type: 'grading')
+    when 'peer_assessments'
+      scope.where(assessment_type: 'peer_review')
     end
   end
 

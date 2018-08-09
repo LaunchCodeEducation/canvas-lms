@@ -1,13 +1,44 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
   'react',
   'react-dom',
   'jsx/conditional_release_stats/components/breakdown-details',
 ], (React, ReactDOM, BreakdownDetails) => {
-  const container = document.getElementById('fixtures')
+  let clock;
+  let container;
 
   QUnit.module('Breakdown Details', {
+    setup () {
+      const applicationElement = document.createElement('div');
+      applicationElement.id = 'application';
+      document.getElementById('fixtures').appendChild(applicationElement);
+      container = document.createElement('div');
+      document.getElementById('fixtures').appendChild(container);
+
+      clock = sinon.useFakeTimers();
+    },
+
     teardown() {
       ReactDOM.unmountComponentAtNode(container);
+      document.getElementById('fixtures').innerHTML = '';
+      clock.restore();
     }
   })
 
@@ -154,6 +185,7 @@ define([
 
   test('renders component correctly', () => {
     const component = renderComponent(defaultProps())
+    clock.tick(500);
 
     const rendered = document.querySelectorAll('.crs-breakdown-details')
     equal(rendered.length, 1)
@@ -164,6 +196,7 @@ define([
     props.selectedPath.student = 0
     props.selectStudent = sinon.spy()
     const component = renderComponent(props)
+    clock.tick(500);
 
     const nextBtn = document.querySelector('.student-details__next-student')
     nextBtn.click()
@@ -176,6 +209,7 @@ define([
     props.selectedPath.student = 1
     props.selectStudent = sinon.spy()
     const component = renderComponent(props)
+    clock.tick(500);
 
     const nextBtn = document.querySelector('.student-details__next-student')
     nextBtn.click()
@@ -188,6 +222,7 @@ define([
     props.selectedPath.student = 1
     props.selectStudent = sinon.spy()
     const component = renderComponent(props)
+    clock.tick(500);
 
     const prevBtn = document.querySelector('.student-details__prev-student')
     prevBtn.click()
@@ -200,6 +235,7 @@ define([
     props.selectedPath.student = 0
     props.selectStudent = sinon.spy()
     const component = renderComponent(props)
+    clock.tick(500);
 
     const prevBtn = document.querySelector('.student-details__prev-student')
     prevBtn.click()
@@ -212,6 +248,7 @@ define([
     props.selectedPath.student = 0
     props.selectStudent = sinon.spy()
     const component = renderComponent(props)
+    clock.tick(500);
 
     const backBtn = document.querySelector('.crs-back-button')
     backBtn.click()

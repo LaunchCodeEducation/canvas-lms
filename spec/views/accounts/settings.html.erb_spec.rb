@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -136,7 +136,7 @@ describe "accounts/settings.html.erb" do
       context "should not show settings to site admin user" do
         context "new_sis_integrations => true" do
           before do
-            @account.stubs(:feature_enabled?).with(:new_sis_integrations).returns(true)
+            allow(@account).to receive(:feature_enabled?).with(:new_sis_integrations).and_return(true)
           end
 
           it { expect(response).not_to have_tag("#sis_integration_settings") }
@@ -148,7 +148,7 @@ describe "accounts/settings.html.erb" do
 
       context "new_sis_integrations => false" do
         before do
-          @account.stubs(:feature_enabled?).with(:new_sis_integrations).returns(false)
+          allow(@account).to receive(:feature_enabled?).with(:new_sis_integrations).and_return(false)
         end
 
         it { expect(response).not_to have_tag("#sis_integration_settings") }
@@ -167,20 +167,18 @@ describe "accounts/settings.html.erb" do
         assign(:account, @account)
         assign(:root_account, @account)
         assign(:current_user, current_user)
-
-        @account.stubs(:feature_enabled?).with(:post_grades).returns(true)
-        @account.stubs(:feature_enabled?).with(:google_docs_domain_restriction).returns(true)
       end
 
       context "new_sis_integrations => false" do
         before do
-          @account.stubs(:feature_enabled?).with(:new_sis_integrations).returns(false)
-          @account.stubs(:grants_right?).with(current_user, :manage_account_memberships).returns(true)
+          @account.disable_feature!(:new_sis_integrations)
+          @account.enable_feature!(:post_grades)
+          allow(@account).to receive(:grants_right?).with(current_user, :manage_account_memberships).and_return(true)
         end
 
         context "show old version of settings to regular admin user" do
           before do
-            @account.stubs(:grants_right?).with(current_user, :manage_site_settings).returns(true)
+            allow(@account).to receive(:grants_right?).with(current_user, :manage_site_settings).and_return(true)
             do_render(current_user)
           end
 
@@ -202,7 +200,7 @@ describe "accounts/settings.html.erb" do
         let(:assignment_name_length) { "#account_settings_sis_assignment_name_length_value" }
 
         before do
-          @account.stubs(:feature_enabled?).with(:new_sis_integrations).returns(true)
+          @account.enable_feature!(:new_sis_integrations)
         end
 
         context "should show settings to regular admin user" do
@@ -224,12 +222,12 @@ describe "accounts/settings.html.erb" do
 
         context "SIS syncing enabled" do
           before do
-            Assignment.stubs(:sis_grade_export_enabled?).returns(true)
+            allow(Assignment).to receive(:sis_grade_export_enabled?).and_return(true)
           end
 
           context "for root account" do
             before do
-              @account.stubs(:sis_syncing).returns({value: true, locked: true})
+              allow(@account).to receive(:sis_syncing).and_return({value: true, locked: true})
               do_render(current_user)
             end
 
@@ -247,7 +245,7 @@ describe "accounts/settings.html.erb" do
             context "locked" do
               before do
                 @account.enable_feature!(:post_grades)
-                @account.stubs(:sis_syncing).returns({value: true, locked: true, inherited: true })
+                allow(@account).to receive(:sis_syncing).and_return({value: true, locked: true, inherited: true })
                 do_render(current_user, @account)
               end
 
@@ -262,7 +260,7 @@ describe "accounts/settings.html.erb" do
 
             context "not locked" do
               before do
-                @account.stubs(:sis_syncing).returns({value: true, locked: false, inherited: true })
+                allow(@account).to receive(:sis_syncing).and_return({value: true, locked: false, inherited: true })
                 do_render(current_user)
               end
 
@@ -325,9 +323,9 @@ describe "accounts/settings.html.erb" do
     it "should not show add admin button if don't have permission to any roles" do
       role = custom_account_role('CustomAdmin', :account => Account.site_admin)
       account_admin_user_with_role_changes(
-          :account => Account.site_admin,
-          :role => role,
-          :role_changes => {manage_account_memberships: true})
+        :account => Account.site_admin,
+        :role => role,
+        :role_changes => {manage_account_memberships: true})
       view_context(Account.default, @user)
       assign(:account, Account.default)
       assign(:announcements, AccountNotification.none.paginate)

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2014 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -65,7 +65,7 @@ module AssignmentsHelper
     if assignment.expects_submission? && can_do(assignment, user, :submit)
       submit_text = user_submission.try(:has_submission?) ? I18n.t("Re-submit Assignment") : I18n.t("Submit Assignment")
       late = user_submission.try(:late?) ? "late" : ""
-      link_to(submit_text, '#', :class => "btn btn-primary submit_assignment_link #{late}")
+      link_to(submit_text, '#', :role => "button", :class => "Button Button--primary submit_assignment_link #{late}")
     end
   end
 

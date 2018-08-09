@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -142,7 +142,7 @@ class FeatureFlagsController < ApplicationController
 
   # @API List features
   #
-  # List all features that apply to a given Account, Course, or User.
+  # A paginated list of all features that apply to a given Account, Course, or User.
   #
   # @example_request
   #
@@ -164,7 +164,7 @@ class FeatureFlagsController < ApplicationController
 
   # @API List enabled features
   #
-  # List all features that are enabled on a given Account, Course, or User.
+  # A paginated list of all features that are enabled on a given Account, Course, or User.
   # Only the feature names are returned.
   #
   # @example_request
@@ -232,7 +232,7 @@ class FeatureFlagsController < ApplicationController
       return render json: { message: "invalid feature" }, status: :bad_request unless feature_def
 
       # check whether the feature is locked
-      MultiCache.delete(@context.feature_flag_cache_key(params[:feature]))
+      @context.feature_flag_cache.delete(@context.feature_flag_cache_key(params[:feature]))
       current_flag = @context.lookup_feature_flag(params[:feature])
       if current_flag
         return render json: { message: "higher account disallows setting feature flag" }, status: :forbidden if current_flag.locked?(@context)

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_dependency 'importers'
 
 module Importers
@@ -49,8 +66,8 @@ module Importers
       item.position = hash[:position].to_i if hash[:position] && hash[:position].to_i > 0
       item.group_weight = hash[:group_weight] if hash[:group_weight]
 
+      rules = ""
       if hash[:rules] && hash[:rules].length > 0
-        rules = ""
         hash[:rules].each do |rule|
           if rule[:drop_type] == "drop_lowest" || rule[:drop_type] == "drop_highest"
             rules += "#{rule[:drop_type]}:#{rule[:drop_count]}\n"
@@ -60,8 +77,11 @@ module Importers
             end
           end
         end
-        item.rules = rules unless rules == ''
       end
+      if rules.blank? && context.respond_to?(:assignment_group_no_drop_assignments)
+        context.assignment_group_no_drop_assignments&.delete_if{|k, v| v == item} # don't set never_drop rules if there are no drop rules
+      end
+      item.rules = rules.presence
 
       item.save!
       item

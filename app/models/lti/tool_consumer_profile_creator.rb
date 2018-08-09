@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require 'ims/lti'
 
 module Lti
@@ -51,7 +68,7 @@ module Lti
 
       # TODO: Extract this
       if @root_account.feature_enabled?(:lti2_rereg)
-        profile.capability_offered << IMS::LTI::Models::Messages::ToolProxyReregistrationRequest::MESSAGE_TYPE
+        profile.capability_offered << IMS::LTI::Models::Messages::ToolProxyUpdateRequest::MESSAGE_TYPE
       end
 
       profile
@@ -98,11 +115,18 @@ module Lti
       [
         IMS::LTI::Models::SecurityProfile.new(
           security_profile_name: 'lti_oauth_hash_message_security',
-          digest_algorithm: 'HMAC-SHA1'
+          digest_algorithm: ['HMAC-SHA1']
         ),
         IMS::LTI::Models::SecurityProfile.new(
-          security_profile_name: 'oauth2_access_token_ws_security',
-          digest_algorithm: 'HS256'
+          security_profile_name: 'oauth2_access_token_ws_security'
+        ),
+        IMS::LTI::Models::SecurityProfile.new(
+          security_profile_name: 'lti_jwt_ws_security',
+          digest_algorithm: ['HS256']
+        ),
+        IMS::LTI::Models::SecurityProfile.new(
+          security_profile_name: 'lti_jwt_message_security',
+          digest_algorithm: ['HS256']
         )
       ]
     end

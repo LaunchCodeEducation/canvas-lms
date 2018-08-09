@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -18,12 +18,12 @@
 
 define [
   'jquery'
-  'compiled/views/profiles/AvatarUploadBaseView'
+  './AvatarUploadBaseView'
   'jst/profiles/gravatarView'
-  'vendor/md5'
+  'md5'
   'jquery.ajaxJSON'
 
-], ($, AvatarUploadBaseView, template, CryptoJS) ->
+], ($, AvatarUploadBaseView, template, md5) ->
 
   class GravatarView extends AvatarUploadBaseView
 
@@ -68,7 +68,7 @@ define [
 
     _gravatarHashFromInput: () ->
       email = @_prepareEmail(@$gravatarPreviewInput.val())
-      CryptoJS.MD5(email)
+      md5(email)
 
     _gravatarUrl: (hash, size=200, fallback="identicon") ->
       "https://secure.gravatar.com/avatar/#{hash}?s=#{size}&d=#{fallback}"

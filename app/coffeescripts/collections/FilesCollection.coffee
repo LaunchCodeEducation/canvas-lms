@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,9 +17,9 @@
 #
 
 define [
-  'compiled/collections/PaginatedCollection'
+  '../collections/PaginatedCollection'
   'underscore'
-  'compiled/models/File'
+  '../models/File'
 ], (PaginatedCollection, _, File) ->
 
   class FilesCollection extends PaginatedCollection

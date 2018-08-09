@@ -1,8 +1,26 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
 import FileRenameForm from 'compiled/react_files/components/FileRenameForm'
-import Modal from 'jsx/shared/modal'
-import ModalContent from 'jsx/shared/modal-content'
-import ModalButtons from 'jsx/shared/modal-buttons'
+import Modal from '../shared/modal'
+import ModalContent from '../shared/modal-content'
+import ModalButtons from '../shared/modal-buttons'
 import I18n from 'i18n!file_rename_form'
 
   FileRenameForm.buildContent = function () {
@@ -122,21 +140,6 @@ import I18n from 'i18n!file_rename_form'
           title={I18n.t('Copy')}
           onRequestClose={this.props.onClose}
           closeWithX={this.props.closeWithX}
-          style={{
-            overlay : {
-              backgroundColor: 'rgba(0,0,0,0.5)'
-            },
-            content : {
-              position: 'static',
-              top: '0',
-              left: '0',
-              right: 'auto',
-              bottom: 'auto',
-              borderRadius: '0',
-              border: 'none',
-              padding: '0'
-            }
-          }}
         >
           <ModalContent>
             {this.buildContent()}

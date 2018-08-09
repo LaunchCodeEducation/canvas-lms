@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative '../../spec_helper'
 
 describe SupportHelpers::Crocodoc::CrocodocFixer do
@@ -59,8 +76,8 @@ describe SupportHelpers::Crocodoc::CrocodocFixer do
   describe "#resubmit_attachment" do
     it 'resubmits the attachment to crocodoc' do
       fixer = SupportHelpers::Crocodoc::CrocodocFixer.new('email')
-      crocodocument.expects(:update_attribute).returns(true)
-      shardattachment.expects(:submit_to_crocodoc).returns(true)
+      expect(crocodocument).to receive(:update_attribute).and_return(true)
+      expect(shardattachment).to receive(:submit_to_crocodoc).and_return(true)
 
       fixer.resubmit_attachment(shardattachment)
       expect(fixer.attempted_resubmit).to eql(1)
@@ -70,7 +87,7 @@ describe SupportHelpers::Crocodoc::CrocodocFixer do
   describe "ShardFixer" do
     it 'resubmits crocodocs in an error state' do
       fixer = SupportHelpers::Crocodoc::ShardFixer.new('email')
-      fixer.expects(:resubmit_attachment).twice.returns(nil)
+      expect(fixer).to receive(:resubmit_attachment).twice.and_return(nil)
 
       fixer.fix
     end
@@ -81,7 +98,7 @@ describe SupportHelpers::Crocodoc::CrocodocFixer do
       fixer =
         SupportHelpers::Crocodoc::SubmissionFixer.new('email', nil, assignment.id, student.id)
 
-      fixer.expects(:resubmit_attachment).once.returns(nil)
+      expect(fixer).to receive(:resubmit_attachment).once.and_return(nil)
       fixer.fix
     end
 
@@ -89,7 +106,7 @@ describe SupportHelpers::Crocodoc::CrocodocFixer do
       fixer =
         SupportHelpers::Crocodoc::SubmissionFixer.new('email', nil, assignment2.id, student.id)
 
-      fixer.expects(:resubmit_attachment).never
+      expect(fixer).to receive(:resubmit_attachment).never
       fixer.fix
     end
 
@@ -99,7 +116,7 @@ describe SupportHelpers::Crocodoc::CrocodocFixer do
       fixer =
         SupportHelpers::Crocodoc::SubmissionFixer.new('email', nil, assignment2.id, student.id)
 
-      fixer.expects(:resubmit_attachment).once.returns(nil)
+      expect(fixer).to receive(:resubmit_attachment).once.and_return(nil)
       fixer.fix
     end
   end

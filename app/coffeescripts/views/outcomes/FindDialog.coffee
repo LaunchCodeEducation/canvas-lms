@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -20,15 +20,16 @@ define [
   'i18n!outcomes'
   'jquery'
   'underscore'
-  'compiled/models/OutcomeGroup'
-  'compiled/views/DialogBaseView'
-  'compiled/views/outcomes/SidebarView'
-  'compiled/views/outcomes/ContentView'
+  '../../models/OutcomeGroup'
+  '../../models/Progress'
+  '../DialogBaseView'
+  './SidebarView'
+  './ContentView'
   'jst/outcomes/browser'
   'jst/outcomes/findInstructions'
-  'compiled/jquery.rails_flash_notifications'
+  '../../jquery.rails_flash_notifications'
   'jquery.disableWhileLoading'
-], (I18n, $, _, OutcomeGroup, DialogBaseView, SidebarView, ContentView, browserTemplate, instructionsTemplate) ->
+], (I18n, $, _, OutcomeGroup, Progress, DialogBaseView, SidebarView, ContentView, browserTemplate, instructionsTemplate) ->
 
   # Creates a popup dialog similar to the main outcomes browser minus the toolbar.
   class FindDialog extends DialogBaseView
@@ -81,6 +82,9 @@ define [
 
       @showOrHideImport()
 
+    updateSelection: (selectedGroup) =>
+      @selectedGroup = selectedGroup
+
     # link an outcome or copy/link an outcome group into @selectedGroup
     import: (e) =>
       e.preventDefault()
@@ -89,15 +93,24 @@ define [
       model.quizMasteryLevel = (parseFloat(@$el.find('#outcome_mastery_at').val()) or 0) if @content.setQuizMastery
       model.useForScoring = @$el.find('#outcome_use_for_scoring').prop('checked') if @content.useForScoring
       return alert I18n.t('dont_import', 'This group cannot be imported.') if model.get 'dontImport'
+      unless @shouldImport
+        @trigger('import', model)
+        @close()
+        return
       if confirm(@confirmText(model))
-        unless @shouldImport
-          @trigger('import', model)
-          @close()
-          return
         if model instanceof OutcomeGroup
           url = @selectedGroup.get('import_url')
-          dfd = $.ajaxJSON url, 'POST',
-            source_outcome_group_id: model.get 'id'
+          progress = new Progress
+          dfd = $.ajaxJSON(url, 'POST', {
+            source_outcome_group_id: model.get('id'),
+            async: true,
+          }).pipe((resp) ->
+            progress.set('url', resp.url)
+            progress.poll()
+            return progress.pollDfd
+          ).pipe(->
+            return $.ajaxJSON(progress.get('results').outcome_group_url, 'GET')
+          )
         else
           url = @selectedGroup.get('outcomes_url')
           dfd = $.ajaxJSON url, 'POST',
@@ -126,7 +139,7 @@ define [
     showOrHideImport: =>
       model = @sidebar.selectedModel()
       canShow = true
-      if !model || model.get 'dontImport' 
+      if !model || model.get 'dontImport'
         canShow = false
       else if model && model instanceof OutcomeGroup && @disableGroupImport
         canShow = false

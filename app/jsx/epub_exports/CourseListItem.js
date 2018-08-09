@@ -1,16 +1,35 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
+import PropTypes from 'prop-types'
 import _ from 'underscore'
-import GenerateLink from 'jsx/epub_exports/GenerateLink'
-import DownloadLink from 'jsx/epub_exports/DownloadLink'
-import ApiProgressBar from 'jsx/shared/ApiProgressBar'
-import CourseEpubExportStore from 'jsx/epub_exports/CourseStore'
+import GenerateLink from '../epub_exports/GenerateLink'
+import DownloadLink from '../epub_exports/DownloadLink'
+import ApiProgressBar from '../shared/ApiProgressBar'
+import CourseEpubExportStore from '../epub_exports/CourseStore'
 import I18n from 'i18n!epub_exports'
-import FriendlyDatetime from 'jsx/shared/FriendlyDatetime'
+import FriendlyDatetime from '../shared/FriendlyDatetime'
 import classnames from 'classnames'
   var CourseListItem = React.createClass({
     displayName: 'CourseListItem',
     propTypes: {
-      course: React.PropTypes.object.isRequired
+      course: PropTypes.object.isRequired
     },
 
     epubExport () {

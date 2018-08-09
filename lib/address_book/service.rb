@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module AddressBook
   class Service < AddressBook::Base
     def initialize(sender, ignore_result: false)
@@ -22,9 +39,12 @@ module AddressBook
 
       # whitelist just those users I know
       whitelist, unknown = user_ids.partition{ |id| common_contexts.key?(id) }
-      if unknown.present? && options[:conversation_id]
-        conversation = Conversation.find(options[:conversation_id])
-        participants = conversation.conversation_participants.where(user_id: [@sender, *unknown]).pluck(:user_id)
+      if unknown.present? && options[:conversation_id].present?
+        conversation_shard = Shard.shard_for(options[:conversation_id])
+        participants = ConversationParticipant.shard(conversation_shard).where(
+          conversation_id: options[:conversation_id],
+          user_id: [@sender, *unknown]
+        ).pluck(:user_id)
         if participants.include?(@sender.id)
           # add conversation participants to whitelist
           whitelist |= participants.map{ |id| Shard.global_id_for(id) }
@@ -38,7 +58,7 @@ module AddressBook
       users = hydrate(users) unless users.first.is_a?(User)
 
       # cache and return
-      cache_contexts(users, common_contexts)
+      cache_contexts(users, common_contexts) unless @ignore_result
       users
     end
 
@@ -46,12 +66,12 @@ module AddressBook
       # just query, hydrate, and cache
       user_ids, common_contexts = Services::AddressBook.known_in_context(@sender, context, nil, @ignore_result)
       users = hydrate(user_ids)
-      cache_contexts(users, common_contexts)
+      cache_contexts(users, common_contexts) unless @ignore_result
       users
     end
 
-    def count_in_context(context)
-      Services::AddressBook.count_in_context(@sender, context, @ignore_result)
+    def count_in_contexts(contexts)
+      Services::AddressBook.count_in_contexts(@sender, contexts, @ignore_result)
     end
 
     class Bookmarker
@@ -104,7 +124,7 @@ module AddressBook
         user_ids, common_contexts, cursors = Services::AddressBook.search_users(sender, options, service_options, @ignore_result)
         bookmarker.update(user_ids, cursors)
         users = hydrate(user_ids)
-        cache_contexts(users, common_contexts)
+        cache_contexts(users, common_contexts) unless @ignore_result
 
         # place results in pager
         pager.replace(users)
@@ -122,7 +142,7 @@ module AddressBook
       # query only those directly known, but all are "whitelisted" for caching
       global_user_ids = users.map(&:global_id)
       common_contexts = Services::AddressBook.common_contexts(@sender, global_user_ids, @ignore_result)
-      cache_contexts(users, common_contexts)
+      cache_contexts(users, common_contexts) unless @ignore_result
     end
 
     private

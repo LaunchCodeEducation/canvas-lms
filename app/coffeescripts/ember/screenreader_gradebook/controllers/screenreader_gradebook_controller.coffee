@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 - 2017 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -21,29 +21,29 @@ define [
   'react'
   'react-dom'
   'ic-ajax'
-  'compiled/util/round'
-  'compiled/userSettings'
+  '../../../util/round'
+  '../../../userSettings'
   '../../shared/xhr/fetch_all_pages'
   '../../shared/xhr/parse_link_header'
   'i18n!sr_gradebook'
   'ember'
   'underscore'
   'timezone'
-  'compiled/AssignmentDetailsDialog'
-  'compiled/AssignmentMuter'
+  '../../../AssignmentDetailsDialog'
+  '../../../AssignmentMuter'
   'jsx/gradebook/CourseGradeCalculator'
   'jsx/gradebook/EffectiveDueDates'
-  'compiled/gradebook/OutcomeGradebookGrid'
+  '../../../gradebook/OutcomeGradebookGrid'
   '../../shared/components/ic_submission_download_dialog_component'
   'str/htmlEscape'
-  'compiled/models/grade_summary/CalculationMethodContent'
+  '../../../models/grade_summary/CalculationMethodContent'
   'jsx/gradebook/SubmissionStateMap'
-  'compiled/api/gradingPeriodsApi'
-  'compiled/api/gradingPeriodSetsApi'
+  '../../../api/gradingPeriodsApi'
+  '../../../api/gradingPeriodSetsApi'
   'jsx/gradezilla/individual-gradebook/components/GradebookSelector'
   'jquery.instructure_date_and_time'
 ], (
-  $, React, ReactDOM, 
+  $, React, ReactDOM,
   ajax, round, userSettings, fetchAllPages, parseLinkHeader, I18n, Ember, _, tz, AssignmentDetailsDialog,
   AssignmentMuter, CourseGradeCalculator, EffectiveDueDates, outcomeGrid, ic_submission_download_dialog,
   htmlEscape, CalculationMethodContent, SubmissionStateMap, GradingPeriodsApi, GradingPeriodSetsApi,
@@ -92,6 +92,9 @@ define [
   contextUrl = get(window, 'ENV.GRADEBOOK_OPTIONS.context_url')
 
   ScreenreaderGradebookController = Ember.ObjectController.extend
+    init: ->
+      @set('effectiveDueDates', Ember.ObjectProxy.create(content: {}))
+      @set('assignmentsFromGroups', Ember.ArrayProxy.create(content: [], isLoaded: false))
 
     checkForCsvExport: (->
       currentProgress = get(window, 'ENV.GRADEBOOK_OPTIONS.gradebook_csv_progress')
@@ -153,7 +156,6 @@ define [
         I18n.t('Download Scores Generated on %{date}',
           {date: $.datetimeString(gradebook_csv_export_date)})
 
-
     selectedGradingPeriod: ((key, newValue) ->
       savedGradingPeriodId = userSettings.contextGet('gradebook_current_grading_period')
       if savedGradingPeriodId
@@ -201,10 +203,6 @@ define [
     ).property()
 
     gradezilla: (->
-      # returning false if version is srgb or 2 is part of the feature to help
-      # developers switch back and forth between views with gradezilla enabled
-      version = get window, 'ENV.GRADEBOOK_OPTIONS.version'
-      return false if version == 'srgb' || version == '2'
       get window, 'ENV.GRADEBOOK_OPTIONS.gradezilla'
     ).property()
 
@@ -353,6 +351,10 @@ define [
         id != userId
       set(assignment, 'assignment_visibility', filteredVisibilities)
 
+    subtotalByGradingPeriod: ->
+      selectedPeriodID = @get('selectedGradingPeriod.id')
+      selectedPeriodID and selectedPeriodID == '0' and @periodsAreWeighted()
+
     calculate: (student) ->
       submissions = @submissionsForStudent(student)
       assignmentGroups = @assignmentGroupsHash()
@@ -380,6 +382,12 @@ define [
         studentPeriodInfo = @get('effectiveDueDates').get(submission.assignment_id)?[submission.user_id]
         studentPeriodInfo and studentPeriodInfo.grading_period_id == selectedPeriodID
 
+    calculateSingleGrade: (student, key, gradeFinalOrCurrent) ->
+      set(student, key, gradeFinalOrCurrent)
+      if gradeFinalOrCurrent?.submissions
+        for submissionData in gradeFinalOrCurrent.submissions
+          set(submissionData.submission, 'drop', submissionData.drop)
+
     calculateStudentGrade: (student) ->
       if student.isLoaded
         grades = @calculate(student)
@@ -390,10 +398,13 @@ define [
 
         finalOrCurrent = if @get('includeUngradedAssignments') then 'final' else 'current'
 
-        for assignmentGroupId, grade of grades.assignmentGroups
-          set(student, "assignment_group_#{assignmentGroupId}", grade[finalOrCurrent])
-          for submissionData in grade[finalOrCurrent].submissions
-            set(submissionData.submission, 'drop', submissionData.drop)
+        if @subtotalByGradingPeriod()
+          for gradingPeriodId, grade of grades.gradingPeriods
+            @calculateSingleGrade(student, "grading_period_#{gradingPeriodId}", grade[finalOrCurrent])
+        else
+          for assignmentGroupId, grade of grades.assignmentGroups
+            @calculateSingleGrade(student, "assignment_group_#{assignmentGroupId}", grade[finalOrCurrent])
+
         grades = grades[finalOrCurrent]
 
         percent = round (grades.score / grades.possible * 100), 2
@@ -406,7 +417,7 @@ define [
       @get('students').forEach (student) => @calculateStudentGrade student
     ).observes(
       'includeUngradedAssignments','groupsAreWeighted', 'assignment_groups.@each.group_weight',
-      'effectiveDueDates.isLoaded'
+      'selectedGradingPeriod', 'gradingPeriods.@each.weight'
     )
 
     sectionSelectDefaultLabel: I18n.t "all_sections", "All Sections"
@@ -417,6 +428,8 @@ define [
     submissionStateMap: null
 
     assignment_groups: []
+    assignment_subtotals: []
+    subtotal_by_period: false
 
     fetchAssignmentGroups: (->
       params = { exclude_response_fields: ['in_closed_grading_period'] }
@@ -424,10 +437,40 @@ define [
       if @get('has_grading_periods') && gpId != '0'
         params.grading_period_id = gpId
       @set('assignment_groups', [])
-      @set('assignmentsFromGroups', [])
+      @get('assignmentsFromGroups').setProperties(content: [], isLoaded: false)
       Ember.run.once =>
-        fetchAllPages(get(window, 'ENV.GRADEBOOK_OPTIONS.assignment_groups_url'), records: @get('assignment_groups'), data: params)
+        fetchAllPages(get(window, 'ENV.GRADEBOOK_OPTIONS.assignment_groups_url'), { data: params, records: @get('assignment_groups') })
     ).observes('selectedGradingPeriod').on('init')
+
+    pushAssignmentGroups: (subtotals) ->
+      @set('subtotal_by_period', false)
+      weighted = @get('groupsAreWeighted')
+      for group in @get('assignment_groups')
+        subtotal =
+          name: group.name
+          key: "assignment_group_#{group.id}"
+          weight: weighted && group.group_weight
+        subtotals.push(subtotal)
+
+    pushGradingPeriods: (subtotals) ->
+      @set('subtotal_by_period', true)
+      weighted = @periodsAreWeighted()
+      for period in @get('gradingPeriods')
+        if period.id > 0
+          subtotal =
+            name: period.title
+            key: "grading_period_#{period.id}"
+            weight: weighted && period.weight
+          subtotals.push(subtotal)
+
+    assignmentSubtotals: (->
+      subtotals = []
+      if @subtotalByGradingPeriod()
+        @pushGradingPeriods(subtotals)
+      else
+        @pushAssignmentGroups(subtotals)
+      @set('assignment_subtotals', subtotals)
+    ).observes('assignment_groups', 'gradingPeriods', 'selectedGradingPeriod', 'students.@each', 'selectedStudent').on('init')
 
     students: studentsUniqByEnrollments('enrollments')
 
@@ -437,6 +480,21 @@ define [
         unless s.role == "StudentViewEnrollment"
           students[s.id] = s
       students
+
+    processLoadingSubmissions: (submissionGroups) ->
+      submissions = []
+
+      _.forEach submissionGroups, (submissionGroup) =>
+        submissions.push(submissionGroup.submissions...)
+
+      @updateEffectiveDueDatesFromSubmissions(submissions)
+      assignmentIds = _.uniq(_.pluck(submissions, 'assignment_id'))
+      assignmentMap = _.indexBy(@get('assignmentsFromGroups.content'), 'id')
+      assignmentIds.forEach (assignmentId) =>
+        assignment = assignmentMap[assignmentId]
+        @updateEffectiveDueDatesOnAssignment(assignment) if assignment
+
+      submissionGroups
 
     fetchStudentSubmissions: (->
       Ember.run.once =>
@@ -450,7 +508,14 @@ define [
 
         while (studentIds.length)
           chunk = studentIds.splice(0, ENV.GRADEBOOK_OPTIONS.chunk_size || 20)
-          fetchAllPages(ENV.GRADEBOOK_OPTIONS.submissions_url, records: @get('submissions'), data: student_ids: chunk)
+          fetchAllPages(
+            ENV.GRADEBOOK_OPTIONS.submissions_url,
+            {
+              data: { student_ids: chunk },
+              process: (submissions) => @processLoadingSubmissions(submissions),
+              records: @get('submissions')
+            }
+          )
 
     ).observes('students.@each', 'selectedGradingPeriod').on('init')
 
@@ -517,26 +582,29 @@ define [
             order: customColumns.mapBy('id')
         )
 
-    displayPointTotals: (->
-      @get('showTotalAsPoints') and not @get('gradesAreWeighted')
-    ).property('gradesAreWeighted', 'showTotalAsPoints')
-
     groupsAreWeighted: (->
       @get("weightingScheme") == "percent"
     ).property("weightingScheme")
 
+    periodsAreWeighted: ->
+      !!@getGradingPeriodSet()?.weighted
+
     gradesAreWeighted: (->
-      @get('groupsAreWeighted') or !!@getGradingPeriodSet()?.weighted
+      @get('groupsAreWeighted') or @periodsAreWeighted()
     ).property('weightingScheme')
 
+    hidePointsPossibleForFinalGrade: (->
+      !!(@get('groupsAreWeighted') or @subtotalByGradingPeriod())
+    ).property("weightingScheme", "selectedGradingPeriod")
+
     updateShowTotalAs: (->
-      @set "showTotalAsPoints", @get("displayPointTotals")
+      @set "showTotalAsPoints", @get("showTotalAsPoints")
       ajax.request(
         dataType: "json"
         type: "PUT"
         url: ENV.GRADEBOOK_OPTIONS.setting_update_url
         data:
-          show_total_grade_as_points: @get("displayPointTotals"))
+          show_total_grade_as_points: @get("showTotalAsPoints"))
     ).observes('showTotalAsPoints', 'gradesAreWeighted')
 
     studentColumnData: {}
@@ -598,7 +666,7 @@ define [
       ,{})
 
     submissionsLoaded: (->
-      assignments = @get("assignments")
+      assignments = @get("assignmentsFromGroups")
       assignmentsByID = @groupById assignments
       studentsByID = @groupById @get("students")
       submissions = @get('submissions')
@@ -632,7 +700,15 @@ define [
       submission.submitted_at = tz.parse(submission.submitted_at)
       set(student, "assignment_#{submission.assignment_id}", submission)
 
-    assignmentsFromGroups: []
+    updateEffectiveDueDatesOnAssignment: (assignment) ->
+      assignment.effectiveDueDates = @get('effectiveDueDates.content')[assignment.id] || {}
+      assignment.inClosedGradingPeriod = _.any(assignment.effectiveDueDates, (date) => date.in_closed_grading_period)
+
+    updateEffectiveDueDatesFromSubmissions: (submissions) ->
+      effectiveDueDates = @get('effectiveDueDates.content')
+      gradingPeriods = @getGradingPeriodSet()?.gradingPeriods
+      EffectiveDueDates.updateWithSubmissions(effectiveDueDates, submissions, gradingPeriods)
+      @set('effectiveDueDates.content', effectiveDueDates)
 
     assignments: Ember.ArrayProxy.createWithMixins(
       Ember.SortableMixin, {
@@ -641,19 +717,13 @@ define [
       }
     )
 
-    processAssignment: (as, assignmentGroups, effectiveDueDates) ->
+    processAssignment: (as, assignmentGroups) ->
       assignmentGroup = assignmentGroups.findBy('id', as.assignment_group_id)
       set as, 'sortable_name', as.name.toLowerCase()
       set as, 'ag_position', assignmentGroup.position
       set as, 'noPointsPossibleWarning', assignmentGroup.invalid
 
-      if effectiveDueDates?
-        dueDates = effectiveDueDates.get(as.id) || {}
-        set as, 'effectiveDueDates', dueDates
-        set as, 'inClosedGradingPeriod', _.any(dueDates, (date) => date.in_closed_grading_period)
-      else
-        set as, 'effectiveDueDates', {}
-        set as, 'inClosedGradingPeriod', false
+      @updateEffectiveDueDatesOnAssignment(as)
 
       if as.due_at
         due_at = tz.parse(as.due_at)
@@ -711,9 +781,8 @@ define [
       assignmentGroups = @get('assignment_groups')
       assignments = _.flatten(assignmentGroups.mapBy 'assignments')
       assignmentList = []
-      effectiveDueDates = @get('effectiveDueDates') if @get('effectiveDueDates.isLoaded')
       assignments.forEach (as) =>
-        @processAssignment(as, assignmentGroups, effectiveDueDates)
+        @processAssignment(as, assignmentGroups)
         shouldRemoveAssignment = (as.published is false) or
           as.submission_types.contains 'not_graded' or
           as.submission_types.contains 'attendance' and !@get('showAttendance')
@@ -721,12 +790,11 @@ define [
           assignmentGroups.findBy('id', as.assignment_group_id).assignments.removeObject as
         else
           assignmentList.push(as)
-      @set('assignmentsFromGroups', assignmentList)
-    ).observes('assignment_groups.isLoaded', 'assignment_groups.isLoading', 'effectiveDueDates.isLoaded')
+      @get('assignmentsFromGroups').setProperties(content: assignmentList, isLoaded: true)
+    ).observes('assignment_groups.isLoaded', 'assignment_groups.isLoading')
 
     populateAssignments: (->
-      assignmentsFromGroups = @get('assignmentsFromGroups')
-      assignments = @get('assignments')
+      assignmentsFromGroups = @get('assignmentsFromGroups.content')
       selectedStudent = @get('selectedStudent')
       submissionStateMap = @get('submissionStateMap')
 
@@ -734,18 +802,17 @@ define [
         Ember.SortableMixin, { content: [] }
       )
 
-      effectiveDueDatesLoaded = @get('effectiveDueDates.isLoaded')
       if selectedStudent?
         assignmentsFromGroups.forEach (assignment) =>
           submissionCriteria = { assignment_id: assignment.id, user_id: selectedStudent.id }
-          unless effectiveDueDatesLoaded && submissionStateMap?.getSubmissionState(submissionCriteria)?.hideGrade
+          unless submissionStateMap?.getSubmissionState(submissionCriteria)?.hideGrade
             proxy.addObject(assignment)
       else
         proxy.addObjects(assignmentsFromGroups)
 
       proxy.set('sortProperties', @get('assignments.sortProperties'))
       @set('assignments', proxy)
-    ).observes('assignmentsFromGroups', 'selectedStudent')
+    ).observes('assignmentsFromGroups.isLoaded', 'selectedStudent')
 
     populateSubmissionStateMap: (->
       map = new SubmissionStateMap(
@@ -753,9 +820,9 @@ define [
         selectedGradingPeriodID: @get('selectedGradingPeriod.id') || '0'
         isAdmin: ENV.current_user_roles && _.contains(ENV.current_user_roles, "admin")
       )
-      map.setup(@get('students').toArray(), @get('assignmentsFromGroups').toArray())
+      map.setup(@get('students').toArray(), @get('assignmentsFromGroups.content').toArray())
       @set('submissionStateMap', map)
-    ).observes('enrollments.isLoaded', 'assignmentsFromGroups')
+    ).observes('enrollments.isLoaded', 'assignmentsFromGroups.isLoaded', 'submissions.content.length')
 
     includeUngradedAssignments: (->
       userSettings.contextGet('include_ungraded_assignments') or false
@@ -858,6 +925,14 @@ define [
 
     selectedSubmissionHidden: (->
       @get('selectedSubmission.hidden') || false
+    ).property('selectedStudent', 'selectedAssignment')
+
+    hideComments: (->
+      @get('selectedAssignment.muted') && (@get('selectedAssignment.anonymous_grading') || @get('selectedAssignment.moderated_grading')) || false
+    ).property('selectedAssignment')
+
+    selectedSubmissionLate: (->
+      ( @get('selectedSubmission.points_deducted') || 0 ) > 0
     ).property('selectedStudent', 'selectedAssignment')
 
     selectedOutcomeResult: ( ->

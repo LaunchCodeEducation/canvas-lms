@@ -1,18 +1,37 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'Backbone'
   'i18n!assignments'
   'jquery'
   'underscore'
   'jst/assignments/homework_submission_tool'
-  'compiled/views/ExternalTools/ExternalContentReturnView',
-  'compiled/external_tools/ExternalToolCollection'
-  'compiled/views/assignments/ExternalContentFileSubmissionView'
-  'compiled/views/assignments/ExternalContentUrlSubmissionView'
-  'compiled/views/assignments/ExternalContentLtiLinkSubmissionView'
+  '../views/ExternalTools/ExternalContentReturnView',
+  '../external_tools/ExternalToolCollection'
+  '../views/assignments/ExternalContentFileSubmissionView'
+  '../views/assignments/ExternalContentUrlSubmissionView'
+  '../views/assignments/ExternalContentLtiLinkSubmissionView'
+  '../../../public/javascripts/submit_assignment_helper'
   'jquery.disableWhileLoading'
 ], ( Backbone, I18n, $, _, homeworkSubmissionTool, ExternalContentReturnView,
      ExternalToolCollection, ExternalContentFileSubmissionView,
-     ExternalContentUrlSubmissionView, ExternalContentLtiLinkSubmissionView) ->
+     ExternalContentUrlSubmissionView, ExternalContentLtiLinkSubmissionView,
+     SubmitAssignmentHelper) ->
 
   class HomeworkSubmissionLtiContainer
     @homeworkSubmissionViewMap:
@@ -40,7 +59,7 @@ define [
       tool = @externalToolCollection.findWhere({ id: toolId.toString(10) })
       @cleanupViewsForTool(tool)
       returnView = @createReturnView(tool)
-      $('#submit_from_external_tool_form_' + toolId).append(returnView.el)
+      $('#submit_from_external_tool_form_' + toolId).prepend(returnView.el)
       returnView.render()
       @renderedViews[toolId.toString(10)].push(returnView)
 
@@ -74,12 +93,15 @@ define [
         tool = `this.model` # this will return the model from returnView
         homeworkSubmissionView = @createHomeworkSubmissionView(tool, data)
         homeworkSubmissionView.parentView = this
+
         `this.remove()`
         $('#submit_from_external_tool_form_' + tool.get('id')).append(homeworkSubmissionView.el)
 
         @cleanupViewsForTool(tool)
         @renderedViews[tool.get('id')].push(homeworkSubmissionView)
         homeworkSubmissionView.render()
+        $('input.turnitin_pledge').click (e) ->
+          SubmitAssignmentHelper.recordEulaAgreement('#eula_agreement_timestamp', e.target.checked)
 
       returnView.on 'cancel', (data) ->
         return

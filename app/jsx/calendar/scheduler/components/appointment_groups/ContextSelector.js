@@ -1,13 +1,34 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
+import PropTypes from 'prop-types'
 import I18n from 'i18n!appointment_groups'
-import Button from 'instructure-ui/lib/components/Button'
-import Grid, { GridCol, GridRow } from 'instructure-ui/lib/components/Grid'
+import Button from '@instructure/ui-buttons/lib/components/Button'
+import IconMiniArrowRight from '@instructure/ui-icons/lib/Solid/IconMiniArrowRight'
+import IconMiniArrowDown from '@instructure/ui-icons/lib/Solid/IconMiniArrowDown'
+import Grid, { GridCol, GridRow } from '@instructure/ui-layout/lib/components/Grid'
 
   class ContextSelector extends React.Component {
     static propTypes = {
-      appointmentGroup: React.PropTypes.object,
-      contexts: React.PropTypes.array,
-      className: React.PropTypes.string
+      appointmentGroup: PropTypes.object,
+      contexts: PropTypes.array,
+      className: PropTypes.string
     }
 
     constructor () {
@@ -178,15 +199,18 @@ import Grid, { GridCol, GridRow } from 'instructure-ui/lib/components/Grid'
 
     renderSections (context) {
       return (
-        <div id={`${context.asset_string}_sections`} className={this.state.expandedContexts.has(context) ? '' : 'hiddenSection'}>
+        <div id={`${context.asset_string}_sections`}
+             className={this.state.expandedContexts.has(context)
+               ? 'CourseListItem-sections' : 'hiddenSection'}>
           {
-            context.sections.map(section => {
+            (context.sections || []).map(section => {
               return (
                 <div className="sectionItem" key={section.asset_string}>
                   <input
                     id={`${section.asset_string}_checkbox`}
                     key={`${section.asset_string}_checkbox`}
                     type="checkbox"
+                    className="CourseListItem-section-item CourseListItem-item-checkbox"
                     onChange={() => this.toggleSection(context.asset_string, section.asset_string, !this.isSubContextChecked(context.asset_string, section.asset_string))}
                     ref={(checkbox) => { this.sectionsCheckboxes[section.asset_string] = checkbox }}
                     value={section.asset_string}
@@ -194,7 +218,11 @@ import Grid, { GridCol, GridRow } from 'instructure-ui/lib/components/Grid'
                     checked={this.isSubContextChecked(context.asset_string, section.asset_string)}
                     disabled={this.isSubContextDisabled(context.asset_string, section.asset_string)}
                   />
-                  <label className="ContextLabel" htmlFor={`${section.asset_string}_checkbox`}>{section.name}</label>
+                  {
+                    // eslint-disable-next-line
+                  }<label
+                    className="ContextLabel CourseListItem-section-item"
+                    htmlFor={`${section.asset_string}_checkbox`}>{section.name}</label>
                 </div>
               )
             })
@@ -211,27 +239,27 @@ import Grid, { GridCol, GridRow } from 'instructure-ui/lib/components/Grid'
               const expanded = this.state.expandedContexts.has(context)
               const inputId = `${context.asset_string}_checkbox`
               return (
-                <div className="CourseListItem" key={context.asset_string}>
-                  <i
-                    role="button"
-                    aria-controls={`${context.asset_string}_sections`}
-                    aria-expanded={expanded}
-                    onClick={() => this.toggleCourseExpanded(context)}
-                    className={`icon-arrow-${expanded ? 'down' : 'right'}`}
-                  >
+                <div key={context.asset_string} className="CourseListItem">
+                  <div className="CourseListItem-horizontal">
+                    <Button onClick={() => this.toggleCourseExpanded(context)} variant="icon">
+                      {expanded ? <IconMiniArrowDown /> : <IconMiniArrowRight /> }
+                    </Button>
                     <span className="screenreader-only">{context.name}</span>
-                  </i>
-                  <input
-                    ref={(checkbox) => { this.contextCheckboxes[context.asset_string] = checkbox }}
-                    id={inputId}
-                    type="checkbox"
-                    onChange={() => this.toggleCourse(context.asset_string, !this.isContextChecked(context.asset_string))}
-                    value={context.asset_string}
-                    defaultChecked={this.isContextChecked(context.asset_string)}
-                    checked={this.isContextChecked(context.asset_string)}
-                    disabled={this.isContextDisabled(context.asset_string)}
-                  />
-                  <label className="ContextLabel" htmlFor={inputId}>{context.name}</label>
+                    <input
+                      className="CourseListItem-item CourseListItem-item-checkbox"
+                      ref={(checkbox) => { this.contextCheckboxes[context.asset_string] = checkbox }}
+                      id={inputId}
+                      type="checkbox"
+                      onChange={() => this.toggleCourse(context.asset_string, !this.isContextChecked(context.asset_string))}
+                      value={context.asset_string}
+                      defaultChecked={this.isContextChecked(context.asset_string)}
+                      checked={this.isContextChecked(context.asset_string)}
+                      disabled={this.isContextDisabled(context.asset_string)}
+                    />
+                    {
+                      // eslint-disable-next-line
+                    }<label className="ContextLabel CourseListItem-item" htmlFor={inputId}>{context.name}</label>
+                  </div>
                   {this.renderSections(context)}
                 </div>
               )

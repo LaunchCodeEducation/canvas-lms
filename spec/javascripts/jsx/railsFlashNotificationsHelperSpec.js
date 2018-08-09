@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
   'i18n!shared.flash_notices',
   'jquery',
@@ -151,6 +169,13 @@ define([
     setup: function() {
       fixtures = document.getElementById('fixtures');
       helper = new NotificationsHelper();
+      // Since this div can get created on the fly as needed, which is a black-box implementation detail,
+      // unreasonable to expect specs that test for screenreader messages to know that and clean up something
+      // it didn't explicitly create. We have to guarantee it's gone before these specs run.
+      const fsh = document.getElementById('flash_screenreader_holder');
+      if (fsh) {
+        fsh.parentElement.removeChild(fsh);
+      }
     },
     teardown: function() {
       fixtures.innerHTML = '';
@@ -337,6 +362,20 @@ define([
     helper.createScreenreaderNodeExclusive('Some New Data');
 
     equal(screenreaderHolder.childNodes.length, 1);
+  });
+
+  test('does not toggles polite aria-live when polite is false', () => {
+    const polite = false;
+    helper.createScreenreaderNodeExclusive('a message', polite);
+    const screenreaderHolder = document.getElementById('flash_screenreader_holder');
+    equal(screenreaderHolder.getAttribute('aria-live'), 'assertive');
+  });
+
+  test('optionally toggles polite aria-live', () => {
+    const polite = true;
+    helper.createScreenreaderNodeExclusive('a message', polite);
+    const screenreaderHolder = document.getElementById('flash_screenreader_holder');
+    equal(screenreaderHolder.getAttribute('aria-live'), 'polite');
   });
 
   QUnit.module('RailsFlashNotificationsHelper#escapeContent', {

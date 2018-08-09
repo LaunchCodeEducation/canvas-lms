@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2017 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative './weight_conditions'
 require_relative './grading_period_conditions'
 
@@ -17,8 +34,8 @@ shared_examples_for 'a gradebook' do
 
     'grading period weights': {
       'all grading periods': ["55.17%", "55.17%"],
-      'grading period one': ["75%", "75%"],
-      'grading period two': ["46.67%", "46.67%"]
+      'grading period one': ["75%", "75% (15 / 20 points)"],
+      'grading period two': ["46.67%", "46.67% (28 / 60 points)"]
     },
 
     'both grading period and assignment group weights': {
@@ -29,8 +46,8 @@ shared_examples_for 'a gradebook' do
 
     'grading period weights with ungraded assignment': {
       'all grading periods': ["55.17%", "55.17%"],
-      'grading period one': ["75%", "75%"],
-      'grading period two': ["46.67%", "46.67%"]
+      'grading period one': ["75%", "75% (15 / 20 points)"],
+      'grading period two': ["46.67%", "46.67% (28 / 60 points)"]
     },
 
     'assign outside of weighted grading period': {

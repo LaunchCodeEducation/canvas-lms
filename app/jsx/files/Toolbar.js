@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import $ from 'jquery'
 import I18n from 'i18n!react_files'
 import React from 'react'
@@ -5,9 +23,9 @@ import ReactDOM from 'react-dom'
 import page from 'page'
 import Toolbar from 'compiled/react_files/components/Toolbar'
 import FocusStore from 'compiled/react_files/modules/FocusStore'
-import openMoveDialog from 'jsx/files/utils/openMoveDialog'
+import openMoveDialog from '../files/utils/openMoveDialog'
 import deleteStuff from 'compiled/react_files/utils/deleteStuff'
-import UploadButton from 'jsx/files/UploadButton'
+import UploadButton from '../files/UploadButton'
 import classnames from 'classnames'
 import preventDefault from 'compiled/fn/preventDefault'
 import Folder from 'compiled/models/Folder'
@@ -184,7 +202,7 @@ import Folder from 'compiled/models/Folder'
       return item.get('for_submissions');
     });
     var restrictedByMasterCourse = this.props.selectedItems.some(function(item) {
-      return item.get('restricted_by_master_course');
+      return item.get('restricted_by_master_course') && item.get('is_master_course_child_content');
     });
     var canManage = this.props.userCanManageFilesForContext && !submissionsFolderSelected && !restrictedByMasterCourse;
 
@@ -227,6 +245,7 @@ import Folder from 'compiled/models/Folder'
             aria-label= {I18n.t('Search for files')}
             type= 'search'
             ref='searchTerm'
+            role='textbox'
             className='ic-Input'
             defaultValue= {this.props.query.search_term}
           />

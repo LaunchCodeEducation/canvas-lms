@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -34,7 +34,7 @@ describe "discussion_topics" do
     get "/groups/#{@group.id}/discussion_topics/#{@topic.id}"
     expect(response).to be_success
 
-    post "/groups/#{@group.id}/discussion_entries", :discussion_entry => { :discussion_topic_id => @topic.id, :message => "frist!!1" }
+    post "/groups/#{@group.id}/discussion_entries", params: {:discussion_entry => { :discussion_topic_id => @topic.id, :message => "frist!!1" }}
     expect(response).to be_redirect
 
     get "/groups/#{@group.id}/discussion_topics/#{@topic.id}"

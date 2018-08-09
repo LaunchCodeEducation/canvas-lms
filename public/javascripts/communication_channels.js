@@ -1,16 +1,32 @@
-require([
-  'i18n!profile' /* I18n.t */,
-  'jquery' /* $ */,
-  'jquery.ajaxJSON' /* ajaxJSON */,
-  'jquery.instructure_forms' /* formSubmit, fillFormData, getFormData, formErrors */,
-  'jqueryui/dialog',
-  'jquery.instructure_misc_helpers' /* replaceTags */,
-  'jquery.instructure_misc_plugins' /* confirmDelete, showIf */,
-  'jquery.loadingImg' /* loadingImage */,
-  'compiled/jquery.rails_flash_notifications',
-  'jquery.templateData' /* fillTemplateData, getTemplateData */,
-  'jqueryui/tabs' /* /\.tabs/ */
-], function(I18n, $) {
+/*
+ * Copyright (C) 2012 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+import I18n from 'i18n!profile'
+import $ from 'jquery'
+import './jquery.ajaxJSON'
+import './jquery.instructure_forms' /* formSubmit, fillFormData, getFormData, formErrors */
+import 'jqueryui/dialog'
+import './jquery.instructure_misc_helpers' /* replaceTags */
+import './jquery.instructure_misc_plugins' /* confirmDelete, showIf */
+import './jquery.loadingImg'
+import 'compiled/jquery.rails_flash_notifications'
+import './jquery.templateData' /* fillTemplateData, getTemplateData */
+import 'jqueryui/tabs'
 
 $(document).ready(function() {
   $("#communication_channels").tabs();
@@ -324,7 +340,7 @@ $(document).ready(function() {
       var channel_id = data.user.communication_channel.id;
       $(".channel.default").removeClass('default').find('a.default_link span.screenreader-only.default_label').remove();
       $(".channel#channel_" + channel_id).addClass('default').find('a.default_link').append( $('<span class="screenreader-only" />').text(I18n.t("This is the default email address")) );
-      $(".default_email.display_data").text(data.user.pseudonym.unique_id);
+      $(".default_email.display_data").text(data.user.communication_channel.path);
     });
   });
   $(".dialog .re_send_confirmation_link").click(function(event) {
@@ -343,5 +359,4 @@ $(document).ready(function() {
   $("#confirm_email_channel .cancel_button").click(function() {
     $("#confirm_email_channel").dialog('close');
   });
-});
 });

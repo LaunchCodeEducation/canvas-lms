@@ -1,8 +1,26 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../../sharding_spec_helper.rb')
 
 describe AddressBook::Service do
   before do
-    allow(Canvas::DynamicSettings).to receive(:from_cache).
+    allow(Canvas::DynamicSettings).to receive(:find).with(any_args).and_call_original
+    allow(Canvas::DynamicSettings).to receive(:find).
       with("address-book", anything).
       and_return({'app-host' => 'http://test.host'})
 
@@ -176,6 +194,14 @@ describe AddressBook::Service do
         stub_common_contexts([@sender, [@recipient.global_id]])
       end
 
+      it "conversation_id can be passed blank" do
+        expect { @address_book.known_users([@recipient], conversation_id: '') }.not_to raise_error
+      end
+
+      it "conversation_id can be passed with garbage" do
+        expect { @address_book.known_users([@recipient], conversation_id: 'garbage') }.not_to raise_error
+      end
+
       it "treats unknown users in that conversation as known" do
         conversation = Conversation.initiate([@sender, @recipient], true)
         known_users = @address_book.known_users([@recipient], conversation_id: conversation.id)
@@ -304,19 +330,6 @@ describe AddressBook::Service do
         known_users = @address_book.known_in_context(@course.asset_string)
         expect(known_users.map(&:id)).to include(@xshard_recipient.id)
       end
-    end
-  end
-
-  describe "count_in_context" do
-    before do
-      @course = course_model
-      allow(Services::AddressBook).to receive(:count_in_context).
-        with(@sender, @course.global_asset_string, false).
-        and_return(3)
-    end
-
-    it "returns count from service" do
-      expect(@address_book.count_in_context(@course.asset_string)).to eql(3)
     end
   end
 

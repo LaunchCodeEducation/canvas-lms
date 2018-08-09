@@ -1,10 +1,28 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import React from 'react'
-import update from 'react-addons-update'
-import GradingPeriod from 'jsx/grading/gradingPeriod'
+import update from 'immutability-helper'
+import GradingPeriod from '../grading/gradingPeriod'
 import $ from 'jquery'
 import I18n from 'i18n!external_tools'
 import _ from 'underscore'
-import ConvertCase from 'convert_case'
+import {camelize} from 'convert_case'
 import 'jquery.instructure_misc_plugins'
 
   const periodsAreLoaded = (state) => {
@@ -48,7 +66,7 @@ import 'jquery.instructure_misc_plugins'
 
     deserializePeriods: function(periods) {
       return _.map(periods.grading_periods, period => {
-        let newPeriod = ConvertCase.camelize(period);
+        let newPeriod = camelize(period);
         newPeriod.startDate = new Date(period.start_date);
         newPeriod.endDate = new Date(period.end_date);
         newPeriod.closeDate = new Date(period.close_date || period.end_date);

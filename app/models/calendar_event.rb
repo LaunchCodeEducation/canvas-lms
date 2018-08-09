@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2014 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -26,6 +26,7 @@ class CalendarEvent < ActiveRecord::Base
   include CopyAuthorizedLinks
   include TextHelper
   include HtmlTextHelper
+  include Plannable
 
   include MasterCourses::Restrictor
   restrict_columns :content, [:title, :description]
@@ -50,6 +51,7 @@ class CalendarEvent < ActiveRecord::Base
   belongs_to :user
   belongs_to :parent_event, :class_name => 'CalendarEvent', :foreign_key => :parent_calendar_event_id, :inverse_of => :child_events
   has_many :child_events, -> { where("calendar_events.workflow_state <> 'deleted'") }, class_name: 'CalendarEvent', foreign_key: :parent_calendar_event_id, inverse_of: :parent_event
+  has_many :child_event_participants, :through => :child_events, :source => :user
   validates_presence_of :context, :workflow_state
   validates_associated :context, :if => lambda { |record| record.validate_context }
   validates_length_of :description, :maximum => maximum_long_text_length, :allow_nil => true, :allow_blank => true
@@ -93,7 +95,7 @@ class CalendarEvent < ActiveRecord::Base
     return unless @child_event_data
     current_events = child_events.group_by{ |e| e[:context_code] }
     @child_event_data.each do |data|
-      if event = current_events.delete(data[:context_code]) and event = event[0]
+      if (event = current_events.delete(data[:context_code])&.first)
         event.updating_user = @updating_user
         event.update_attributes(:start_at => data[:start_at], :end_at => data[:end_at])
       else
@@ -118,8 +120,6 @@ class CalendarEvent < ActiveRecord::Base
   def effective_context
     effective_context_code && ActiveRecord::Base.find_by_asset_string(effective_context_code) || context
   end
-
-  scope :order_by_start_at, -> { order(:start_at) }
 
   scope :active, -> { where("calendar_events.workflow_state<>'deleted'") }
   scope :are_locked, -> { where(:workflow_state => 'locked') }
@@ -270,15 +270,15 @@ class CalendarEvent < ActiveRecord::Base
     :description,
     :location_name,
     :location_address
-  ]
+  ].freeze
   LOCKED_ATTRIBUTES = CASCADED_ATTRIBUTES + [
     :start_at,
     :end_at
-  ]
+  ].freeze
 
   def sync_child_events
-    locked_changes = LOCKED_ATTRIBUTES.select { |attr| send("#{attr}_changed?") }
-    cascaded_changes = CASCADED_ATTRIBUTES.select { |attr| send("#{attr}_changed?") }
+    locked_changes = LOCKED_ATTRIBUTES.select { |attr| saved_change_to_attribute?(attr) }
+    cascaded_changes = CASCADED_ATTRIBUTES.select { |attr| saved_change_to_attribute?(attr) }
     child_events.are_locked.update_all Hash[locked_changes.map{ |attr| [attr, send(attr)] }] if locked_changes.present?
     child_events.are_unlocked.update_all Hash[cascaded_changes.map{ |attr| [attr, send(attr)] }] if cascaded_changes.present?
   end
@@ -287,13 +287,13 @@ class CalendarEvent < ActiveRecord::Base
   def sync_parent_event
     return unless parent_event
     return if appointment_group
-    return unless start_at_changed? || end_at_changed? || workflow_state_changed?
+    return unless saved_change_to_start_at? || saved_change_to_end_at? || saved_change_to_workflow_state?
     return if @skip_sync_parent_event
     parent_event.cache_child_event_ranges! unless workflow_state == 'deleted'
   end
 
   def cache_child_event_ranges!
-    events = CANVAS_RAILS4_2 ? child_events(true) : child_events.reload
+    events = child_events.reload
 
     if events.present?
       CalendarEvent.where(:id => self).
@@ -368,7 +368,7 @@ class CalendarEvent < ActiveRecord::Base
       just_created &&
       context == appointment_group.participant_for(@updating_user)
     }
-    data { {:updating_user => @updating_user} }
+    data { {:updating_user_name => @updating_user.name} }
 
     dispatch :appointment_canceled_by_user
     to { appointment_group.instructors +
@@ -376,12 +376,12 @@ class CalendarEvent < ActiveRecord::Base
     whenever {
       appointment_group && parent_event &&
       deleted? &&
-      workflow_state_changed? &&
+      saved_change_to_workflow_state? &&
       @updating_user &&
       context == appointment_group.participant_for(@updating_user)
     }
     data { {
-      :updating_user => @updating_user,
+      :updating_user_name => @updating_user.name,
       :cancel_reason => @cancel_reason
     } }
 
@@ -391,17 +391,17 @@ class CalendarEvent < ActiveRecord::Base
       appointment_group && parent_event &&
       just_created
     }
-    data { {:updating_user => @updating_user} }
+    data { {:updating_user_name => @updating_user.name} }
 
     dispatch :appointment_deleted_for_user
     to { participants(include_observers: true) - [@updating_user] }
     whenever {
       appointment_group && parent_event &&
       deleted? &&
-      workflow_state_changed?
+      saved_change_to_workflow_state?
     }
     data { {
-      :updating_user => @updating_user,
+      :updating_user_name => @updating_user.name,
       :cancel_reason => @cancel_reason
     } }
   end
@@ -455,6 +455,7 @@ class CalendarEvent < ActiveRecord::Base
 
       if options[:cancel_existing]
         context.reservations_for(participant).lock.each do |reservation|
+          raise ReservationError, "cannot cancel past reservation" if reservation.end_at < Time.now.utc
           reservation.updating_user = user
           reservation.destroy
         end
@@ -610,7 +611,7 @@ class CalendarEvent < ActiveRecord::Base
         event.end.icalendar_tzid = 'UTC'
       end
 
-      if @event.all_day
+      if @event.all_day && @event.all_day_date
         event.start = Date.new(@event.all_day_date.year, @event.all_day_date.month, @event.all_day_date.day)
         event.start.ical_params = {"VALUE"=>["DATE"]}
         event.end = event.start

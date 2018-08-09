@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,7 +17,7 @@
 #
 
 require 'oauth'
-require 'oauth/client/action_pack'
+require 'oauth/request_proxy/action_controller_request'
 require 'nokogiri'
 
 class LtiApiController < ApplicationController
@@ -136,7 +136,13 @@ class LtiApiController < ApplicationController
     assignment.update_attribute(:turnitin_enabled,  false) if assignment.turnitin_enabled?
     request.body.rewind
     turnitin_processor = Turnitin::OutcomeResponseProcessor.new(@tool, assignment, user, JSON.parse(request.body.read))
-    turnitin_processor.process
+    turnitin_processor.send_later_enqueue_args(
+      :process,
+      {
+        max_attempts: Turnitin::OutcomeResponseProcessor.max_attempts,
+        priority: Delayed::LOW_PRIORITY
+      }
+    )
     render json: {}, status: 200
   end
 

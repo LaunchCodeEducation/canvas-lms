@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require 'nokogiri'
 
 class CourseLinkValidator
@@ -100,14 +117,14 @@ class CourseLinkValidator
         self.issues << {:name => quiz.title, :type => :quiz,
                    :content_url => "/courses/#{self.course.id}/quizzes/#{quiz.id}"}.merge(:invalid_links => links)
       end
-      quiz.quiz_questions.each do |qq|
+      quiz.quiz_questions.active.each do |qq|
         check_question(qq)
       end
     end
     progress.update_completion! 85
 
     # Wiki pages
-    self.course.wiki.wiki_pages.not_deleted.each do |page|
+    self.course.wiki_pages.not_deleted.each do |page|
       find_invalid_links(page.body) do |links|
         self.issues << {:name => page.title, :type => :wiki_page,
                    :content_url => "/courses/#{self.course.id}/pages/#{page.url}"}.merge(:invalid_links => links)

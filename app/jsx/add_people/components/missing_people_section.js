@@ -1,11 +1,30 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import I18n from 'i18n!roster'
 import React from 'react'
+import PropTypes from 'prop-types'
 import shapes from './shapes'
-import Table from 'instructure-ui/lib/components/Table'
-import ScreenReaderContent from 'instructure-ui/lib/components/ScreenReaderContent'
-import TextInput from 'instructure-ui/lib/components/TextInput'
-import Checkbox from 'instructure-ui/lib/components/Checkbox'
-import Link from 'instructure-ui/lib/components/Link'
+import Table from '@instructure/ui-elements/lib/components/Table'
+import ScreenReaderContent from '@instructure/ui-a11y/lib/components/ScreenReaderContent'
+import TextInput from '@instructure/ui-forms/lib/components/TextInput'
+import Checkbox from '@instructure/ui-forms/lib/components/Checkbox'
+import Link from '@instructure/ui-elements/lib/components/Link'
 
   const namePrompt = I18n.t('Click to add a name');
   const nameLabel = I18n.t("New user's name");
@@ -18,10 +37,10 @@ import Link from 'instructure-ui/lib/components/Link'
 
   class MissingPeopleSection extends React.Component {
     static propTypes = {
-      missing: React.PropTypes.shape(shapes.missingsShape).isRequired,
-      searchType: React.PropTypes.string.isRequired,
-      inviteUsersURL: React.PropTypes.string,
-      onChange: React.PropTypes.func.isRequired
+      missing: PropTypes.shape(shapes.missingsShape).isRequired,
+      searchType: PropTypes.string.isRequired,
+      inviteUsersURL: PropTypes.string,
+      onChange: PropTypes.func.isRequired
     };
     static defaultProps = {
       inviteUsersURL: undefined
@@ -130,7 +149,7 @@ import Link from 'instructure-ui/lib/components/Link'
           // cannot create new users. Just show the missing ones
           row = (
             <tr key={`missing_${missing.address}`}>
-              <td>{missing.address}</td>
+              <th scope="row">{missing.address}</th>
             </tr>
           );
         } else if (missing.createNew) {
@@ -164,7 +183,7 @@ import Link from 'instructure-ui/lib/components/Link'
                   onChange={this.onNewForMissingChange}
                 />
               </td>
-              <td>{missing.address}</td>
+              <th scope="row">{missing.address}</th>
             </tr>
           );
         } else {
@@ -182,7 +201,7 @@ import Link from 'instructure-ui/lib/components/Link'
                   {namePrompt}
                 </Link>
               </td>
-              <td>{missing.address}</td>
+              <th scope="row">{missing.address}</th>
             </tr>
           );
         }
@@ -201,7 +220,7 @@ import Link from 'instructure-ui/lib/components/Link'
           // cannot create new users. Just show the missing ones
           row = (
             <tr key={`missing_${missing.address}`}>
-              <td>{missing.address}</td>
+              <th scope="row">{missing.address}</th>
             </tr>
           );
         } else if (missing.createNew) {
@@ -226,7 +245,7 @@ import Link from 'instructure-ui/lib/components/Link'
                   value={missing.newUserInfo.name || null}
                 />
               </td>
-              <td>{missing.address}</td>
+              <th scope="row">{missing.address}</th>
             </tr>
           );
         } else {
@@ -244,7 +263,7 @@ import Link from 'instructure-ui/lib/components/Link'
                   {namePrompt}
                 </Link>
               </td>
-              <td>{missing.address}</td>
+              <th scope="row">{missing.address}</th>
             </tr>
           );
         }

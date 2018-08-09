@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2014 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -114,7 +114,7 @@ class RoleOverridesController < ApplicationController
   before_action :set_js_env_for_current_account
 
   # @API List roles
-  # List the roles available to an account.
+  # A paginated list of the roles available to an account.
   #
   # @argument account_id [Required, String]
   #   The id of the account to retrieve roles for.
@@ -164,9 +164,16 @@ class RoleOverridesController < ApplicationController
         :COURSE_ROLES => course_role_data,
         :ACCOUNT_PERMISSIONS => account_permissions(@context),
         :COURSE_PERMISSIONS => course_permissions(@context),
-        :IS_SITE_ADMIN => @context.site_admin?
+        :IS_SITE_ADMIN => @context.site_admin?,
+        :ACCOUNT_ID => @context.id
       })
 
+      if @context.is_a?(Account) && @context.feature_enabled?(:permissions_v2_ui)
+        js_bundle :permissions_index
+        css_bundle :permissions
+      else
+        js_bundle :roles
+      end
       @active_tab = 'permissions'
     end
   end
@@ -253,6 +260,7 @@ class RoleOverridesController < ApplicationController
   #     comment_on_others_submissions    -- [sTAD ] View all students' submissions and make comments on them
   #     create_collaborations            -- [STADo] Create student collaborations
   #     create_conferences               -- [STADo] Create web conferences
+  #     import_outcomes                  -- [ TaDo] Import outcome data
   #     manage_admin_users               -- [ Tad ] Add/remove other teachers, course designers or TAs to the course
   #     manage_assignments               -- [ TADo] Manage (add / edit / delete) assignments and quizzes
   #     manage_calendar                  -- [sTADo] Add, edit and delete events on the course calendar
@@ -280,6 +288,9 @@ class RoleOverridesController < ApplicationController
   #     view_all_grades                  -- [ TAd ] View all grades
   #     view_group_pages                 -- [sTADo] View the group pages of all student groups
   #     lti_add_edit                     -- [ TAD ] LTI add and edit
+  #     read_email_addresses             -- [sTAdo] See other users' primary email address
+  #     view_user_logins                 -- [ TA  ] View login ids for users
+  #     generate_observer_pairing_code   -- [ tAdo] Allow observer pairing code generation
   #
   #   Some of these permissions are applicable only for roles on the site admin
   #   account, on a root account, or for course-level roles with a particular base role type;
@@ -352,7 +363,8 @@ class RoleOverridesController < ApplicationController
     json = role_json(@context, role, @current_user, session)
 
     if base_role = RoleOverride.enrollment_type_labels.find{|br| br[:base_role_name] == base_role_type}
-      json["base_role_type_label"] = base_role[:label].call
+      json["base_role_type_label"] =
+        RoleOverride.v2_labels(@context, base_role.key?(:label_v2)) ? base_role[:label_v2].call : base_role[:label].call
     end
 
     render :json => json
@@ -598,7 +610,8 @@ class RoleOverridesController < ApplicationController
     course = {:group_name => t('course_permissions',  "Course & Account Permissions"), :group_permissions => []}
 
     RoleOverride.manageable_permissions(context).each do |p|
-      hash = {:label => p[1][:label].call, :permission_name => p[0]}
+      hash = {:label =>
+             RoleOverride.v2_labels(@context, p[1].key?(:label_v2)) ? p[1][:label_v2].call : p[1][:label].call, :permission_name => p[0]}
 
       # Check to see if the base role name is in the list of other base role names in p[1]
       is_course_permission = !(Role::ENROLLMENT_TYPES & p[1][:available_to]).empty?
@@ -619,7 +632,10 @@ class RoleOverridesController < ApplicationController
     res << account if account[:group_permissions].any?
     res << course if course[:group_permissions].any?
 
-    res.each{|pg| pg[:group_permissions] = pg[:group_permissions].sort_by{|p|p[:label]} }
+    res.each do |pg|
+      pg[:group_permissions] =
+        pg[:group_permissions].sort_by{|p| RoleOverride.v2_labels(@context, p.key?(:label_v2)) ? p[:label_v2] : p[:label]}
+    end
 
     res
   end
@@ -649,7 +665,8 @@ class RoleOverridesController < ApplicationController
 
     # Add group_permissions
     RoleOverride.manageable_permissions(context).each do |p|
-      hash = {:label => p[1][:label].call, :permission_name => p[0]}
+      hash = {:label =>
+              RoleOverride.v2_labels(@context, p[1].key?(:label_v2)) ? p[1][:label_v2].call : p[1][:label].call, :permission_name => p[0]}
       if p[1][:account_only]
         if p[1][:account_only] == :site_admin
           site_admin[:group_permissions] << hash
@@ -669,7 +686,10 @@ class RoleOverridesController < ApplicationController
     res << admin_tools if admin_tools[:group_permissions].any?
     res << course if course[:group_permissions].any?
 
-    res.each{|pg| pg[:group_permissions] = pg[:group_permissions].sort_by{|p|p[:label]} }
+    res.each do |pg|
+      pg[:group_permissions] =
+        pg[:group_permissions].sort_by{|p| RoleOverride.v2_labels(@context, p.key?(:label_v2)) ? p[:label_v2] : p[:label]}
+    end
 
     res
   end

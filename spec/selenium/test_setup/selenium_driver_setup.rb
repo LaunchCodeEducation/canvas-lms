@@ -1,4 +1,22 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require "fileutils"
+require "chromedriver/helper"
 require_relative "common_helper_methods/custom_alert_actions"
 
 # WebDriver uses port 7054 (the "locking port") as a mutex to ensure
@@ -24,8 +42,8 @@ module SeleniumDriverSetup
     # nothing should wait by default
     implicit_wait: 0,
     # except finding elements
-    finder: 5,
-    script: 5
+    finder: CONFIG[:finder_timeout_seconds] || 5,
+    script: CONFIG[:script_timeout_seconds] || 5
   }.freeze
 
   # If you have some really slow UI, you can temporarily override
@@ -73,12 +91,19 @@ module SeleniumDriverSetup
       @driver = nil
     end
 
+    def saucelabs_test_run?
+      SeleniumDriverSetup::CONFIG[:remote_url].present? &&
+        SeleniumDriverSetup::CONFIG[:remote_url].downcase.include?("saucelabs")
+    end
+
     def run
       begin
         [
           Thread.new { start_webserver },
           Thread.new { start_driver }
         ].each(&:join)
+      rescue Selenium::WebDriver::Error::WebDriverError
+        driver.quit if saucelabs_test_run?
       rescue StandardError
         puts "selenium startup failed: #{$ERROR_INFO}"
         puts "exiting :'("
@@ -194,7 +219,7 @@ module SeleniumDriverSetup
     end
 
     def run_headless?
-      ENV.key?("TEST_ENV_NUMBER")
+      ENV.key?("TEST_ENV_NUMBER") && !saucelabs_test_run?
     end
 
     HEADLESS_DEFAULTS = {
@@ -254,7 +279,7 @@ module SeleniumDriverSetup
 
     def safari_driver
       puts "using safari driver"
-      selenium_remote_driver
+      selenium_url ? selenium_remote_driver : ruby_safari_driver
     end
 
     def firefox_driver
@@ -296,7 +321,13 @@ module SeleniumDriverSetup
 
     def ruby_chrome_driver
       puts "Thread: provisioning local chrome driver"
+      Chromedriver.set_version "2.38"
       Selenium::WebDriver.for :chrome, switches: %w[--disable-impl-side-painting]
+    end
+
+    def ruby_safari_driver
+      puts "Thread: provisioning local safari driver"
+      Selenium::WebDriver.for :safari
     end
 
     def selenium_remote_driver

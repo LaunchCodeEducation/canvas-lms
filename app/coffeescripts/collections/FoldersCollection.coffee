@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2013 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,10 +17,10 @@
 #
 
 define [
-  'compiled/models/Folder'
+  '../models/Folder'
 ], (Folder) ->
 
-  # `FoldersCollection` is actually defined inside of 'compiled/models/Folder'
+  # `FoldersCollection` is actually defined inside of '../models/Folder'
   # because RequireJS sucks at figuring out circular dependencies.
   # I did exactly what http://requirejs.org/docs/api.html#circular said but the
   # load order was still completely arbitrary. By defining them in the same file

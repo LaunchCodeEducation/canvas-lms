@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   "i18n!assignments.peer_reviews",
   "jquery",
@@ -16,8 +33,20 @@ define [
     ), ->
       $(this).removeClass "submission-hover"
 
+    $(".peer_review").focusin (->
+      $(this).addClass "focusWithin"
+    )
+    $(".peer_review").focusout (event) ->
+      $parent = $(this).closest(".peer_review")
+      $newFocus = $(event.related).closest(".peer_review")
+      unless ($newFocus.is($parent))
+        $parent.removeClass "focusWithin"
+
     $(".peer_review .delete_review_link").click (event) ->
       event.preventDefault()
+      next = $(this).parents(".peer_review").next().find("a").add(
+        $(this).parents(".student_reviews").find(".assign_peer_review_link")
+      ).first()
       $(this).parents(".peer_review").confirmDelete
         url: $(this).attr("href")
         message: I18n.t("messages.cancel_peer_review", "Cancel this peer review?")
@@ -27,6 +56,7 @@ define [
             $(this).remove()
             if $parent.find(".assigned").length is 0
               $parent.find(".no_requests_message").show()
+            next.focus()
 
     $(".assign_peer_review_link").click (event) ->
       event.preventDefault()
@@ -60,6 +90,7 @@ define [
           hrefValues: ["id", "user_id"]
         $(this).parents(".student_reviews").find(".no_requests_message").slideUp().end().find(".peer_reviews").append $review
         $review.slideDown()
+        $review.find("a").first().focus()
         assessor_name = $(this).parents(".student_reviews").find(".assessor_name").text()
         time = $.datetimeString(data.assessment_request.updated_at)
         $review.find(".reminder_peer_review_link").attr "title", I18n.t("titles.reminder", "Remind %{assessor} about Assessment, last notified %{time}", { assessor: assessor_name, time: time })

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -19,10 +19,10 @@
 define [
   'jquery'
   'underscore'
-  'compiled/widget/TokenSelectorList'
-  'compiled/collections/RecipientCollection'
+  '../widget/TokenSelectorList'
+  '../collections/RecipientCollection'
   'jquery.instructure_misc_helpers'
-  'compiled/jquery/scrollIntoView'
+  '../jquery/scrollIntoView'
 ], ($, _, TokenSelectorList, RecipientCollection) ->
 
   class

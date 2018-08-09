@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module Canvas::Redis
   # try to grab a lock in Redis, returning false if the lock can't be held. If
   # the lock is grabbed and `ttl` is given, it'll be set to expire after `ttl`
@@ -80,6 +97,17 @@ module Canvas::Redis
   class UnsupportedRedisMethod < RuntimeError
   end
 
+  BoolifySet =
+    lambda { |value|
+      if value && "OK" == value
+        true
+      elsif value && :failure == value
+        nil
+      else
+        false
+      end
+    }
+
   module Client
     def process(commands, *a, &b)
       # These instance vars are used by the added #log_request_response method.
@@ -96,12 +124,17 @@ module Canvas::Redis
       #
       # for instance, Rails.cache.delete_matched will error out if the 'keys' command returns nil instead of []
       last_command = commands.try(:last)
-      failure_val = case (last_command.respond_to?(:first) ? last_command.first : last_command).to_s
+      last_command_args = Array.wrap(last_command)
+      last_command = (last_command.respond_to?(:first) ? last_command.first : last_command).to_s
+      failure_val = case last_command
                     when 'keys', 'hmget'
                       []
                     when 'del'
                       0
                     end
+      if (last_command == 'set' && (last_command_args.include?('XX') || last_command_args.include?('NX')))
+        failure_val = :failure
+      end
 
       Canvas::Redis.handle_redis_failure(failure_val, self.location) do
         super
@@ -242,7 +275,21 @@ module Canvas::Redis
     ].freeze
   end
 
+  module DistributedStore
+    def initialize(addresses, options = { })
+      _extend_namespace options
+      @ring = options[:ring] || Canvas::HashRing.new([], options[:replicas], options[:digest])
+
+      addresses.each do |address|
+        @ring.add_node(::Redis::Store.new _merge_options(address, options))
+      end
+    end
+  end
+
   def self.patch
     Redis::Client.prepend(Client)
+    Redis::DistributedStore.prepend(DistributedStore)
+    Redis.send(:remove_const, :BoolifySet)
+    Redis.const_set(:BoolifySet, BoolifySet)
   end
 end

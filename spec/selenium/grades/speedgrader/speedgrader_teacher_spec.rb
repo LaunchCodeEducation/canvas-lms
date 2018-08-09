@@ -1,8 +1,26 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative "../../common"
 require_relative "../../helpers/speed_grader_common"
 require_relative "../../helpers/gradebook_common"
 require_relative "../../helpers/quizzes_common"
 require_relative "../../helpers/groups_common"
+require_relative "../pages/speedgrader_page"
 
 describe "speed grader" do
   include_context "in-process server selenium tests"
@@ -69,7 +87,7 @@ describe "speed grader" do
     it "properly shows and hides student name when name hidden toggled", priority: "2", test_id: 283741 do
       get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
 
-      in_frame 'speedgrader_iframe' do
+      in_frame 'speedgrader_iframe', '.is-inside-submission-frame' do
         expect(f('.not_external')).to include_text("instructure")
         expect(f('.open_in_a_new_tab')).to include_text("View")
       end
@@ -138,6 +156,72 @@ describe "speed grader" do
     expect(f('#enrollment_concluded_notice')).to include_text 'Notice: Concluded Student'
   end
 
+  context 'when student names are hidden' do
+    before(:each) do
+      student_in_course(active_all: true, name: 'student b')
+      @student1 = @student
+      student_in_course(active_all: true, name: 'student a')
+      @student2 = @student
+      student_in_course(active_all: true, name: 'student c')
+      @student3 = @student
+
+      @assignment.submission_types = 'online_text_entry'
+      @assignment.save!
+    end
+
+    it 'sorts by submission date when eg_sort_by is submitted_at' do
+      now = Time.zone.now.change(usec: 0)
+      Timecop.freeze(3.minutes.ago(now)) do
+        @submission1 = @assignment.submit_homework(@student1, submission_type: 'online_text_entry', body: 'student one')
+      end
+      Timecop.freeze(2.minutes.ago(now)) do
+        @submission2 = @assignment.submit_homework(@student3, submission_type: 'online_text_entry', body: 'student three')
+      end
+      Timecop.freeze(1.minute.ago(now)) do
+        @submission3 = @assignment.submit_homework(@student2, submission_type: 'online_text_entry', body: 'student two')
+      end
+
+      get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
+
+      Speedgrader.click_settings_link
+      Speedgrader.click_options_link
+      click_option('#eg_sort_by', 'submitted_at', :value)
+      Speedgrader.select_hide_student_names
+
+      expect_new_page_load do
+        Speedgrader.submit_settings_form
+      end
+
+      list_items = ff('#students_selectmenu option').map{|i| i['value']}
+      expect(list_items).to contain_exactly(@student1.id.to_s, @student3.id.to_s, @student2.id.to_s)
+    end
+
+    it 'sorts by submission status when eg_sort_by is submission_status' do
+      skip 'update => update! made this spec fail GRADE-1086'
+      @submission1 = @assignment.submit_homework(@student1, submission_type: 'online_text_entry', body: 'student one')
+      @submission2 = @assignment.submit_homework(@student2, submission_type: 'online_text_entry', body: 'student three')
+      @submission2.update!(
+        grade: '90', score: 90, workflow_state: 'graded', grade_matches_current_submission: true,
+        published_score: 90, published_grade: 90
+      )
+
+      get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
+
+      Speedgrader.click_settings_link
+      Speedgrader.click_options_link
+      click_option('#eg_sort_by', 'submission_status', :value)
+      Speedgrader.select_hide_student_names.click
+
+      expect_new_page_load do
+        Speedgrader.submit_settings_form
+      end
+
+      list_items = ff('#students_selectmenu option').map{|i| i['value']}
+
+      expect(list_items).to contain_exactly(@student2.id.to_s, @student1.id.to_s, @student3.id.to_s)
+    end
+  end
+
   context "multiple enrollments" do
     before(:each) do
       student_in_course
@@ -151,7 +235,7 @@ describe "speed grader" do
     it "does not duplicate students", priority: "1", test_id: 283985 do
       get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
 
-      expect(ff("#students_selectmenu option")).to have_size 1
+      expect(ff("#students_selectmenu > option")).to have_size 1
     end
 
     it "filters by section properly", priority: "1", test_id: 283986 do
@@ -161,9 +245,9 @@ describe "speed grader" do
       section_options_text = f("#section-menu ul")[:textContent] # hidden
       expect(section_options_text).to include(@course_section.name)
       goto_section(sections[0].id)
-      expect(ff("#students_selectmenu option")).to have_size 1
+      expect(ff("#students_selectmenu > option")).to have_size 1
       goto_section(sections[1].id)
-      expect(ff("#students_selectmenu option")).to have_size 1
+      expect(ff("#students_selectmenu > option")).to have_size 1
     end
   end
 
@@ -191,25 +275,29 @@ describe "speed grader" do
     get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{@assignment.id}"
 
     # sort by submission date
-    f("#settings_link").click
+    Speedgrader.click_settings_link
+    Speedgrader.click_options_link
     f('select#eg_sort_by option[value="submitted_at"]').click
     expect_new_page_load { fj('.ui-dialog-buttonset .ui-button:visible:last').click }
     expect(f('#combo_box_container .ui-selectmenu .ui-selectmenu-item-header')).to include_text @student.name
 
     # hide student names
-    f("#settings_link").click
+    Speedgrader.click_settings_link
+    Speedgrader.click_options_link
     f('#hide_student_names').click
     expect_new_page_load { fj('.ui-dialog-buttonset .ui-button:visible:last').click }
     expect(f('#combo_box_container .ui-selectmenu .ui-selectmenu-item-header')).to include_text "Student 1"
 
     # make sure it works a second time too
-    f("#settings_link").click
+    Speedgrader.click_settings_link
+    Speedgrader.click_options_link
     f('select#eg_sort_by option[value="alphabetically"]').click
     expect_new_page_load { fj('.ui-dialog-buttonset .ui-button:visible:last').click }
     expect(f('#combo_box_container .ui-selectmenu .ui-selectmenu-item-header')).to include_text "Student 1"
 
     # unselect the hide option
-    f("#settings_link").click
+    Speedgrader.click_settings_link
+    Speedgrader.click_options_link
     f('#hide_student_names').click
     expect_new_page_load { fj('.ui-dialog-buttonset .ui-button:visible:last').click }
     expect(f('#combo_box_container .ui-selectmenu .ui-selectmenu-item-header')).to include_text @student.name
@@ -283,18 +371,19 @@ describe "speed grader" do
     quiz = seed_quiz_with_submission
     get "/courses/#{@course.id}/gradebook/speed_grader?assignment_id=#{quiz.assignment_id}"
     # In the left panel modify the grade to 0.5
-    driver.switch_to.frame f('#speedgrader_iframe')
-    points_input = ff('#questions .user_points input')
-    driver.execute_script("$('#questions .user_points input').focus()")
-    replace_content(points_input[0], '0')
-    replace_content(points_input[1], '.5')
-    replace_content(points_input[2], '0')
-    f('.update_scores button[type="submit"]').click
-    wait_for_ajaximations
+    in_frame 'speedgrader_iframe', '.quizzes-speedgrader' do
+      points_input = ff('#questions .user_points input')
+      driver.execute_script("$('#questions .user_points input').focus()")
+      replace_content(points_input[0], '0')
+      replace_content(points_input[1], '.5')
+      replace_content(points_input[2], '0')
+      f('.update_scores button[type="submit"]').click
+      wait_for_ajaximations
+    end
     # Switch to the right panel
     # Verify that the grade is .5
-    driver.switch_to.default_content
-    expect(f('#grading-box-extended')['value']).to eq('0.5')
+    wait_for_ajaximations
+    expect{f('#grading-box-extended')['value']}.to become('0.5')
     expect(f("#students_selectmenu-button")).to_not have_class("not_graded")
     expect(f("#students_selectmenu-button")).to have_class("graded")
   end

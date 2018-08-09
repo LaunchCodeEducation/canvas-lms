@@ -1,62 +1,66 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+
 import I18n from 'i18n!new_nav'
 import React from 'react'
-import SVGWrapper from 'jsx/shared/SVGWrapper'
-import Spinner from 'instructure-ui/lib/components/Spinner'
+import {bool, arrayOf, shape, string} from 'prop-types'
+import View from '@instructure/ui-layout/lib/components/View'
+import Heading from '@instructure/ui-elements/lib/components/Heading'
+import Link from '@instructure/ui-elements/lib/components/Link'
+import List, {ListItem} from '@instructure/ui-elements/lib/components/List'
+import Spinner from '@instructure/ui-elements/lib/components/Spinner'
 
-  var GroupsTray = React.createClass({
-    propTypes: {
-      groups: React.PropTypes.array.isRequired,
-      closeTray: React.PropTypes.func.isRequired,
-      hasLoaded: React.PropTypes.bool.isRequired
-    },
-
-    getDefaultProps() {
-      return {
-        groups: []
-      };
-    },
-
-    renderCurrentGroups() {
-      if (!this.props.hasLoaded) {
-        return (
-          <li className="ic-NavMenu-list-item ic-NavMenu-list-item--loading-message">
+export default function GroupsTray({groups, hasLoaded}) {
+  return (
+    <View as="div" padding="medium">
+      <Heading level="h3" as="h2">{I18n.t('Groups')}</Heading>
+      <hr role="presentation"/>
+      <List variant="unstyled"  margin="small 0" itemSpacing="small">
+        {hasLoaded ? (
+          groups.map(group =>
+            <ListItem key={group.id}>
+              <Link href={`/groups/${group.id}`}>{group.name}</Link>
+            </ListItem>
+          ).concat([
+            <ListItem key="hr"><hr role="presentation"/></ListItem>,
+            <ListItem key="all">
+              <Link href="/groups">{I18n.t('All Groups')}</Link>
+            </ListItem>
+          ])
+        ) : (
+          <ListItem>
             <Spinner size="small" title={I18n.t('Loading')} />
-          </li>
-        );
-      }
-      var groups =  this.props.groups.map((group) => {
-        if (group.can_access && !group.concluded) {
-          return (
-            <li className="ic-NavMenu-list-item" key={group.id}>
-              <a href={`/groups/${group.id}`} className='ic-NavMenu-list-item__link'>{group.name}</a>
-            </li>
-          );
-        };
-      });
-      groups.push(
-        <li key='allGroupsLink' className='ic-NavMenu-list-item ic-NavMenu-list-item--feature-item'>
-          <a href='/groups' className='ic-NavMenu-list-item__link'>{I18n.t('All Groups')}</a>
-        </li>
-      );
-      return groups;
-    },
+          </ListItem>
+        )}
+      </List>
+    </View>
+  )
+}
 
-    render() {
-      return (
-        <div>
-          <div className="ic-NavMenu__header">
-            <h1 className="ic-NavMenu__headline">{I18n.t('Groups')}</h1>
-            <button className="Button Button--icon-action ic-NavMenu__closeButton" type="button" onClick={this.props.closeTray}>
-              <i className="icon-x"></i>
-              <span className="screenreader-only">{I18n.t('Close')}</span>
-            </button>
-          </div>
-          <ul className="ic-NavMenu__link-list">
-            {this.renderCurrentGroups()}
-          </ul>
-        </div>
-      );
-    }
-  });
+GroupsTray.propTypes = {
+  groups: arrayOf(shape({
+    id: string.isRequired,
+    name: string.isRequired
+  })).isRequired,
+  hasLoaded: bool.isRequired
+}
 
-export default GroupsTray
+GroupsTray.defaultProps = {
+  groups: []
+}

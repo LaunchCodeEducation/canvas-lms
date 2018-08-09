@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/common')
 require File.expand_path(File.dirname(__FILE__) + '/helpers/eportfolios_common')
 
@@ -19,6 +36,13 @@ describe "add content box" do
   it "should click on the How Do I..? button" do
     f(".wizard_popup_link").click
     expect(f("#wizard_box .wizard_options_list")).to be_displayed
+  end
+
+  it "should preview rich text content" do
+    f(".add_rich_content_link").click
+    type_in_tiny "textarea", "hello preview"
+    fj(".preview_button:not('.btn-small')").click
+    expect(fj(".preview_content.preview_section")).to include_text("hello preview")
   end
 
   it "should add rich text content" do

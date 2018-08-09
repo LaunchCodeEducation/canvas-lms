@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -21,7 +21,7 @@ require File.expand_path(File.dirname(__FILE__) + '/../spec_helper.rb')
 describe Alert do
   before do
     @mock_notification = Notification.new
-    Notification.stubs(:by_name).returns(@mock_notification)
+    allow(Notification).to receive(:by_name).and_return(@mock_notification)
   end
 
   context "Alerts" do

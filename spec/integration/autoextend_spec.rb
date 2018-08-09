@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2017 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -31,7 +31,11 @@ describe Autoextend do
 
       # not found via autoloading? maybe it's a migration
       if !extension.used
-        ActiveRecord::Migrator.migrations(ActiveRecord::Migrator.migrations_paths).map(&:disable_ddl_transaction)
+        if CANVAS_RAILS5_1
+          ActiveRecord::Migrator.migrations(ActiveRecord::Migrator.migrations_paths).map(&:disable_ddl_transaction)
+        else
+          ActiveRecord::Base.connection.migration_context.migrations.map(&:disable_ddl_transaction)
+        end
       end
 
       extension_name = if extension.module.is_a?(Module)

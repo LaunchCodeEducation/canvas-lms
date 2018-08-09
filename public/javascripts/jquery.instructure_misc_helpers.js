@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2011 Instructure, Inc.
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,22 +12,20 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-define([
-  'INST' /* INST */,
-  'i18n!instructure',
-  'jquery' /* $ */,
-  'underscore',
-  'str/htmlEscape',
-  'compiled/str/TextHelper',
-  'jquery.ajaxJSON' /* ajaxJSON */,
-  'jquery.instructure_forms',
-  'jqueryui/dialog',
-  'vendor/jquery.scrollTo' /* /\.scrollTo/ */
-], function(INST, I18n, $, _, htmlEscape, TextHelper) {
+import INST from './INST'
+import I18n from 'i18n!instructure'
+import $ from 'jquery'
+import _ from 'underscore'
+import htmlEscape from './str/htmlEscape'
+import TextHelper from 'compiled/str/TextHelper'
+import './jquery.ajaxJSON'
+import './jquery.instructure_forms'
+import 'jqueryui/dialog'
+import './vendor/jquery.scrollTo'
 
   // Return the first value which passes a truth test
   $.detect = function(collection, callback) {
@@ -392,4 +390,3 @@ define([
     }
     return null;
   };
-});

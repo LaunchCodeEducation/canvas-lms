@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require 'nokogiri'
 require 'sanitize'
 
@@ -11,7 +28,7 @@ class AssessmentItemConverter
   DEFAULT_POINTS_POSSIBLE = 1
   UNSUPPORTED_TYPES = ['File Upload', 'Hot Spot', 'Quiz Bowl', 'WCT_JumbledSentence']
 
-  attr_reader :base_dir, :identifier, :href, :interaction_type, :title, :question
+  attr_reader :package_root, :identifier, :href, :interaction_type, :title, :question
 
   def initialize(opts)
     @log = Canvas::Migration::logger
@@ -27,9 +44,9 @@ class AssessmentItemConverter
     end
 
     if @manifest_node
-      @base_dir = opts[:base_dir]
+      @package_root = PackageRoot.new(opts[:base_dir])
       @identifier = @manifest_node['identifier']
-      @href = File.join(@base_dir, @manifest_node['href'])
+      @href = @package_root.item_path(@manifest_node['href'])
       if title = @manifest_node.at_css('title langstring') || title = @manifest_node.at_css('xmlns|title xmlns|langstring', 'xmlns' => Qti::Converter::IMS_MD)
         @title = title.text
       end

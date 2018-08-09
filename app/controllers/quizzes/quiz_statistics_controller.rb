@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2012 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -239,7 +239,6 @@ class Quizzes::QuizStatisticsController < ApplicationController
   before_action :require_user, :require_context, :require_quiz, :prepare_service
 
   # @API Fetching the latest quiz statistics
-  # @beta
   #
   # This endpoint provides statistics for all quiz versions, or for a specific
   # quiz version, in which case the output is guaranteed to represent the

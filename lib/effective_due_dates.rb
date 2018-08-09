@@ -1,10 +1,33 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 class EffectiveDueDates
-  attr_reader :context
+  attr_reader :context, :filtered_students
 
   # This class will find the effective due dates for all students
   # and assignments in a course. You can pass it a list of assignments,
   # assignment id's, or a relation, but they MUST be from the same course.
   # Also cross-shard id's won't work.
+
+  # This class does NOT find the effective due dates for ungraded quizzes
+  # which can still have due date overrides.  If the logic in this file
+  # needs to be changed, please consider updating the logic in the
+  # "ungraded_with_user_due_date" quiz scope
+
   def initialize(context, *assignment_collection)
     raise "Context must be a course" unless context.is_a?(Course)
     raise "Context must have an id" unless context.id
@@ -17,6 +40,17 @@ class EffectiveDueDates
   # like Canvas code than EffectiveDueDates.new(...)
   singleton_class.send :alias_method, :for_course, :new
 
+  def filter_students_to(*students)
+    if students.present?
+      students.flatten!
+      students.map! { |s| Shard.relative_id_for(s.try(:id) || s, Shard.current, @context.shard) }
+      students.compact!
+      @filtered_students = students
+    end
+
+    return self # allows us to chain this method
+  end
+
   def to_hash(included = [])
     return @hash if @hash && included.empty?
 
@@ -26,13 +60,13 @@ class EffectiveDueDates
       hsh[assignment_id] ||= {}
       attributes = {}
       if include?(included, :due_at)
-        attributes[:due_at] = row["due_at"] && Time.zone.parse(row["due_at"])
+        attributes[:due_at] = row["due_at"] && DateTime.parse(row["due_at"])
       end
       if include?(included, :grading_period_id)
         attributes[:grading_period_id] = row["grading_period_id"] && row["grading_period_id"].to_i
       end
       if include?(included, :in_closed_grading_period)
-        attributes[:in_closed_grading_period] = (CANVAS_RAILS4_2 ? (row["closed"] == "t") : row["closed"])
+        attributes[:in_closed_grading_period] = row["closed"]
       end
       if include?(included, :override_id)
         attributes[:override_id] = row["override_id"] && row["override_id"].to_i
@@ -68,22 +102,25 @@ class EffectiveDueDates
     # no need to check this one specifically
     return false if @any_in_closed_grading_period == false
 
-    assignment_due_dates = find_effective_due_dates_for_assignment(assignment_id)
     student_id = student_or_student_id.try(:id) || student_or_student_id
-
     if student_id.to_i > 0
-      !!assignment_due_dates.dig(student_id, :in_closed_grading_period)
+      find_effective_due_date(student_id, assignment_id).fetch(:in_closed_grading_period, false)
     else
+      assignment_due_dates = find_effective_due_dates_for_assignment(assignment_id)
       any_student_in_closed_grading_period?(assignment_due_dates)
     end
   end
 
   def grading_period_id_for(student_id:, assignment_id:)
-    find_effective_due_date(student_id, assignment_id).fetch(:grading_period_id, nil)
+    find_effective_due_date(student_id, assignment_id)[:grading_period_id]
   end
 
   def find_effective_due_date(student_id, assignment_id)
     student_id = Shard.relative_id_for(student_id, Shard.current, @context.shard)
+    unless include?(@filtered_students, student_id)
+      raise "Student #{student_id} was not included in this query"
+    end
+
     find_effective_due_dates_for_assignment(assignment_id).fetch(student_id, {})
   end
 
@@ -99,7 +136,15 @@ class EffectiveDueDates
   end
 
   def include?(included, attribute)
-    included.empty? || included.include?(attribute)
+    included.blank? || included.include?(attribute)
+  end
+
+  def filter_students_sql(table)
+    if @filtered_students.present?
+      "AND #{table}.user_id IN (#{filtered_students.join(',')})"
+    else
+      ''
+    end
   end
 
   # This beauty of a method brings together assignment overrides,
@@ -138,7 +183,7 @@ class EffectiveDueDates
       if assignment_collection.empty?
         {}
       else
-        ActiveRecord::Base.connection.select_all("
+        ActiveRecord::Base.connection.select_all(<<-SQL)
           -- fetch the assignment itself
           WITH models AS (
             SELECT *
@@ -177,9 +222,11 @@ class EffectiveDueDates
               1 AS priority
             FROM
               overrides o
-            INNER JOIN #{AssignmentOverrideStudent.quoted_table_name} os ON os.assignment_override_id = o.id
+            INNER JOIN #{AssignmentOverrideStudent.quoted_table_name} os ON os.assignment_override_id = o.id AND
+              os.workflow_state = 'active'
             WHERE
               o.set_type = 'ADHOC'
+              #{filter_students_sql('os')}
           ),
 
           -- fetch all students affected by group overrides
@@ -200,6 +247,7 @@ class EffectiveDueDates
               o.set_type = 'Group' AND
               g.workflow_state <> 'deleted' AND
               gm.workflow_state = 'accepted'
+              #{filter_students_sql('gm')}
           ),
 
           -- fetch all students affected by section overrides
@@ -219,15 +267,16 @@ class EffectiveDueDates
             WHERE
               o.set_type = 'CourseSection' AND
               s.workflow_state <> 'deleted' AND
-              e.workflow_state NOT IN ('rejected', 'deleted') AND
+              e.workflow_state NOT IN ('rejected', 'deleted', 'inactive') AND
               e.type IN ('StudentEnrollment', 'StudentViewEnrollment')
+              #{filter_students_sql('e')}
           ),
 
           -- fetch all students who have an 'Everyone Else'
           -- due date applied to them from the assignment
           override_everyonelse_students AS (
             SELECT
-              student.id AS student_id,
+              e.user_id AS student_id,
               a.id as assignment_id,
               NULL::integer AS override_id,
               date_trunc('minute', a.due_at) AS due_at,
@@ -236,31 +285,12 @@ class EffectiveDueDates
               2 AS priority
             FROM
               models a
-            INNER JOIN #{Course.quoted_table_name} c ON a.context_id = c.id AND a.context_type = 'Course'
-            INNER JOIN #{Enrollment.quoted_table_name} e ON e.course_id = c.id
-            INNER JOIN #{User.quoted_table_name} student ON e.user_id = student.id
+            INNER JOIN #{Enrollment.quoted_table_name} e ON e.course_id = a.context_id
             WHERE
               e.workflow_state NOT IN ('rejected', 'deleted') AND
               e.type IN ('StudentEnrollment', 'StudentViewEnrollment') AND
               a.only_visible_to_overrides IS NOT TRUE
-          ),
-
-          -- fetch all students who have graded submissions
-          -- because if the student received a grade, they
-          -- shouldn't lose visibility to the assignment
-          override_submissions_students AS (
-            SELECT
-              s.user_id AS student_id,
-              s.assignment_id,
-              NULL::integer AS override_id,
-              NULL::timestamp AS due_at,
-              'Submission'::varchar AS override_type,
-              FALSE AS due_at_overridden,
-              3 AS priority
-            FROM
-              models a
-            INNER JOIN #{Submission.quoted_table_name} s ON s.assignment_id = a.id
-            WHERE s.workflow_state = 'graded'
+              #{filter_students_sql('e')}
           ),
 
           -- join all these students together into a single table
@@ -272,8 +302,6 @@ class EffectiveDueDates
             SELECT * FROM override_sections_students
             UNION ALL
             SELECT * FROM override_everyonelse_students
-            UNION ALL
-            SELECT * FROM override_submissions_students
           ),
 
           -- and pick the latest override date as the effective due date
@@ -296,7 +324,7 @@ class EffectiveDueDates
                 gpg.account_id
               FROM
                 models a
-              INNER JOIN #{Course.quoted_table_name} c ON c.id = a.context_id AND a.context_type = 'Course'
+              INNER JOIN #{Course.quoted_table_name} c ON c.id = a.context_id
               INNER JOIN #{EnrollmentTerm.quoted_table_name} term ON c.enrollment_term_id = term.id
               LEFT OUTER JOIN #{GradingPeriodGroup.quoted_table_name} gpg ON
                   gpg.course_id = c.id OR gpg.id = term.grading_period_group_id
@@ -358,7 +386,7 @@ class EffectiveDueDates
           -- match the effective due date with its grading period
           LEFT OUTER JOIN applied_grading_periods periods ON
               periods.start_date < overrides.due_at AND overrides.due_at <= periods.end_date
-        ")
+        SQL
       end
     end
   end

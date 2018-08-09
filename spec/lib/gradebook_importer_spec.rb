@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012-2016 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -53,7 +53,6 @@ describe GradebookImporter do
         to raise_error(ArgumentError, "Must provide attachment.")
     end
 
-
     it "handles points possible being sorted in weird places" do
       importer_with_rows(
         'Student,ID,Section,Assignment 1,Final Score',
@@ -77,6 +76,102 @@ describe GradebookImporter do
       expect(@gi.students.length).to eq 2
     end
 
+    context 'when dealing with a file containing semicolon field separators' do
+      context 'with interspersed commas to throw you off' do
+        before(:each) do
+          @rows = [
+            'Student;ID;Section;Aufgabe 1;Aufgabe 2;Final Score',
+            'Points Possible;;;10000,54;100,00;',
+            '"Merkel 1,0, Angela";1;Mein Kurs;123,4;57,4%;',
+            '"Einstein 1,1, Albert";2;Mein Kurs;1.234,5;4.200,3%;',
+            '"Curie, Marie";3;Mein Kurs;12.34,5;4.20.0,3%;',
+            '"Planck, Max";4;Mein Kurs;-1.234,50;-4.200,30%;',
+            '"Bohr, Neils";5;Mein Kurs;1.234.5;4.200.3%;',
+            '"Dirac, Paul";6;Mein Kurs;1,234,5;4,200,3%;'
+          ]
+
+          importer_with_rows(*@rows)
+        end
+
+        it 'parses out assignments only' do
+          expect(@gi.assignments.length).to eq 2
+        end
+
+        it 'parses out points_possible correctly' do
+          expect(@gi.assignments.first.points_possible).to eq(10_000.54)
+        end
+
+        it 'parses out students correctly' do
+          expect(@gi.students.length).to eq 6
+        end
+
+        it 'does not reformat numbers that are part of strings' do
+          expect(@gi.students.first.name).to eq('Merkel 1,0, Angela')
+        end
+
+        it 'normalizes pure numbers' do
+          expected_grades = %w[123.4 1234.5 1234.5 -1234.50 1234.5 1234.5]
+          actual_grades = @gi.students.map { |student_row| student_row.gradebook_importer_submissions[0]['grade'] }
+
+          expect(actual_grades).to match_array(expected_grades)
+        end
+
+        it 'normalizes percentages' do
+          expected_grades = %w[57.4% 4200.3% 4200.3% -4200.30% 4200.3% 4200.3%]
+          actual_grades = @gi.students.map { |student_row| student_row.gradebook_importer_submissions[1]['grade'] }
+
+          expect(actual_grades).to match_array(expected_grades)
+        end
+      end
+
+      context 'without any interspersed commas' do
+        before(:each) do
+          @rows = [
+            'Student;ID;Section;Aufgabe 1;Aufgabe 2;Final Score',
+            'Points Possible;;;10000,54;100,00;',
+            '"Angela Merkel";1;Mein Kurs;123,4;57,4%;',
+            '"Albert Einstein";2;Mein Kurs;1.234,5;4.200,3%;',
+            '"Marie Curie";3;Mein Kurs;12.34,5;4.20.0,3%;',
+            '"Max Planck";4;Mein Kurs;-1.234,50;-4.200,30%;',
+            '"Neils Bohr";5;Mein Kurs;1.234.5;4.200.3%;',
+            '"Paul Dirac";6;Mein Kurs;1,234,5;4,200,3%;'
+          ]
+
+          importer_with_rows(*@rows)
+        end
+
+        it 'parses out assignments only' do
+          expect(@gi.assignments.length).to eq 2
+        end
+
+        it 'parses out points_possible correctly' do
+          expect(@gi.assignments.first.points_possible).to eq(10_000.54)
+        end
+
+        it 'parses out students correctly' do
+          expect(@gi.students.length).to eq 6
+        end
+
+        it 'does not reformat numbers that are part of strings' do
+          expect(@gi.students.first.name).to eq('Angela Merkel')
+        end
+
+        it 'normalizes pure numbers' do
+          expected_grades = %w[123.4 1234.5 1234.5 -1234.50 1234.5 1234.5]
+          actual_grades = @gi.students.map { |student_row| student_row.gradebook_importer_submissions[0]['grade'] }
+
+          expect(actual_grades).to match_array(expected_grades)
+        end
+
+        it 'normalizes percentages' do
+          expected_grades = %w[57.4% 4200.3% 4200.3% -4200.30% 4200.3% 4200.3%]
+          actual_grades = @gi.students.map { |student_row| student_row.gradebook_importer_submissions[1]['grade'] }
+
+          expect(actual_grades).to match_array(expected_grades)
+        end
+      end
+    end
+
     it "creates a GradebookUpload" do
       new_gradebook_importer
       expect(GradebookUpload.where(course_id: @course, user_id: @user)).not_to be_empty
@@ -90,7 +185,7 @@ describe GradebookImporter do
         file.puts("'Student,ID,Section,Assignment 1,Final Score'\n")
         file.puts("\"Blend, Bill\",6,My Course,-,\n")
         file.close
-        a.stubs(:open).returns(file)
+        allow(a).to receive(:open).and_return(file)
         return a
       end
 
@@ -152,12 +247,12 @@ describe GradebookImporter do
       uploaded_csv = CSV.generate do |csv|
         csv << ["Student", "ID", "SIS User ID", "SIS Login ID", "Section", "Assignment 1"]
         csv << ["    Points Possible", "", "","", ""]
-        csv << [@u1.name , "", "", "", "", 99]
-        csv << ["" , "", @u2.pseudonym.sis_user_id, "", "", 99]
-        csv << ["" , "", "", @u3.pseudonym.unique_id, "", 99]
+        csv << [@u1.name, "", "", "", "", 99]
+        csv << ["", "", @u2.pseudonym.sis_user_id, "", "", 99]
+        csv << ["", "", "", @u3.pseudonym.unique_id, "", 99]
         csv << ["", "", "", 'inactive_login', "", 99]
         csv << ["", "", "", 'active_login', "", 99]
-        csv << ["" , "", "bogusSISid", "", "", 99]
+        csv << ["", "", "bogusSISid", "", "", 99]
       end
 
       importer_with_rows(uploaded_csv)
@@ -194,12 +289,12 @@ describe GradebookImporter do
       p = @u1.pseudonyms.create!(account: account2, unique_id: 'uniqueid')
       p.sis_user_id = 'SISUSERID'
       p.save!
-      Account.expects(:find_by_domain).with('account2').returns(account2)
+      expect(Account).to receive(:find_by_domain).with('account2').and_return(account2)
 
       uploaded_csv = CSV.generate do |csv|
         csv << ["Student", "ID", "SIS User ID", "SIS Login ID", "Root Account", "Section", "Assignment 1"]
         csv << ["    Points Possible", "", "","", "", ""]
-        csv << ["" , "",  @u1.pseudonym.sis_user_id, "", "account2", "", 99]
+        csv << ["", "", @u1.pseudonym.sis_user_id, "", "account2", "", 99]
       end
 
       importer_with_rows(uploaded_csv)
@@ -229,8 +324,8 @@ describe GradebookImporter do
       uploaded_csv = CSV.generate do |csv|
         csv << ["Student", "ID", "SIS User ID", "SIS Login ID", "Section", "Assignment 1"]
         csv << ["    Points Possible", "", "","", ""]
-        csv << ["" , "", "0123456", "", "", 99]
-        csv << ["" , "", "", "0231163", "", 99]
+        csv << ["", "", "0123456", "", "", 99]
+        csv << ["", "", "", "0231163", "", 99]
       end
 
       importer_with_rows(uploaded_csv)
@@ -241,6 +336,18 @@ describe GradebookImporter do
 
       expect(hash[:students][1][:id]).to eq @u1.id
       expect(hash[:students][1][:previous_id]).to eq @u1.id
+    end
+
+    it "fails and updates progress if invalid header row" do
+      uploaded_csv = CSV.generate do |csv|
+        csv << ["", "", "0123456", "", "", 99]
+        csv << ["", "", "", "0231163", "", 99]
+      end
+
+      importer_with_rows(uploaded_csv)
+      @progress.reload
+      expect(@progress).to be_failed
+      expect(@progress.message).to eq 'Invalid header row'
     end
   end
 
@@ -319,12 +426,24 @@ describe GradebookImporter do
     expect(@gi.assignments.first.points_possible).to eq 20
   end
 
-  it "does not try to create assignments for the totals columns" do
+  it "does not create assignments for the totals columns" do
     course_model
     @assignment1 = @course.assignments.create!(:name => 'Assignment 1', :points_possible => 10)
     importer_with_rows(
         "Student,ID,Section,Assignment 1,Current Points,Final Points,Current Score,Final Score,Final Grade",
         "Points Possible,,,20,,,,,"
+    )
+    expect(@gi.assignments).to eq [@assignment1]
+    expect(@gi.missing_assignments).to be_empty
+  end
+
+  it "does not create assignments for unposted columns" do
+    course_model
+    @assignment1 = @course.assignments.create!(:name => 'Assignment 1', :points_possible => 10)
+    importer_with_rows(
+      "Student,ID,Section,Assignment 1,Current Points,Final Points,Unposted Current Score," \
+        "Unposted Final Score,Unposted Final Grade",
+      "Points Possible,,,20,,,,,"
     )
     expect(@gi.assignments).to eq [@assignment1]
     expect(@gi.missing_assignments).to be_empty
@@ -783,7 +902,7 @@ def attachment_with
   file = Tempfile.new("gradebook_import.csv")
   yield file
   file.close
-  a.stubs(:open).returns(file)
+  allow(a).to receive(:open).and_return(file)
   a
 end
 

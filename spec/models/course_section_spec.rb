@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2014 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -19,6 +19,19 @@
 require File.expand_path(File.dirname(__FILE__) + '/../spec_helper.rb')
 
 describe CourseSection, "moving to new course" do
+  it "generates placeholder submissions for the students being cross-listed" do
+    account = Account.create!
+    course = account.courses.create!
+    section = course.course_sections.create!
+    student = User.create!
+    course.enroll_student(student, enrollment_state: "active", section: section)
+    new_course = account.courses.create!
+    assignment = new_course.assignments.create!
+
+    expect { section.move_to_course(new_course) }.to change {
+      assignment.submissions.where(user_id: student).count
+    }.from(0).to(1)
+  end
 
   it "should transfer enrollments to the new root account" do
     account1 = Account.create!(:name => "1")
@@ -272,7 +285,7 @@ describe CourseSection, "moving to new course" do
     expect(CourseAccountAssociation.where(course_id: course2).distinct.order(:account_id).pluck(:account_id)).to eq [account1.id, account2.id].sort
   end
 
-  it 'should call course#recompute_student_scores_without_send_later if :run_jobs_immediately' do
+  it 'should call DueDateCacher.recompute_users_for_course with run_immediately true if :run_jobs_immediately' do
     account1 = Account.create!(:name => "1")
     account2 = Account.create!(:name => "2")
     course1 = account1.courses.create!
@@ -285,11 +298,12 @@ describe CourseSection, "moving to new course" do
     e.save!
     course1.reload
 
-    expect(course2).to receive(:recompute_student_scores_without_send_later)
-    cs.move_to_course(course2, run_jobs_immediately: true)
+    expect(DueDateCacher).to receive(:recompute_users_for_course).
+      with([u.id], course2, nil, run_immediately: true, update_grades: true)
+    cs.move_to_course(course2, :run_jobs_immediately)
   end
 
-  it 'should call course##recompute_student_scores later without :run_jobs_immediately' do
+  it 'should call DueDateCacher.recompute_users_for_course with run_immediately false if without :run_jobs_immediately' do
     account1 = Account.create!(:name => "1")
     account2 = Account.create!(:name => "2")
     course1 = account1.courses.create!
@@ -302,7 +316,8 @@ describe CourseSection, "moving to new course" do
     e.save!
     course1.reload
 
-    expect(course2).to receive(:recompute_student_scores)
+    expect(DueDateCacher).to receive(:recompute_users_for_course).
+      with([u.id], course2, nil, run_immediately: false, update_grades: true)
     cs.move_to_course(course2)
   end
 
@@ -355,6 +370,45 @@ describe CourseSection, "moving to new course" do
       @section.destroy
       @enrollment.reload
       expect(@enrollment.workflow_state).to eq("deleted")
+    end
+
+    it "doesn't associate with deleted discussion topics" do
+      course = course_factory({ :course_name => "Course 1", :active_all => true })
+      section = course.course_sections.create!
+      course.save!
+      announcement1 = Announcement.create!(
+        :title => "some topic",
+        :message => "I announce that i am lying",
+        :user => @teacher,
+        :context => course,
+        :workflow_state => "published",
+      )
+      announcement1.is_section_specific = true
+      announcement2 = Announcement.create!(
+        :title => "some topic 2",
+        :message => "I announce that i am lying again",
+        :user => @teacher,
+        :context => course,
+        :workflow_state => "published",
+      )
+      announcement2.is_section_specific = true
+      announcement1.discussion_topic_section_visibilities <<
+        DiscussionTopicSectionVisibility.new(
+          :discussion_topic => announcement1,
+          :course_section => section
+        )
+      announcement2.discussion_topic_section_visibilities <<
+        DiscussionTopicSectionVisibility.new(
+          :discussion_topic => announcement2,
+          :course_section => section
+        )
+      announcement1.save!
+      announcement2.save!
+      expect(section.discussion_topics.length).to eq 2
+      announcement2.destroy
+      section.reload
+      expect(section.discussion_topics.length).to eq 1
+      expect(section.discussion_topics.first.id).to eq announcement1.id
     end
   end
 
@@ -428,13 +482,13 @@ describe CourseSection, "moving to new course" do
     end
 
     it "should not invalidate unless something date-related changes" do
-      EnrollmentState.expects(:update_enrollment).never
+      expect(EnrollmentState).to receive(:update_enrollment).never
       @section.name = "durp"
       @section.save!
     end
 
     it "should not invalidate if dates change if it isn't restricted to dates yet" do
-      EnrollmentState.expects(:update_enrollment).never
+      expect(EnrollmentState).to receive(:update_enrollment).never
       @section.start_at = 1.day.from_now
       @section.save!
     end
@@ -442,14 +496,14 @@ describe CourseSection, "moving to new course" do
     it "should invalidate if dates change and section is restricted to dates" do
       @section.restrict_enrollments_to_section_dates = true
       @section.save!
-      EnrollmentState.expects(:update_enrollment).with(@enrollment).once
+      expect(EnrollmentState).to receive(:update_enrollment).with(@enrollment).once
       @section.start_at = 1.day.from_now
       @section.save!
     end
 
     it "should invalidate if course" do
       other_course = course_factory(active_all: true)
-      EnrollmentState.expects(:update_enrollment).with(@enrollment).once
+      expect(EnrollmentState).to receive(:update_enrollment).with(@enrollment).once
       @section.crosslist_to_course(other_course)
     end
   end

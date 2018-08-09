@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2012 Instructure, Inc.
+/*
+ * Copyright (C) 2012 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,33 +12,31 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-define([
-  'i18n!assignments' /* I18n.t */,
-  'jquery' /* $ */,
-  'underscore' /* _ */,
-  'compiled/views/GoogleDocsTreeView',
-  'jst/assignments/homework_submission_tool',
-  'compiled/external_tools/HomeworkSubmissionLtiContainer',
-  'compiled/views/editor/KeyboardShortcuts' /* TinyMCE Keyboard Shortcuts for a11y */,
-  'jsx/shared/rce/RichContentEditor',
-  'submit_assignment_helper',
-  'compiled/jquery.rails_flash_notifications',
-  'jquery.ajaxJSON' /* ajaxJSON */,
-  'jquery.inst_tree' /* instTree */,
-  'jquery.instructure_forms' /* ajaxJSONPreparedFiles, getFormData */,
-  'jqueryui/dialog',
-  'jquery.instructure_misc_plugins' /* fragmentChange, showIf, /\.log\(/ */,
-  'jquery.templateData' /* getTemplateData */,
-  'media_comments' /* mediaComment */,
-  'vendor/jquery.scrollTo' /* /\.scrollTo/ */,
-  'jqueryui/tabs' /* /\.tabs/ */
-], function(I18n, $, _, GoogleDocsTreeView, homework_submission_tool,
-            HomeworkSubmissionLtiContainer, RCEKeyboardShortcuts,
-            RichContentEditor, SubmitAssignmentHelper) {
+
+import I18n from 'i18n!assignments'
+import $ from 'jquery'
+import _ from 'underscore'
+import GoogleDocsTreeView from 'compiled/views/GoogleDocsTreeView'
+import homework_submission_tool from 'jst/assignments/homework_submission_tool'
+import HomeworkSubmissionLtiContainer from 'compiled/external_tools/HomeworkSubmissionLtiContainer'
+import RCEKeyboardShortcuts from 'compiled/views/editor/KeyboardShortcuts' /* TinyMCE Keyboard Shortcuts for a11y */
+import RichContentEditor from 'jsx/shared/rce/RichContentEditor'
+import { uploadFile } from 'jsx/shared/upload_file'
+import {submitContentItem, recordEulaAgreement, verifyPledgeIsChecked} from './submit_assignment_helper'
+import 'compiled/jquery.rails_flash_notifications'
+import './jquery.ajaxJSON'
+import './jquery.inst_tree'
+import './jquery.instructure_forms' /* ajaxJSONPreparedFiles, getFormData */
+import 'jqueryui/dialog'
+import './jquery.instructure_misc_plugins' /* fragmentChange, showIf, /\.log\(/ */
+import './jquery.templateData'
+import './media_comments'
+import './vendor/jquery.scrollTo'
+import 'jqueryui/tabs'
 
   var SubmitAssignment = {
     toolDropDownClickHandler: function(event) {
@@ -59,7 +57,7 @@ define([
         tabindex: '0'
       }).css({width: width, height: height}))
         .bind('selection', function(event, data) {
-          SubmitAssignmentHelper.submitContentItem(event.contentItems[0]);
+          submitContentItem(event.contentItems[0]);
           $div.off('dialogbeforeclose', SubmitAssignment.dialogCancelHandler)
           $div.dialog('close');
         })
@@ -132,17 +130,16 @@ define([
         uploadFileFromUrl();
         return;
       }
-      if($turnitin.length > 0 && !$turnitin.attr('checked')) {
-        alert(I18n.t('messages.agree_to_pledge', "You must agree to the submission pledge before you can submit this assignment."));
-        event.preventDefault();
-        event.stopPropagation();
+
+      if (!verifyPledgeIsChecked($turnitin)) {
+        event.preventDefault()
+        event.stopPropagation()
         return false;
       }
 
-      if($vericite.length > 0 && !$vericite.attr('checked')) {
-        alert(I18n.t('messages.agree_to_pledge', "You must agree to the submission pledge before you can submit this assignment."));
-        event.preventDefault();
-        event.stopPropagation();
+      if (!verifyPledgeIsChecked($vericite)) {
+        event.preventDefault()
+        event.stopPropagation()
         return false;
       }
 
@@ -212,7 +209,7 @@ define([
           handle_files: function(attachments, data) {
             var ids = (data['submission[attachment_ids]'] || "").split(",");
             for(var idx in attachments) {
-              ids.push(attachments[idx].attachment.id);
+              ids.push(attachments[idx].id);
             }
             data['submission[attachment_ids]'] = ids.join(",");
             return data;
@@ -238,7 +235,7 @@ define([
       }
     });
 
-    window.addEventListener('beforeunload', function(e) {
+    $(window).on('beforeunload', function(e) {
       if($("#submit_assignment:visible").length > 0 && !submitting) {
         e.returnValue = I18n.t('messages.not_submitted_yet', "You haven't finished submitting your assignment.  You still need to click \"Submit\" to finish turning it in.  Do you want to leave this page anyway?");
         return e.returnValue;
@@ -253,6 +250,11 @@ define([
         }
       }
     });
+
+    $('input.turnitin_pledge').click((e) => {
+      recordEulaAgreement('#eula_agreement_timestamp',
+                          e.target.checked);
+    })
 
     $(".submit_assignment_link").click(function(event, skipConfirmation) {
       event.preventDefault();
@@ -478,40 +480,27 @@ define([
   var $tools = $("#submit_from_external_tool_form");
 
   function uploadFileFromUrl() {
-    var promise = $.Deferred();
-    function checkFileStatus(url, callback, error) {
-      $.ajaxJSON(url, 'GET', {}, function(data) {
-        if(data.upload_status == 'ready') {
-          callback(data.attachment);
-        } else if(data.upload_status == 'errored') {
-          error(data.message);
-        } else {
-          setTimeout(function() { checkFileStatus(url, callback, error) }, 2500);
-        }
-      }, function(data) {
-        error(data.message);
-      });
+    const preflightUrl = $("#homework_file_url").attr('href');
+    const preflightData = {
+      url: $("#external_tool_url").val(),
+      name: $("#external_tool_filename").val(),
+      content_type: $("#external_tool_content_type").val()
     };
-    var file_params = {url: $("#external_tool_url").val(), name: $("#external_tool_filename").val(), content_type: $("#external_tool_content_type").val()}
-    $.ajaxJSON($("#homework_file_url").attr('href'), 'POST', file_params, function(data) {
-      checkFileStatus(data.status_url, function(file_data) {
+    const uploadPromise = uploadFile(preflightUrl, preflightData, null)
+      .then((attachment) => {
         $("#external_tool_submission_type").val('online_upload');
-        $("#external_tool_file_id").val(file_data.id);
-        promise.resolve();
+        $("#external_tool_file_id").val(attachment.id);
         $tools.submit();
-      }, function(message) {
-        promise.resolve();
+      })
+      .catch((error) => {
+        console.log(error);
         $tools.find(".submit").text(I18n.t('file_retrieval_error', "Retrieving File Failed"));
         $.flashError(I18n.t("invalid_file_retrieval", "There was a problem retrieving the file sent from this tool."));
-        console.log(message);
       });
-    }, function(data) {
-      promise.resolve();
-      $tools.find(".submit").text(I18n.t('file_retrieval_error', "Retrieving File Failed"));
-    });
-    $tools.disableWhileLoading(promise, {buttons: {'.submit': I18n.t('getting_file', 'Retrieving File...')}})
+    $tools.disableWhileLoading(uploadPromise, {buttons: {'.submit': I18n.t('getting_file', 'Retrieving File...')}});
+    return uploadPromise;
   };
 
   $("#submit_from_external_tool_form .tools li").live('click', SubmitAssignment.toolDropDownClickHandler);
-  return SubmitAssignment;
-});
+
+export default SubmitAssignment;

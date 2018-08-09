@@ -1,14 +1,32 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
   'jsx/grading/helpers/OutlierScoreHelper',
   'compiled/gradebook/GradebookTranslations'
-], (OutlierScoreHelper, GRADEBOOK_TRANSLATIONS) => {
+], ({ default: OutlierScoreHelper, isUnusuallyHigh }, GRADEBOOK_TRANSLATIONS) => {
 
   QUnit.module('#hasWarning', () => {
     test('returns true for exacty 1.5 times points possible', () => {
       ok(new OutlierScoreHelper(150, 100).hasWarning());
     });
 
-    test('returns true when above 1.5 times and decimcal is present', () => {
+    test('returns true when above 1.5 times and decimal is present', () => {
       ok(new OutlierScoreHelper(150.01, 100).hasWarning());
     });
 
@@ -42,6 +60,44 @@ define([
 
     test('return false for NaN pointsPossible', () => {
       notOk(new OutlierScoreHelper(10, NaN).hasWarning());
+    });
+  });
+
+  QUnit.module('#isUnusuallyHigh', () => {
+    test('returns true for exacty 1.5 times points possible', () => {
+      ok(isUnusuallyHigh(150, 100));
+    });
+
+    test('returns true when above 1.5 times and decimal is present', () => {
+      ok(isUnusuallyHigh(150.01, 100));
+    });
+
+    test('returns false when value is less than 1.5 times', () => {
+      notOk(isUnusuallyHigh(149.99, 100));
+    });
+
+    test('returns false for 0 points', () => {
+      notOk(isUnusuallyHigh(0, 100));
+    });
+
+    test('returns false for 0 points possible', () => {
+      notOk(isUnusuallyHigh(10, 0));
+    });
+
+    test('return false for null score', () => {
+      notOk(isUnusuallyHigh(null, 100));
+    });
+
+    test('return false for null points possible', () => {
+      notOk(isUnusuallyHigh(10, null));
+    });
+
+    test('return false for NaN score', () => {
+      notOk(isUnusuallyHigh(NaN, 100));
+    });
+
+    test('return false for NaN pointsPossible', () => {
+      notOk(isUnusuallyHigh(10, NaN));
     });
   });
 

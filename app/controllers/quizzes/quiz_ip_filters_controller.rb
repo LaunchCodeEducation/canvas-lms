@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 - 2013 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,7 +17,6 @@
 #
 
 # @API Quiz IP Filters
-# @beta
 #
 # API for accessing quiz IP filters
 #
@@ -51,7 +50,6 @@ class Quizzes::QuizIpFiltersController < ApplicationController
   before_action :require_user, :require_context, :require_quiz
 
   # @API Get available quiz IP filters.
-  # @beta
   #
   # Get a list of available IP filters for this Quiz.
   #

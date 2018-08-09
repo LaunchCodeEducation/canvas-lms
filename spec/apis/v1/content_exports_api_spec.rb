@@ -27,7 +27,7 @@ describe ContentExportsApiController, type: :request do
 
   let_once(:t_course) do
     course_with_teacher(user: t_teacher, active_all: true)
-    @course.wiki.wiki_pages.create! title: "something to export"
+    @course.wiki_pages.create! title: "something to export"
     @course
   end
 
@@ -117,6 +117,25 @@ describe ContentExportsApiController, type: :request do
          { controller: 'content_exports_api', action: 'index', format: 'json', course_id: t_course.to_param, per_page: '3', page: '2' })
       expect(json.size).to eql 5
       expect(json.map{ |el| el['id'] }).to eql exports.map(&:id).sort.reverse
+    end
+
+    it "should not return attachments for expired exports" do
+      @past = past_export
+      ContentExport.where(id: @past.id).update_all(created_at: 35.days.ago)
+
+      json = api_call_as_user(
+        t_teacher,
+        :get,
+        "/api/v1/courses/#{t_course.id}/content_exports",
+        {
+          controller: 'content_exports_api',
+          action: 'index',
+          format: 'json',
+          course_id: t_course.to_param
+        }
+      )
+
+      expect(json[0]['attachment']).to be_nil
     end
   end
 
@@ -237,12 +256,12 @@ describe ContentExportsApiController, type: :request do
                            :uploaded_data => StringIO.new("more stuff"), :folder => Folder.unfiled_folder(t_course))
       end
       let_once :page_to_copy do
-        page_to_copy = t_course.wiki.wiki_pages.create!(:title => "other page")
+        page_to_copy = t_course.wiki_pages.create!(:title => "other page")
         page_to_copy.body = "<p><a href=\"/courses/#{t_course.id}/files/#{att_to_copy.id}/preview\">hey look a link</a></p>"
         page_to_copy.save!
         page_to_copy
       end
-      let_once(:page_to_not_copy){ t_course.wiki.wiki_pages.create!(:title => "another page") }
+      let_once(:page_to_not_copy){ t_course.wiki_pages.create!(:title => "another page") }
       let_once(:mod) do
         # both the wiki page and the referenced attachment should be exported implicitly through the module
         mod = t_course.context_modules.create!(:name => "who cares")
@@ -286,9 +305,9 @@ describe ContentExportsApiController, type: :request do
         run_jobs
 
         expect(@course.context_modules.where(migration_id: CC::CCHelper.create_key(mod))).to be_exists
-        copied_page = @course.wiki.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_copy)).first
+        copied_page = @course.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_copy)).first
         expect(copied_page).not_to be_nil
-        expect(@course.wiki.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_not_copy))).not_to be_exists
+        expect(@course.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_not_copy))).not_to be_exists
 
         copied_att = @course.attachments.where(filename: att_to_copy.filename).first
         expect(copied_att).not_to be_nil
@@ -326,9 +345,9 @@ describe ContentExportsApiController, type: :request do
         run_jobs
 
         expect(@course.context_modules.where(migration_id: CC::CCHelper.create_key(mod))).to be_exists
-        copied_page = @course.wiki.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_copy)).first
+        copied_page = @course.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_copy)).first
         expect(copied_page).not_to be_nil
-        expect(@course.wiki.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_not_copy))).not_to be_exists
+        expect(@course.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_not_copy))).not_to be_exists
 
         copied_att = @course.attachments.where(filename: att_to_copy.filename).first
         expect(copied_att).not_to be_nil
@@ -435,9 +454,9 @@ describe ContentExportsApiController, type: :request do
 
         run_jobs
 
-        copied_page = @course.wiki.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_copy)).first
+        copied_page = @course.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_copy)).first
         expect(copied_page).not_to be_nil
-        expect(@course.wiki.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_not_copy))).not_to be_exists
+        expect(@course.wiki_pages.where(migration_id: CC::CCHelper.create_key(page_to_not_copy))).not_to be_exists
       end
 
       it "should export rubrics attached to discussions" do
@@ -478,7 +497,7 @@ describe ContentExportsApiController, type: :request do
       @dt1 = @course.discussion_topics.create!(:message => "hi", :title => "discussion title")
       @cm = @course.context_modules.create!(:name => "some module")
       @att = Attachment.create!(:filename => 'first.txt', :uploaded_data => StringIO.new('ohai'), :folder => Folder.unfiled_folder(@course), :context => @course)
-      @wiki = @course.wiki.wiki_pages.create!(:title => "wiki", :body => "ohai")
+      @wiki = @course.wiki_pages.create!(:title => "wiki", :body => "ohai")
 
       @quiz = @course.quizzes.create!(:title => "quizz")
       @quiz.did_edit
@@ -515,7 +534,7 @@ describe ContentExportsApiController, type: :request do
 
   describe "quizzes2 exports" do
     before do
-      t_course.account.enable_feature!(:quizzes2_exporter)
+      t_course.enable_feature!(:quizzes_next)
     end
 
     context "quiz_id param" do
@@ -610,6 +629,7 @@ describe ContentExportsApiController, type: :request do
         run_jobs
         export = t_course.content_exports.where(id: json['id']).first
         expect(export).to be_present
+        expect(export.settings["errors"]).to be_blank
         expect(export.attachment).to be_present
         expect(export.attachment.display_name).to eql 'course_files_export.zip'
         tf = export.attachment.open need_local_file: true
@@ -681,6 +701,21 @@ describe ContentExportsApiController, type: :request do
           del_folder.destroy
           json = api_call_as_user(t_student, :post, "/api/v1/courses/#{t_course.id}/content_exports?export_type=zip",
                           { controller: 'content_exports_api', action: 'create', format: 'json', course_id: t_course.to_param, export_type: 'zip' })
+          run_jobs
+          export = t_course.content_exports.where(id: json['id']).first
+          expect(export).to be_present
+          expect(export.attachment).to be_present
+          tf = export.attachment.open need_local_file: true
+          Zip::File.open(tf) do |zf|
+            expect(zf.entries.map(&:name)).to match_array %w(file1.txt)
+          end
+        end
+
+        it "should include files in public-to-institution courses" do
+          t_course.update_attribute(:is_public_to_auth_users, true)
+          other_user = user_with_pseudonym(:active_all => true)
+          json = api_call_as_user(other_user, :post, "/api/v1/courses/#{t_course.id}/content_exports?export_type=zip",
+            { controller: 'content_exports_api', action: 'create', format: 'json', course_id: t_course.to_param, export_type: 'zip' })
           run_jobs
           export = t_course.content_exports.where(id: json['id']).first
           expect(export).to be_present

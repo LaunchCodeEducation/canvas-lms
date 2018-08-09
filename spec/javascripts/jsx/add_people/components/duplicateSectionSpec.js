@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
   'underscore',
   'react',
@@ -69,13 +87,13 @@ define([
 
     const createUserBtn = createNewRow.querySelector('button');
     ok(createUserBtn)
-    equal(createUserBtn.innerHTML, 'Create a new user for "addr1"')
+    equal(createUserBtn.innerText, 'Create a new user for "addr1"')
 
     const skipUserRow = duplicateSection.querySelector('tr.skip-addr')
     ok(skipUserRow, 'skip user row exists')
 
     const skipUserBtn = skipUserRow.querySelector('button')
-    equal(skipUserBtn.innerHTML, 'Don’t add this user for now.', 'skip user button');
+    equal(skipUserBtn.innerText, 'Don’t add this user for now.', 'skip user button');
   });
   test('select a user', () => {
     const dupes = _.cloneDeep(duplicates);

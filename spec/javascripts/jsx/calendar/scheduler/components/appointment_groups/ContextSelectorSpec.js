@@ -1,3 +1,21 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 define([
   'react',
   'react-addons-test-utils',
@@ -258,47 +276,8 @@ define([
     ]
     props.appointmentGroup = { context_codes: ['course_1', 'course_section_1'] }
     const component = TestUtils.renderIntoDocument(<ContextSelector {...props} />)
-    const contextSelector = TestUtils.findRenderedDOMComponentWithClass(component, 'ContextSelector')
-    TestUtils.Simulate.click(contextSelector.childNodes[0])
-    const contextDropdown = TestUtils.findRenderedDOMComponentWithClass(component, 'CourseListItem')
-    TestUtils.Simulate.click(contextDropdown.getElementsByClassName('icon-arrow-right')[0])
-    ok(contextDropdown.getElementsByClassName('icon-arrow-down'))
-  })
-
-  test('checkbox state when contexts are in an appointmentgroup', () => {
-    props.contexts = [
-      { id: '1',
-        name: 'testcourse',
-        asset_string: 'course_1',
-        sections: [
-          {
-            id: '1',
-            asset_string: 'course_section_1'
-          }
-        ]
-      }
-    ]
-    props.contexts = [
-      { id: '1',
-        name: 'testcourse',
-        asset_string: 'course_1',
-        sections: [
-          {
-            id: '1',
-            asset_string: 'course_section_1'
-          }
-        ]
-      }
-    ]
-    props.appointmentGroup = { context_codes: ['course_1'], sub_context_codes: ['course_section_1'] }
-    const component = TestUtils.renderIntoDocument(<ContextSelector {...props} />)
-    component.componentWillReceiveProps(props)
-    const contextSelector = TestUtils.findRenderedDOMComponentWithClass(component, 'ContextSelector')
-    TestUtils.Simulate.click(contextSelector.childNodes[0])
-    const sectionDropdown = TestUtils.findRenderedDOMComponentWithClass(component, 'sectionItem')
-    const contextDropdown = TestUtils.findRenderedDOMComponentWithClass(component, 'CourseListItem')
-    ok(sectionDropdown.childNodes[0].checked)
-    ok(contextDropdown.childNodes[1].checked)
+    TestUtils.Simulate.click(TestUtils.scryRenderedComponentsWithType(component, 'button'))
+    ok(TestUtils.scryRenderedComponentsWithType(component, 'IconMiniArrowDown'))
   })
 
   test('renders button text correctly on already selected contexts', () => {

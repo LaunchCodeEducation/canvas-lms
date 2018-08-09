@@ -1,4 +1,22 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/course_copy_helper.rb')
+require File.expand_path(File.dirname(__FILE__) + '/../../lti2_spec_helper')
 
 describe ContentMigration do
   context "course copy assignments" do
@@ -168,16 +186,17 @@ describe ContentMigration do
       @assignment.muted = true
       @assignment.omit_from_final_grade = true
       @assignment.only_visible_to_overrides = true
+      @assignment.post_to_sis = true
 
       @assignment.save!
 
-      @copy_to.any_instantiation.expects(:turnitin_enabled?).at_least(1).returns(true)
-      @copy_to.any_instantiation.expects(:vericite_enabled?).at_least(1).returns(true)
+      expect_any_instantiation_of(@copy_to).to receive(:turnitin_enabled?).at_least(1).and_return(true)
+      expect_any_instantiation_of(@copy_to).to receive(:vericite_enabled?).at_least(1).and_return(true)
 
       attrs = [:turnitin_enabled, :vericite_enabled, :turnitin_settings, :peer_reviews,
           :automatic_peer_reviews, :anonymous_peer_reviews,
           :grade_group_students_individually, :allowed_extensions,
-          :position, :peer_review_count, :muted, :omit_from_final_grade]
+          :position, :peer_review_count, :omit_from_final_grade, :post_to_sis]
 
       run_course_copy
 
@@ -189,6 +208,7 @@ describe ContentMigration do
           expect(@assignment[attr]).to eq new_assignment[attr]
         end
       end
+      expect(new_assignment.muted).to be_falsey
       expect(new_assignment.only_visible_to_overrides).to be_falsey
     end
 
@@ -198,8 +218,8 @@ describe ContentMigration do
       @assignment.vericite_enabled = true
       @assignment.save!
 
-      @copy_to.any_instantiation.expects(:turnitin_enabled?).at_least(1).returns(false)
-      @copy_to.any_instantiation.expects(:vericite_enabled?).at_least(1).returns(false)
+      expect_any_instantiation_of(@copy_to).to receive(:turnitin_enabled?).at_least(1).and_return(false)
+      expect_any_instantiation_of(@copy_to).to receive(:vericite_enabled?).at_least(1).and_return(false)
 
       run_course_copy
 
@@ -223,14 +243,6 @@ describe ContentMigration do
       expect(new_assignment.group_category.name).to eq "Project Groups"
     end
 
-    it "should copy moderated_grading setting" do
-      assignment_model(:course => @copy_from, :points_possible => 40,
-                       :submission_types => 'file_upload', :grading_type => 'points', :moderated_grading => true)
-      run_course_copy
-      new_assignment = @copy_to.assignments.where(migration_id: mig_id(@assignment)).first
-      expect(new_assignment).to be_moderated_grading
-    end
-
     it "should not copy peer_reviews_assigned" do
       assignment_model(:course => @copy_from, :points_possible => 40, :submission_types => 'file_upload', :grading_type => 'points')
       @assignment.peer_reviews_assigned = true
@@ -247,8 +259,8 @@ describe ContentMigration do
       mod1 = @copy_from.context_modules.create!(:name => "some module")
       asmnt1 = @copy_from.assignments.create!(:title => "some assignment")
       mod1.add_item({:id => asmnt1.id, :type => 'assignment', :indent => 1})
-      page = @copy_from.wiki.wiki_pages.create!(:title => "some page")
-      page2 = @copy_from.wiki.wiki_pages.create!(:title => "some page 2")
+      page = @copy_from.wiki_pages.create!(:title => "some page")
+      page2 = @copy_from.wiki_pages.create!(:title => "some page 2")
       mod1.add_item({:id => page.id, :type => 'wiki_page'})
       att = Attachment.create!(:filename => 'first.png', :uploaded_data => StringIO.new('ohai'), :folder => Folder.root_folders(@copy_from).first, :context => @copy_from)
       att2 = Attachment.create!(:filename => 'first.png', :uploaded_data => StringIO.new('ohai'), :folder => Folder.root_folders(@copy_from).first, :context => @copy_from)
@@ -288,7 +300,7 @@ describe ContentMigration do
 
 
       expect(@copy_to.assignments.where(migration_id: mig_id(asmnt1)).first).not_to be_nil
-      expect(@copy_to.wiki.wiki_pages.where(migration_id: mig_id(page)).first).not_to be_nil
+      expect(@copy_to.wiki_pages.where(migration_id: mig_id(page)).first).not_to be_nil
       expect(@copy_to.attachments.where(migration_id: mig_id(att)).first).not_to be_nil
       expect(@copy_to.context_external_tools.where(migration_id: mig_id(tool)).first).not_to be_nil
       expect(@copy_to.discussion_topics.where(migration_id: mig_id(topic)).first).not_to be_nil
@@ -297,7 +309,7 @@ describe ContentMigration do
       expect(@copy_to.context_modules.where(migration_id: mig_id(mod2)).first).to be_nil
       expect(@copy_to.assignments.where(migration_id: mig_id(asmnt2)).first).to be_nil
       expect(@copy_to.attachments.where(migration_id: mig_id(att2)).first).to be_nil
-      expect(@copy_to.wiki.wiki_pages.where(migration_id: mig_id(page2)).first).to be_nil
+      expect(@copy_to.wiki_pages.where(migration_id: mig_id(page2)).first).to be_nil
       expect(@copy_to.context_external_tools.where(migration_id: mig_id(tool2)).first).to be_nil
       expect(@copy_to.discussion_topics.where(migration_id: mig_id(topic2)).first).to be_nil
       expect(@copy_to.quizzes.where(migration_id: mig_id(quiz2)).first).to be_nil
@@ -580,6 +592,68 @@ describe ContentMigration do
         expect(to_override.due_at).to eq due_at
         expect(to_override.due_at_overridden).to eq true
         expect(to_override.unlock_at_overridden).to eq false
+      end
+    end
+
+    context 'external tools' do
+      include_context 'lti2_spec_helper'
+
+      let(:assignment) { @copy_from.assignments.create!(name: 'test assignment') }
+      let(:resource_link_id) { assignment.lti_context_id }
+      let(:custom_data) { {'setting_one' => 'value one'} }
+      let(:custom_parameters) { {'param_one' => 'param value one'} }
+      let(:tool_settings) do
+        Lti::ToolSetting.create!(
+          tool_proxy: tool_proxy,
+          resource_link_id: resource_link_id,
+          context: assignment.course,
+          custom: custom_data,
+          custom_parameters: custom_parameters,
+          product_code: tool_proxy.product_family.product_code,
+          vendor_code: tool_proxy.product_family.vendor_code
+        )
+      end
+
+      before do
+        allow_any_instance_of(Lti::AssignmentSubscriptionsHelper).to receive(:create_subscription) { SecureRandom.uuid }
+        allow(Lti::ToolProxy).to receive(:find_active_proxies_for_context_by_vendor_code_and_product_code) do
+          Lti::ToolProxy.where(id: tool_proxy.id)
+        end
+        product_family.update_attributes!(
+          product_code: 'product_code',
+          vendor_code: 'vendor_code'
+        )
+        tool_proxy.update_attributes!(
+          resources: [resource_handler],
+          context: @copy_to
+        )
+        tool_settings
+        AssignmentConfigurationToolLookup.create!(
+          assignment: assignment,
+          tool_id: message_handler.id,
+          tool_type: 'Lti::MessageHandler',
+          tool_product_code: product_family.product_code,
+          tool_vendor_code: product_family.vendor_code
+        )
+      end
+
+      it 'creates tool settings for associated plagiarism tools' do
+        expect{run_course_copy}.to change{Lti::ToolSetting.count}.from(1).to(2)
+      end
+
+      it 'sets the context of the tool setting to the new course' do
+        run_course_copy
+        expect(Lti::ToolSetting.last.context).to eq @copy_to
+      end
+
+      it 'sets the custom field of the new tool setting' do
+        run_course_copy
+        expect(Lti::ToolSetting.last.custom).to eq custom_data
+      end
+
+      it 'sets the custom parameters of the new tool setting' do
+        run_course_copy
+        expect(Lti::ToolSetting.last.custom_parameters).to eq custom_parameters
       end
     end
   end

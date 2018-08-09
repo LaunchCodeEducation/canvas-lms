@@ -1,7 +1,24 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18n!grading_cell'
-  'compiled/gradebook/GradebookTranslations'
-  'compiled/gradebook/GradebookHelpers'
+  '../../../gradebook/GradebookTranslations'
+  '../../../gradebook/GradebookHelpers'
   'jsx/gradebook/shared/helpers/GradeFormatHelper'
   'jsx/grading/helpers/OutlierScoreHelper'
   'jsx/shared/helpers/numberHelper'
@@ -9,7 +26,8 @@ define [
   'ember'
   'jquery'
   'jquery.ajaxJSON'
-], (I18n, GRADEBOOK_TRANSLATIONS, GradebookHelpers, GradeFormatHelper, OutlierScoreHelper, numberHelper, _, Ember, $) ->
+], (I18n, GRADEBOOK_TRANSLATIONS, GradebookHelpers, GradeFormatHelper,
+  { default:  OutlierScoreHelper }, numberHelper, _, Ember, $) ->
 
   GradingCellComponent = Ember.Component.extend
 
@@ -55,7 +73,7 @@ define [
         I18n.t(
           "(%{score} out of %{points})",
           points: I18n.n @assignment.points_possible
-          score: @get('score')
+          score: @get('entered_score')
         )
       else if @get('nilPointsPossible')
         I18n.t("No points possible")
@@ -76,6 +94,22 @@ define [
     score: (->
       if @submission.score? then I18n.n(@submission.score) else ' -'
     ).property('submission.score')
+
+    entered_score: (->
+      if @submission.entered_score? then I18n.n(@submission.entered_score) else ' -'
+    ).property('submission.entered_score')
+
+    late_penalty: (->
+      if @submission.points_deducted? then I18n.n(-1 * @submission.points_deducted) else ' -'
+    ).property('submission.points_deducted')
+
+    points_possible: (->
+      if @assignment.points_possible? then I18n.n(@assignment.points_possible) else ' -'
+    ).property('assignment.points_possible')
+
+    final_grade: (->
+      if @submission.grade? then GradeFormatHelper.formatGrade(@submission.grade) else ' -'
+    ).property('submission.grade')
 
     ajax: (url, options) ->
       {type, data} = options
@@ -103,10 +137,13 @@ define [
       newVal = if @submission?.excused
                  'EX'
                else
-                 @submission?.grade || '-'
+                 @submission?.entered_grade || '-'
 
       @setExcusedWithoutTriggeringSave(@submission?.excused)
-      @set 'value', GradeFormatHelper.formatGrade(newVal)
+      if @get('isPassFail')
+        @set 'value', newVal
+      else
+        @set 'value', GradeFormatHelper.formatGrade(newVal)
     ).observes('submission').on('init')
 
     onUpdateSuccess: (submission) ->

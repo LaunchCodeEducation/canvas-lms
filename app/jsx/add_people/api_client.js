@@ -1,4 +1,21 @@
-//
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 // Note on the eslint-disable no-param-reassign
 // I am transforming the api response. Sometimes to add fields
 // I have from the api input that is not returned in the response,
@@ -71,14 +88,14 @@ export default {
   },
 
   // @param courseId: the course id
-  // @param users: array of user ids
+  // @param user_tokens: array of user tokens returned by user_lists(v2) / invite_users
   // @param role: role id of users being enrolled in
   // @param section: section id the users are being enrolled in
   // @returns [{enrollment: {user_id amongst other properties}, ...}]
   //
-  enrollUsers ({ courseId, users, role, section, limitPrivilege }) {
+  enrollUsers ({ courseId, user_tokens, role, section, limitPrivilege }) {
     return axios.post(`/courses/${courseId}/enroll_users`, {
-      user_ids: users,
+      user_tokens,
       role_id: role,
       course_section_id: section,
       limit_privileges_to_course_section: limitPrivilege

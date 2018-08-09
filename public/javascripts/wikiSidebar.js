@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2011 Instructure, Inc.
+/*
+ * Copyright (C) 2011 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -12,28 +12,26 @@
  * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-define([
-  'i18n!wiki.sidebar',
-  'jquery' /* $ */,
-  'str/htmlEscape',
-  'compiled/util/UsageRights' /* Usage Rights for File Uploading */,
-  'jquery.ajaxJSON' /* ajaxJSON */,
-  'jquery.inst_tree' /* instTree */,
-  'jquery.instructure_forms' /* formSubmit, handlesHTML5Files, ajaxFileUpload, fileData */,
-  'jqueryui/dialog',
-  'jquery.instructure_misc_helpers' /* replaceTags */,
-  'jquery.instructure_misc_plugins' /* /\.log\(/ */,
-  'compiled/jquery.rails_flash_notifications',
-  'jquery.templateData' /* fillTemplateData */,
-  'tinymce.editor_box',
-  'vendor/jquery.pageless' /* pageless */,
-  'jqueryui/accordion' /* /\.accordion\(/ */,
-  'jqueryui/tabs' /* /\.tabs/ */
-], function(I18n, $, htmlEscape, UsageRights) {
+import I18n from 'i18n!wiki.sidebar'
+import $ from 'jquery'
+import htmlEscape from './str/htmlEscape'
+import UsageRights from 'compiled/util/UsageRights'
+import './jquery.ajaxJSON'
+import './jquery.inst_tree'
+import './jquery.instructure_forms' /* formSubmit, handlesHTML5Files, ajaxFileUpload, fileData */
+import 'jqueryui/dialog'
+import './jquery.instructure_misc_helpers' /* replaceTags */
+import './jquery.instructure_misc_plugins' /* /\.log\(/ */
+import 'compiled/jquery.rails_flash_notifications'
+import './jquery.templateData' /* fillTemplateData */
+// 'tinymce.editor_box', // required, but not loaded here so that all of tinymce doesn't end up in the common bundle
+import 'vendor/jquery.pageless'
+import 'jqueryui/accordion'
+import 'jqueryui/tabs'
 
   var $editor_tabs,
       $tree1,
@@ -126,7 +124,7 @@ define([
           $file
             .addClass('kalturable')
             .attr('data-media-entry-id', file.media_entry_id)
-            .addClass(file.content_type && file.content_type.match(/video/) ? 'video_playback' : 'audio_playback');
+            .addClass(file['content-type'] && file['content-type'].match(/video/) ? 'video_playback' : 'audio_playback');
         }
         file.name = displayName;
         $file.fillTemplateData({
@@ -143,7 +141,7 @@ define([
           fileCallback($file);
         }
       }
-      if(newUpload && (attachment.mime_class == 'image' || attachment.content_type.match(/^image/)) &&
+      if(newUpload && (attachment.mime_class == 'image' || attachment['content-type'].match(/^image/)) &&
         $image_list.hasClass('initialized')) {
         var url = $.replaceTags($("#editor_tabs_4 .file_url").attr('href'), 'id', attachment.id);
         var $img = $editor_tabs.find("#wiki_sidebar_image_uploads .img_link").clone();
@@ -604,12 +602,12 @@ define([
           $sidebar_upload_image_form.find(".uploading").slideDown();
           $sidebar_upload_image_form.attr('action', $sidebar_upload_image_form.find(".json_upload_url").attr('href'));
         },
-        success: function(data) {
+        success: function(attachment) {
 
           $sidebar_upload_image_form.slideUp(function() {
             $sidebar_upload_image_form.find(".uploading").hide();
           });
-          wikiSidebar.fileAdded(data.attachment, function() {
+          wikiSidebar.fileAdded(attachment, function() {
             wikiSidebar.imageSelected($(this).find(".img"));
           });
         },
@@ -636,13 +634,13 @@ define([
           $sidebar_upload_file_form.attr('action', $sidebar_upload_file_form.find(".json_upload_url").attr('href'));
           $(this).find("button").attr('disabled', true).text(I18n.t('buttons.uploading', "Uploading..."));
         },
-        success: function(data) {
+        success: function(attachment) {
           $(this).find("button").attr('disabled', false).text("Upload");
           $sidebar_upload_file_form.slideUp(function() {
             $sidebar_upload_file_form.find(".uploading").hide();
           });
-          UsageRights.setFileUsageRights(data.attachment);
-          wikiSidebar.fileAdded(data.attachment, true, function(node) {
+          UsageRights.setFileUsageRights(attachment);
+          wikiSidebar.fileAdded(attachment, true, function(node) {
             wikiSidebar.fileSelected(node);
           });
         },
@@ -658,6 +656,4 @@ define([
     }
   };
 
-  return wikiSidebar;
-});
-
+export default wikiSidebar;

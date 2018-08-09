@@ -1,10 +1,28 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import _ from 'underscore'
-import React, { Component, PropTypes } from 'react'
+import React, { Component } from 'react'
+import PropTypes from 'prop-types'
 import I18n from 'i18n!dashcards'
 import DashboardCardAction from './DashboardCardAction'
-import DashboardColorPicker from './DashboardColorPicker'
 import CourseActivitySummaryStore from './CourseActivitySummaryStore'
-import DashboardCardMovementMenu from './DashboardCardMovementMenu'
+import DashboardCardMenu from './DashboardCardMenu'
 
 export default class DashboardCard extends Component {
 
@@ -14,7 +32,7 @@ export default class DashboardCard extends Component {
 
   static propTypes = {
     id: PropTypes.string.isRequired,
-    backgroundColor: PropTypes.string.isRequired,
+    backgroundColor: PropTypes.string,
     shortName: PropTypes.string.isRequired,
     originalName: PropTypes.string.isRequired,
     courseCode: PropTypes.string.isRequired,
@@ -32,10 +50,11 @@ export default class DashboardCard extends Component {
     connectDropTarget: PropTypes.func,
     moveCard: PropTypes.func,
     totalCards: PropTypes.number,
-    position: PropTypes.oneOfType([React.PropTypes.number, React.PropTypes.func])
+    position: PropTypes.oneOfType([PropTypes.number, PropTypes.func])
   }
 
   static defaultProps = {
+    backgroundColor: '#394B58',
     term: null,
     links: [],
     hideColorOverlays: false,
@@ -82,6 +101,10 @@ export default class DashboardCard extends Component {
     this.toggleEditing();
   }
 
+  getCardPosition () {
+    return typeof this.props.position === 'function' ? this.props.position() : this.props.position
+  }
+
   handleNicknameChange = (nickname) => {
     this.setState({ nicknameInfo: this.nicknameInfo(nickname, this.props.originalName, this.props.id) })
   }
@@ -110,6 +133,12 @@ export default class DashboardCard extends Component {
   handleColorChange = (color) => {
     const hexColor = `#${color}`;
     this.props.handleColorChange(hexColor)
+  }
+
+  handleMove = (assetString, atIndex) => {
+    if (typeof this.props.moveCard === 'function') {
+      this.props.moveCard(assetString, atIndex, () => { this.settingsToggle.focus() })
+    }
   }
 
   // ===============
@@ -144,8 +173,9 @@ export default class DashboardCard extends Component {
   }
 
   calculateMenuOptions () {
-    const isFirstCard = this.props.position === 0;
-    const isLastCard = this.props.position === this.props.totalCards - 1;
+    const position = this.getCardPosition()
+    const isFirstCard = position === 0;
+    const isLastCard = position === this.props.totalCards - 1;
     return {
       canMoveLeft: !isFirstCard,
       canMoveRight: !isLastCard,
@@ -158,30 +188,10 @@ export default class DashboardCard extends Component {
   //    RENDERING
   // ===============
 
-  colorPickerID () {
-    return `DashboardColorPicker-${this.props.assetString}`;
-  }
-
-  colorPickerIfEditing () {
-    return (
-      <DashboardColorPicker
-        isOpen={this.state.editing}
-        elementID={this.colorPickerID()}
-        parentNode={this.parentNode}
-        doneEditing={this.doneEditing}
-        handleColorChange={this.handleColorChange}
-        assetString={this.props.assetString}
-        settingsToggle={this.settingsToggle}
-        backgroundColor={this.props.backgroundColor}
-        nicknameInfo={this.state.nicknameInfo}
-      />
-    );
-  }
-
   linksForCard () {
     return this.props.links.map((link) => {
       if (!link.hidden) {
-        const screenReaderLabel = `${link.screenreader} - ${this.state.nicknameInfo.nickname}`;
+        const screenReaderLabel = `${link.label} - ${this.state.nicknameInfo.nickname}`;
         return (
           <DashboardCardAction
             unreadCount={this.unreadCount(link.icon, this.state.stream)}
@@ -237,24 +247,43 @@ export default class DashboardCard extends Component {
       hideColorOverlays
     } = this.props;
 
+    const reorderingProps = this.props.reorderingEnabled && {
+      reorderingEnabled: this.props.reorderingEnabled,
+      handleMove: this.handleMove,
+      currentPosition: this.getCardPosition(),
+      lastPosition: this.props.totalCards - 1,
+      menuOptions: this.calculateMenuOptions()
+    }
+
+    const nickname = this.state.nicknameInfo.nickname
+
     return (
       <div>
         <div
           className="ic-DashboardCard__header-button-bg"
           style={{backgroundColor, opacity: hideColorOverlays ? 1 : 0}}
         />
-        <button
-          aria-expanded={this.state.editing}
-          aria-controls={this.colorPickerID()}
-          className="Button Button--icon-action-rev ic-DashboardCard__header-button"
-          onClick={this.settingsClick}
-          ref={(c) => { this.settingsToggle = c; }}
-        >
-          <i className="icon-more icon-Line" aria-hidden="true" />
-          <span className="screenreader-only">
-            { I18n.t('Choose a color or course nickname for %{course}', { course: this.state.nicknameInfo.nickname}) }
-          </span>
-        </button>
+        <DashboardCardMenu
+          afterUpdateColor={this.handleColorChange}
+          currentColor={this.props.backgroundColor}
+          nicknameInfo={this.state.nicknameInfo}
+          assetString={this.props.assetString}
+          {...reorderingProps}
+          trigger={
+            <button
+              className="Button Button--icon-action-rev ic-DashboardCard__header-button"
+              ref={(c) => { this.settingsToggle = c }}
+            >
+              <i className="icon-more" aria-hidden="true" />
+              <span className="screenreader-only">
+                { this.props.reorderingEnabled
+                  ? I18n.t('Choose a color or course nickname or move course card for %{course}', { course: nickname })
+                  : I18n.t('Choose a color or course nickname for %{course}', { course: nickname })
+                }
+              </span>
+            </button>
+          }
+        />
       </div>
     )
   }
@@ -272,43 +301,32 @@ export default class DashboardCard extends Component {
             {
               this.props.imagesEnabled && this.props.image ?
                 I18n.t('Course image for %{course}', {course: this.state.nicknameInfo.nickname})
-              :
-                I18n.t('Course card color region for %{course}', {course: this.state.nicknameInfo.nickname})
+                : I18n.t('Course card color region for %{course}', {course: this.state.nicknameInfo.nickname})
             }
           </span>
           {this.renderHeaderHero()}
           <a href={this.props.href} className="ic-DashboardCard__link">
-            <div
-              className="ic-DashboardCard__header_content"
-              style={{height: (this.props.term ? '75px' : '65px')}}
-            >
+            <div className="ic-DashboardCard__header_content">
               <h2 className="ic-DashboardCard__header-title ellipsis" title={this.props.originalName}>
                 <span style={{color: this.props.backgroundColor}}>
                   {this.state.nicknameInfo.nickname}
                 </span>
               </h2>
-              <p className="ic-DashboardCard__header-subtitle ellipsis" title={this.props.courseCode}>{this.props.courseCode}</p>
-              {
-                this.props.term ? (
-                  <p className="ic-DashboardCard__header-term ellipsis" title={this.props.term}>
-                    {this.props.term}
-                  </p>
-                ) : null
-              }
+              <div
+                className="ic-DashboardCard__header-subtitle ellipsis"
+                title={this.props.courseCode}
+              >
+                {this.props.courseCode}
+              </div>
+              <div
+                className="ic-DashboardCard__header-term ellipsis"
+                title={this.props.term}
+              >
+                {(this.props.term) ? this.props.term : null}
+              </div>
             </div>
           </a>
-          {this.props.reorderingEnabled && (
-            <DashboardCardMovementMenu
-              cardTitle={this.state.nicknameInfo.nickname}
-              handleMove={this.props.moveCard}
-              currentPosition={this.props.position}
-              lastPosition={this.props.totalCards - 1}
-              assetString={this.props.assetString}
-              menuOptions={this.calculateMenuOptions()}
-            />
-          )}
           { this.renderHeaderButton() }
-
         </div>
         <nav
           className="ic-DashboardCard__action-container"
@@ -316,7 +334,6 @@ export default class DashboardCard extends Component {
         >
           { this.linksForCard() }
         </nav>
-        { this.colorPickerIfEditing() }
       </div>
     );
 

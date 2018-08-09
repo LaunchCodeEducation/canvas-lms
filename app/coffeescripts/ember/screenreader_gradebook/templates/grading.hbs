@@ -11,8 +11,22 @@
           <div class="pad-box bottom-only">
             <label for="student_and_assignment_grade">
               {{#with selectedAssignment}}
-                <strong>{{#t 'grade_for'}}Grade for: {{name}}{{/t}}</strong>
+                <strong>{{#t}}Grade for: {{name}}{{/t}}</strong>
               {{/with}}
+              {{#if selectedSubmission.late}}
+                <span class="late-pill">
+                  <ul class="pill pill-align error" />
+                    <li class="error"><strong>{{#t}}late{{/t}}</strong></li>
+                  </ul>
+                </span>
+              {{/if}}
+              {{#if selectedSubmission.missing}}
+                <span class="missing-pill">
+                  <ul class="pill pill-align error" />
+                    <li class="error"><strong>{{#t}}missing{{/t}}</strong></li>
+                  </ul>
+                </span>
+              {{/if}}
             </label>
           </div>
           {{
@@ -30,13 +44,6 @@
               </em>
             </p>
           {{/if}}
-          {{#if selectedSubmission.late}}
-            <p class="late muted">
-              <em>
-                {{#t 'is_late'}}This submission was late.{{/t}}
-              </em>
-            </p>
-          {{/if}}
           {{#unless selectedSubmission.grade_matches_current_submission}}
             <p class="resubmitted muted">
               <em>
@@ -45,6 +52,7 @@
             </p>
           {{/unless}}
           </div>
+          {{#unless hideComments}}
           <button
             id="submission_details"
             class="btn"
@@ -52,6 +60,7 @@
           >
             {{#t 'submission_details'}}Submission Details{{/t}}
           </button>
+          {{/unless}}
         {{/if}}
       {{else}}
         <p class="submission_selection">

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Instructure, Inc.
+ * Copyright (C) 2017 - present Instructure, Inc.
  *
  * This file is part of Canvas.
  *
@@ -27,13 +27,13 @@ import 'compiled/jquery.rails_flash_notifications'
       return {
         isDisabled: !submissionsLoaded || gradingType === 'pass_fail' || pointsPossible == null || pointsPossible === 0,
 
-        onSelect () { // eslint-disable-line consistent-return
+        onSelect (onClose) { // eslint-disable-line consistent-return
           if (!isAdmin && assignment.inClosedGradingPeriod) {
             return $.flashError(I18n.t('Unable to curve grades because this assignment is due in a closed ' +
               'grading period for at least one student'));
           }
           const dialog = new CurveGradesDialog({assignment, students, context_url: contextUrl});
-          dialog.show();
+          dialog.show(onClose);
         }
       };
     }

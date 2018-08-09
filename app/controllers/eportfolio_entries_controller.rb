@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -113,7 +113,7 @@ class EportfolioEntriesController < ApplicationController
     if authorized_action(@portfolio, @current_user, :read)
       @entry = @portfolio.eportfolio_entries.find(params[:entry_id])
       @category = @entry.eportfolio_category
-      @attachment = @portfolio.user.all_attachments.where(uuid: params[:attachment_id]).first
+      @attachment = @portfolio.user.all_attachments.shard(@portfolio.user).where(uuid: params[:attachment_id]).first
       # @entry.check_for_matching_attachment_id
       begin
         redirect_to file_download_url(@attachment, { :verifier => @attachment.uuid })
@@ -134,7 +134,9 @@ class EportfolioEntriesController < ApplicationController
       @context = @assignment.context
       # @entry.check_for_matching_attachment_id
       @headers = false
-      render "submissions/show_preview"
+      render template: 'submissions/show_preview', locals: {
+        anonymous_now: @assignment.anonymous_grading? && @assignment.muted?
+      }
     end
   end
 

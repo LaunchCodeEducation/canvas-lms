@@ -1,12 +1,29 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18nObj'
   'i18n!gradebook'
   'jquery'
   'underscore'
-  'compiled/util/natcompare'
-  'compiled/views/gradebook/HeaderFilterView'
-  'compiled/views/gradebook/OutcomeColumnView'
-  'compiled/util/NumberCompare'
+  '../util/natcompare'
+  '../views/gradebook/HeaderFilterView'
+  '../views/gradebook/OutcomeColumnView'
+  '../util/NumberCompare'
   'jst/gradebook/outcome_gradebook_cell'
   'jst/gradebook/outcome_gradebook_student_cell'
   'jsx/context_cards/StudentContextCardTrigger'
@@ -17,7 +34,9 @@ define [
   ###
 
   Grid =
-    filter: ['exceeds', 'mastery', 'near-mastery', 'remedial']
+    filter: []
+
+    ratings: []
 
     averageFn: 'mean'
 
@@ -207,7 +226,7 @@ define [
             section_name: if _.keys(Grid.sections).length > 1 then section_name else null
             student)
         _.each rollup[0].scores, (score) ->
-          row["outcome_#{score.links.outcome}"] = score.score
+          row["outcome_#{score.links.outcome}"] = _.pick score, 'score', 'hide_points'
         row
 
       # Public: Filter the given row by its section.
@@ -326,50 +345,68 @@ define [
       #
       # row - Current row index.
       # cell - Current cell index.
-      # value - Current value of the cell.
+      # value - Object with current score and hide_points status of the cell
       # columnDef - Object that defines the current column.
       # dataContext - Context for the cell.
       #
       # Returns cell HTML.
       cell: (row, cell, value, columnDef, dataContext) ->
-        Grid.View.cellHtml(value, columnDef, true)
+        score = value?.score
+        hide_points = value?.hide_points
+        Grid.View.cellHtml(score, hide_points, columnDef, true)
 
       # Internal: Determine HTML for a cell.
       #
-      # value - The proposed value for the cell
+      # score - The proposed value for the cell
+      # hide_points - Whether or not to show raw points or tier description
       # columnDef - The object for the current column
-      # applyFilter - Wheter filtering should be applied
+      # applyFilter - Whether filtering should be applied
       #
       # Returns cell HTML
-      cellHtml: (value, columnDef, shouldFilter) ->
+      cellHtml: (score, hide_points, columnDef, shouldFilter) ->
         outcome     = Grid.Util.lookupOutcome(columnDef.field)
-        return unless outcome and _.isNumber(value)
-        className   = Grid.View.masteryClassName(value, outcome)
+        return unless outcome and _.isNumber(score)
+        [className, color, description] = Grid.View.masteryDetails(score, outcome)
         return '' if shouldFilter and !_.include(Grid.filter, className)
-        cellTemplate(score: Math.round(value * 100.0) / 100.0, className: className, masteryScore: outcome.mastery_points)
+        cssColor = if color then "background-color:#{color};" else ''
+        if hide_points
+          cellTemplate(color: cssColor, className: className, description: description)
+        else
+          cellTemplate(color: cssColor, score: Math.round(score * 100.0) / 100.0, className: className, masteryScore: outcome.mastery_points)
 
       studentCell: (row, cell, value, columnDef, dataContext) ->
         studentCellTemplate(_.extend value, course_id: ENV.GRADEBOOK_OPTIONS.context_id)
 
-      # Public: Create a string class name for the given score.
+      masteryDetails: (score, outcome) ->
+        if Grid.ratings.length > 0
+          total_points = outcome.points_possible
+          total_points = outcome.mastery_points if total_points == 0
+          scaled = if total_points == 0 then score else (score / total_points) * Grid.ratings[0].points
+          idx = Grid.ratings.findIndex((r) -> scaled >= r.points)
+          idx = if idx == -1 then Grid.ratings.length - 1 else idx
+          ["rating_#{idx}", "\##{Grid.ratings[idx].color}", Grid.ratings[idx].description]
+        else
+          Grid.View.legacyMasteryDetails(score, outcome)
+
+      # Public: Create a string class name and color for the given score.
       #
       # score - The number score to evaluate.
       # outcome - The outcome to compare the score against.
       #
-      # Returns a string ('mastery', 'near-mastery', or 'remedial').
-      masteryClassName: (score, outcome) ->
+      # Returns an array with a className and CSS color.
+      legacyMasteryDetails: (score, outcome) ->
         mastery     = outcome.mastery_points
         nearMastery = mastery / 2
         exceedsMastery = mastery + (mastery / 2)
-        return 'exceeds' if score >= exceedsMastery
-        return 'mastery' if score >= mastery
-        return 'near-mastery' if score >= nearMastery
-        'remedial'
+        return ['rating_0', '#127A1B', I18n.t('Exceeds Mastery')] if score >= exceedsMastery
+        return ['rating_1', (if ENV.use_high_contrast then '#127A1B' else '#00AC18'), I18n.t('Meets Mastery')] if score >= mastery
+        return ['rating_2', (if ENV.use_high_contrast then '#C23C0D' else '#FC5E13'), I18n.t('Near Mastery')] if score >= nearMastery
+        ['rating_3', '#EE0612', I18n.t('Well Below Mastery')]
 
       getColumnResults: (data, column) ->
         _.chain(data)
           .pluck(column.field)
-          .filter(_.isNumber)
+          .filter(_.isObject)
           .value()
 
       headerRowCell: ({node, column, grid}, fn = Grid.averageFn) ->
@@ -377,8 +414,10 @@ define [
 
         results = Grid.View.getColumnResults(grid.getData(), column)
         return $(node).empty() unless results.length
-        value = Grid.Math[fn].call(this, (results))
-        $(node).empty().append(Grid.View.cellHtml(value, column, false))
+        scores = _.map results, (result) -> result.score
+        hide_points = _.every results, (result) -> result.hide_points
+        score = Grid.Math[fn].call(this, (scores))
+        $(node).empty().append(Grid.View.cellHtml(score, hide_points, column, false))
 
       redrawHeader: (grid, fn = Grid.averageFn) ->
         Grid.averageFn = fn

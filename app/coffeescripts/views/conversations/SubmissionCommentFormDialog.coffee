@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2014 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -21,16 +21,16 @@ define [
   'jquery'
   'underscore'
   'Backbone'
-  'compiled/views/DialogBaseView'
+  '../DialogBaseView'
   'jst/conversations/SubmissionCommentFormDialog'
-  'compiled/fn/preventDefault'
+  '../../fn/preventDefault'
   'jst/conversations/composeTitleBar'
   'jst/conversations/composeButtonBar'
-  'compiled/models/Message'
-  'compiled/views/conversations/AutocompleteView'
-  'compiled/views/conversations/CourseSelectionView'
-  'compiled/views/conversations/ContextMessagesView'
-  'vendor/jquery.elastic'
+  '../../models/Message'
+  '../conversations/AutocompleteView'
+  '../conversations/CourseSelectionView'
+  '../conversations/ContextMessagesView'
+  'jquery.elastic'
 ], (I18n, $, _, {Collection}, DialogBaseView, template, preventDefault, composeTitleBarTemplate, composeButtonBarTemplate, Message, AutocompleteView, CourseSelectionView, ContextMessagesView) ->
 
   ##

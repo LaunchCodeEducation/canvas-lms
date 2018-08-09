@@ -1,13 +1,32 @@
+/*
+ * Copyright (C) 2016 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import $ from 'jquery'
 import React from 'react'
+import PropTypes from 'prop-types'
 import htmlEscape from 'str/htmlEscape'
 import I18n from 'i18n!help_dialog'
 import 'jquery.instructure_forms'
 import 'compiled/jquery.rails_flash_notifications'
   const TeacherFeedbackForm = React.createClass({
     propTypes: {
-      onCancel: React.PropTypes.func,
-      onSubmit: React.PropTypes.func
+      onCancel: PropTypes.func,
+      onSubmit: PropTypes.func
     },
     getDefaultProps () {
       return {
@@ -22,7 +41,7 @@ import 'compiled/jquery.rails_flash_notifications'
       };
     },
     componentWillMount () {
-      $.getJSON('/api/v1/courses.json', (courses) => {
+      $.getJSON('/api/v1/courses.json?enrollment_state=active&per_page=100', (courses) => {
         this.setState({
           coursesLoaded: true,
           courses
@@ -54,7 +73,7 @@ import 'compiled/jquery.rails_flash_notifications'
       this.props.onCancel();
     },
     renderCourseOptions () {
-      let options = this.state.courses.map((c) => {
+      let options = this.state.courses.filter(c => !c.access_restricted_by_date).map((c) => {
         const value = `course_${c.id}_admins`;
 
         return (

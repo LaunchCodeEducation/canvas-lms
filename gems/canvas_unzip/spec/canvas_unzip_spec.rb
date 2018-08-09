@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2014 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -83,7 +83,7 @@ describe "CanvasUnzip" do
       expect {
         limits = CanvasUnzip::Limits.new(CanvasUnzip::DEFAULT_BYTE_LIMIT, 2)
         Dir.mktmpdir do |tmpdir|
-          CanvasUnzip.extract_archive(fixture_filename("test.zip"), tmpdir, limits)
+          CanvasUnzip.extract_archive(fixture_filename("test.zip"), tmpdir, limits: limits)
         end
       }.to raise_error(CanvasUnzip::FileLimitExceeded)
     end
@@ -92,7 +92,7 @@ describe "CanvasUnzip" do
       expect {
         limits = CanvasUnzip::Limits.new(10, 100)
         Dir.mktmpdir do |tmpdir|
-          CanvasUnzip.extract_archive(fixture_filename("test.zip"), tmpdir, limits)
+          CanvasUnzip.extract_archive(fixture_filename("test.zip"), tmpdir, limits: limits)
         end
       }.to raise_error(CanvasUnzip::SizeLimitExceeded)
     end

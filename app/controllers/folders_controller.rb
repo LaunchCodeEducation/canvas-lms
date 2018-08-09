@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -136,10 +136,9 @@ class FoldersController < ApplicationController
     if authorized_action(folder, @current_user, :read_contents)
       can_view_hidden_files = can_view_hidden_files?(folder.context, @current_user, session)
       opts = {:can_view_hidden_files => can_view_hidden_files, :context => folder.context}
-
       if can_view_hidden_files && folder.context.is_a?(Course) &&
           master_courses? && MasterCourses::ChildSubscription.is_child_course?(folder.context)
-        opts[:master_course_restricted_folder_ids] = MasterCourses::FolderLockingHelper.locked_folder_ids_for_course(folder.context)
+        opts[:master_course_restricted_folder_ids] = MasterCourses::FolderHelper.locked_folder_ids_for_course(folder.context)
       end
 
       scope = folder.active_sub_folders
@@ -275,62 +274,6 @@ class FoldersController < ApplicationController
             }
           }
           format.json { render :json => res }
-        end
-      end
-    end
-  end
-
-  def download
-    if authorized_action(@context, @current_user, :read)
-      @folder = @context.folders.find(params[:folder_id])
-      user_id = @current_user && @current_user.id
-
-      # Destroy any previous zip downloads that might exist for this folder,
-      # except the last one (cause we might be able to use it)
-      folder_filename = "#{t :folder_filename, "folder"}.zip"
-
-      @attachments = Attachment.where(context_id: @folder,
-                                      context_type: @folder.class.to_s,
-                                      display_name: folder_filename,
-                                      user_id: user_id,
-                                      workflow_state: ['to_be_zipped', 'zipping', 'zipped', 'unattached', 'errored']).
-          where("file_state<>'deleted'").
-          order(:created_at).to_a
-      @attachment = @attachments.pop
-      @attachments.each{|a| a.destroy_permanently! }
-      last_date = (@folder.active_file_attachments.map(&:updated_at) + @folder.active_sub_folders.by_position.map(&:updated_at)).compact.max
-      if @attachment && last_date && @attachment.created_at < last_date
-        @attachment.destroy_permanently!
-        @attachment = nil
-      end
-
-      if @attachment.nil?
-        @attachment = @folder.file_attachments.build(:display_name => folder_filename)
-        @attachment.user_id = user_id
-        @attachment.workflow_state = 'to_be_zipped'
-        @attachment.file_state = '0'
-        @attachment.context = @folder
-        @attachment.save!
-        ContentZipper.send_later_enqueue_args(:process_attachment, { :priority => Delayed::LOW_PRIORITY, :max_attempts => 1 }, @attachment, @current_user)
-        render :json => @attachment
-      else
-        respond_to do |format|
-          if @attachment.zipped?
-            if Attachment.s3_storage?
-              format.html { redirect_to @attachment.inline_url }
-              format.zip { redirect_to @attachment.inline_url }
-            else
-              cancel_cache_buster
-              format.html { send_file(@attachment.full_filename, :type => @attachment.content_type_with_encoding, :disposition => 'inline') }
-              format.zip { send_file(@attachment.full_filename, :type => @attachment.content_type_with_encoding, :disposition => 'inline') }
-            end
-            format.json { render :json => @attachment.as_json(:methods => :readable_size) }
-          else
-            flash[:notice] = t :file_zip_in_process, "File zipping still in process..."
-            format.html { redirect_to named_context_url(@context, :context_folder_url, @folder.id) }
-            format.zip { redirect_to named_context_url(@context, :context_folder_url, @folder.id) }
-            format.json { render :json => @attachment }
-          end
         end
       end
     end
@@ -537,7 +480,7 @@ class FoldersController < ApplicationController
   #
   # @example_request
   #
-  #   curl -XDELETE 'https://<canvas>/api/v1/folders/<folder_id>' \
+  #   curl -X DELETE 'https://<canvas>/api/v1/folders/<folder_id>' \
   #        -H 'Authorization: Bearer <token>'
   def api_destroy
     @folder = Folder.find(params[:id])
@@ -546,7 +489,7 @@ class FoldersController < ApplicationController
         render :json => {:message => t('no_deleting_root', "Can't delete the root folder")}, :status => 400
       elsif @folder.context.is_a?(Course) && master_courses? &&
           MasterCourses::ChildSubscription.is_child_course?(@folder.context) &&
-          MasterCourses::FolderLockingHelper.locked_folder_ids_for_course(@folder.context).include?(@folder.id)
+          MasterCourses::FolderHelper.locked_folder_ids_for_course(@folder.context).include?(@folder.id)
         render :json => {:message => "Can't delete folder containing files locked by Blueprint Course"}, :status => 400
       elsif @folder.has_contents? && params[:force] != 'true'
         render :json => {:message => t('no_deleting_folders_with_content', "Can't delete a folder with content")}, :status => 400

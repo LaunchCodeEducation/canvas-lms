@@ -1,14 +1,29 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'jquery',
-  'i18n!media_comments',
-  'compiled/media_comments/dialog_manager',
-  'compiled/media_comments/comment_ui_loader',
+  '../media_comments/dialog_manager',
+  '../media_comments/comment_ui_loader',
   'bower/k5uploader/k5uploader',
-  'compiled/media_comments/upload_view_manager',
-  'compiled/media_comments/kaltura_session_loader',
-  'compiled/media_comments/file_input_manager'
+  '../media_comments/upload_view_manager',
+  '../media_comments/kaltura_session_loader',
+  '../media_comments/file_input_manager'
 ], ($,
-    I18n,
     DialogManager,
     CommentUiLoader,
     K5Uploader,

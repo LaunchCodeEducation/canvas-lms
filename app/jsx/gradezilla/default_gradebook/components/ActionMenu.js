@@ -1,22 +1,45 @@
+/*
+ * Copyright (C) 2017 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import $ from 'jquery'
 import React from 'react'
-import IconMiniArrowDownSolid from 'instructure-icons/lib/Solid/IconMiniArrowDownSolid'
-import Button from 'instructure-ui/lib/components/Button'
-import { MenuItem, MenuItemSeparator } from 'instructure-ui/lib/components/Menu'
-import PopoverMenu from 'instructure-ui/lib/components/PopoverMenu'
-import Typography from 'instructure-ui/lib/components/Typography'
-import GradebookExportManager from 'jsx/gradezilla/shared/GradebookExportManager'
+import PropTypes from 'prop-types'
+import IconMiniArrowDownSolid from '@instructure/ui-icons/lib/Solid/IconMiniArrowDown'
+import Button from '@instructure/ui-buttons/lib/components/Button'
+import Menu, { MenuItem, MenuItemSeparator } from '@instructure/ui-menu/lib/components/Menu'
+import Text from '@instructure/ui-elements/lib/components/Text'
+import GradebookExportManager from '../../../gradezilla/shared/GradebookExportManager'
+import { AppLaunch } from '../../../gradezilla/SISGradePassback/PostGradesApp'
 import tz from 'timezone'
-import DateHelper from 'jsx/shared/helpers/dateHelper'
+import DateHelper from '../../../shared/helpers/dateHelper'
 import I18n from 'i18n!gradebook'
 import 'compiled/jquery.rails_flash_notifications'
 
-  const { bool, shape, string } = React.PropTypes;
+const { arrayOf, bool, func, object, shape, string } = PropTypes;
 
   class ActionMenu extends React.Component {
     static defaultProps = {
       lastExport: undefined,
-      attachment: undefined
+      attachment: undefined,
+      postGradesLtis: [],
+      publishGradesToSis: {
+        publishToSisUrl: undefined
+      }
     };
 
     static propTypes = {
@@ -36,12 +59,27 @@ import 'compiled/jquery.rails_flash_notifications'
         id: string.isRequired,
         downloadUrl: string.isRequired,
         updatedAt: string.isRequired
-      })
-    };
+      }),
 
-    static downloadableLink (url) {
-      return `${url}&download_frd=1`;
-    }
+      postGradesLtis: arrayOf(shape({
+        id: string.isRequired,
+        name: string.isRequired,
+        onSelect: func.isRequired
+      })),
+
+      postGradesFeature: shape({
+        enabled: bool.isRequired,
+        store: object.isRequired,
+        returnFocusTo: object
+      }).isRequired,
+
+      publishGradesToSis: shape({
+        isEnabled: bool.isRequired,
+        publishToSisUrl: string
+      }),
+
+      gradingPeriodId: string.isRequired
+    };
 
     static gotoUrl (url) {
       window.location.href = url;
@@ -55,6 +93,7 @@ import 'compiled/jquery.rails_flash_notifications'
       super(props);
 
       this.state = ActionMenu.initialState;
+      this.launchPostGrades = this.launchPostGrades.bind(this);
     }
 
     componentWillMount () {
@@ -86,7 +125,7 @@ import 'compiled/jquery.rails_flash_notifications'
       this.setExportInProgress(true);
       $.flashMessage(I18n.t('Gradebook export started'));
 
-      return this.exportManager.startExport().then((resolution) => {
+      return this.exportManager.startExport(this.props.gradingPeriodId).then((resolution) => {
         this.setExportInProgress(false);
 
         const attachmentUrl = resolution.attachmentUrl;
@@ -94,7 +133,7 @@ import 'compiled/jquery.rails_flash_notifications'
 
         const previousExport = {
           label: `${I18n.t('New Export')} (${DateHelper.formatDatetimeForDisplay(updatedAt)})`,
-          attachmentUrl: ActionMenu.downloadableLink(attachmentUrl)
+          attachmentUrl
         };
 
         this.setState({ previousExport });
@@ -110,6 +149,10 @@ import 'compiled/jquery.rails_flash_notifications'
 
     handleImport () {
       ActionMenu.gotoUrl(this.props.gradebookImportUrl);
+    }
+
+    handlePublishGradesToSis () {
+      ActionMenu.gotoUrl(this.props.publishGradesToSis.publishToSisUrl);
     }
 
     disableImports () {
@@ -142,12 +185,55 @@ import 'compiled/jquery.rails_flash_notifications'
 
       return {
         label: `${I18n.t('Previous Export')} (${DateHelper.formatDatetimeForDisplay(updatedAt)})`,
-        attachmentUrl: ActionMenu.downloadableLink(attachment.downloadUrl)
+        attachmentUrl: attachment.downloadUrl
       };
     }
 
     exportInProgress () {
       return this.state.exportInProgress;
+    }
+
+    launchPostGrades () {
+      const { store, returnFocusTo } = this.props.postGradesFeature;
+      setTimeout(() => AppLaunch(store, returnFocusTo), 10);
+    }
+
+    renderPostGradesTools () {
+      const tools = this.renderPostGradesLtis();
+
+      if (this.props.postGradesFeature.enabled) {
+        tools.push(this.renderPostGradesFeature());
+      }
+
+      if (tools.length) {
+        tools.push(<MenuItemSeparator key="postGradesSeparator" />);
+      }
+
+      return tools;
+    }
+
+    renderPostGradesLtis () {
+      return this.props.postGradesLtis.map((tool) => {
+        const key = `post_grades_lti_${tool.id}`;
+        return (
+          <MenuItem onSelect={tool.onSelect} key={key}>
+            <span data-menu-id={key}>
+              {I18n.t('Sync to %{name}', {name: tool.name})}
+            </span>
+          </MenuItem>
+        );
+      });
+    }
+
+    renderPostGradesFeature () {
+      const sisName = this.props.postGradesFeature.label || I18n.t('SIS');
+      return (
+        <MenuItem onSelect={this.launchPostGrades} key="post_grades_feature_tool">
+          <span data-menu-id="post_grades_feature_tool">
+            {I18n.t('Sync to %{sisName}', {sisName})}
+          </span>
+        </MenuItem>
+      );
     }
 
     renderPreviousExports () {
@@ -170,6 +256,22 @@ import 'compiled/jquery.rails_flash_notifications'
       ];
     }
 
+    renderPublishGradesToSis () {
+      const { isEnabled, publishToSisUrl } = this.props.publishGradesToSis;
+
+      if (!isEnabled || !publishToSisUrl) {
+        return null;
+      }
+
+      return (
+        <MenuItem onSelect={() => { this.handlePublishGradesToSis() }}>
+          <span data-menu-id="publish-grades-to-sis">
+            {I18n.t('Sync grades to SIS')}
+          </span>
+        </MenuItem>
+      );
+    }
+
     render () {
       const buttonTypographyProps = {
         weight: 'normal',
@@ -177,27 +279,33 @@ import 'compiled/jquery.rails_flash_notifications'
         size: 'medium',
         color: 'primary'
       };
+      const publishGradesToSis = this.renderPublishGradesToSis();
 
       return (
-        <PopoverMenu
+        <Menu
           trigger={
             <Button variant="link">
-              <Typography {...buttonTypographyProps}>
+              <Text {...buttonTypographyProps}>
                 { I18n.t('Actions') }<IconMiniArrowDownSolid />
-              </Typography>
+              </Text>
             </Button>
           }
         >
+          { this.renderPostGradesTools() }
+          {publishGradesToSis}
+
           <MenuItem disabled={this.disableImports()} onSelect={() => { this.handleImport() }}>
             <span data-menu-id="import">{ I18n.t('Import') }</span>
           </MenuItem>
+
           <MenuItem disabled={this.exportInProgress()} onSelect={() => { this.handleExport() }}>
             <span data-menu-id="export">
               { this.exportInProgress() ? I18n.t('Export in progress') : I18n.t('Export') }
             </span>
           </MenuItem>
+
           { [...this.renderPreviousExports()] }
-        </PopoverMenu>
+        </Menu>
       );
     }
   }

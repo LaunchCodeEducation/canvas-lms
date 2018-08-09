@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require 'spec_helper'
 
 describe BroadcastPolicy::InstanceMethods do
@@ -14,6 +31,7 @@ describe BroadcastPolicy::InstanceMethods do
     def attribute_changed?(method)
       changed_attributes.key?(method)
     end
+    alias saved_change_to_attribute? attribute_changed?
 
     def new_record?
       false
@@ -21,11 +39,16 @@ describe BroadcastPolicy::InstanceMethods do
 
     def method_missing(method, *)
       case method.to_s
+      when /^saved_change_to.+\?\z/
+        method = method.to_s.sub(/^saved_change_to/, "").to_sym
+        method = method.to_s.sub(/\?\z/, "").to_sym
+        attribute_changed? method
       when /_changed\?\z/
         method = method.to_s.sub(/_changed\?\z/, "").to_sym
         attribute_changed? method
-      when /_was\z/
+      when /_was\z/, /_before_last_save\z/
         method = method.to_s.sub(/_was\z/, "").to_sym
+        method = method.to_s.sub(/_before_last_save\z/, "").to_sym
         attribute_changed?(method) ? changed_attributes[method] : attributes[method]
       else
         attributes[method]

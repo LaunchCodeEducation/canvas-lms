@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2012 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require File.expand_path(File.dirname(__FILE__) + '/../common')
 
 module WikiAndTinyCommon
@@ -8,6 +25,7 @@ module WikiAndTinyCommon
 
   def clear_wiki_rce
     element = wiki_page_body
+    wait_for_tiny(element)
     clear_tiny(element)
     element
   end
@@ -24,11 +42,11 @@ module WikiAndTinyCommon
 
     f("#{form} .file_name").send_keys(path)
     wait_for_ajaximations
-    f("#{form} button").click
+    f("#{form}").submit
     expect(f("body")).not_to contain_jqcss("#{form}:visible")
   end
 
-  def wiki_page_tools_file_tree_setup
+  def wiki_page_tools_file_tree_setup(skip_tree=false, skip_image_list=false)
     @root_folder = Folder.root_folders(@course).first
     @sub_folder = @root_folder.sub_folders.create!(:name => 'subfolder', :context => @course)
     @sub_sub_folder = @sub_folder.sub_folders.create!(:name => 'subsubfolder', :context => @course)
@@ -43,8 +61,12 @@ module WikiAndTinyCommon
     @image2.save!
     get "/courses/#{@course.id}/pages/front-page/edit"
 
-    @tree1 = driver.find_element(:id, :tree1)
-    @image_list = f('#editor_tabs_4 .image_list')
+    if !skip_tree
+      @tree1 = driver.find_element(:id, :tree1)
+    end
+    if !skip_image_list
+      @image_list = f('#editor_tabs_4 .image_list')
+    end
   end
 
   def add_text_to_tiny(text)
@@ -80,7 +102,7 @@ module WikiAndTinyCommon
   end
 
   def create_wiki_page(title, unpublished, edit_roles)
-    wiki_page = @course.wiki.wiki_pages.create(:title => title, :editing_roles => edit_roles, :notify_of_update => true)
+    wiki_page = @course.wiki_pages.create(:title => title, :editing_roles => edit_roles, :notify_of_update => true)
     wiki_page.unpublish! if unpublished
     wiki_page
   end
@@ -88,8 +110,9 @@ module WikiAndTinyCommon
   def manually_create_wiki_page(title,body)
     f('.new_page').click
     wait_for_ajaximations
-    replace_content(f('#title'),title)
-    add_text_to_tiny(body)
+    wait_for_tiny(wiki_page_body)
+    replace_content(f('#title'), title)
+    type_in_tiny('textarea.body', body)
     expect_new_page_load { f('form.edit-form button.submit').click }
     expect(f('.page-title')).to include_text(title)
     expect(f('.show-content')).to include_text(body)

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'ic-ajax'
   'ember'
@@ -458,6 +475,70 @@ define [
             }
           ]
         }
+        {
+          id: '6'
+          name: 'moderated grading'
+          position: 4
+          group_weight: 0
+          assignments: [
+            {
+              id: '25'
+              name: 'muted, moderated, grades not published'
+              points_possible: 10
+              grading_type: "percent"
+              submission_types: ["not_graded"]
+              due_at: "2013-09-01T10:00:00Z"
+              position: 1
+              assignment_group_id:'4'
+              muted: true
+              moderated_grading: true
+              grades_published: false
+              published: true
+            }
+            {
+              id: '26'
+              name: 'not muted, moderated, grades not published'
+              points_possible: 10
+              grading_type: "percent"
+              submission_types: ["not_graded"]
+              due_at: "2013-09-01T10:00:00Z"
+              position: 1
+              assignment_group_id:'4'
+              muted: false
+              moderated_grading: true
+              grades_published: false
+              published: true
+            }
+            {
+              id: '27'
+              name: 'muted, not moderated, grades not published'
+              points_possible: 10
+              grading_type: "percent"
+              submission_types: ["not_graded"]
+              due_at: "2013-09-01T10:00:00Z"
+              position: 1
+              assignment_group_id:'4'
+              muted: true
+              moderated_grading: false
+              grades_published: false
+              published: true
+            }
+            {
+              id: '28'
+              name: 'muted, moderated, grades published'
+              points_possible: 10
+              grading_type: "percent"
+              submission_types: ["not_graded"]
+              due_at: "2013-09-01T10:00:00Z"
+              position: 1
+              assignment_group_id:'4'
+              muted: true
+              moderated_grading: true
+              grades_published: true
+              published: true
+            }
+          ]
+        }
       ]
 
   submissions = [
@@ -466,7 +547,7 @@ define [
           submissions: [
             { id: '1', user_id: '1', assignment_id: '1', grade: '3', score: '3' }
             { id: '2', user_id: '1', assignment_id: '2', grade: null, score: null  }
-            { id: '5', user_id: '1', assignment_id: '6', grade: 'incomplete', score: 'incomplete' }
+            { id: '5', user_id: '1', assignment_id: '6', grade: 'incomplete', score: 'incomplete', entered_grade: 'incomplete', entered_score: 'incomplete' }
           ]
         }
         {
@@ -554,23 +635,6 @@ define [
     { outcome_id: '2', user_id: '2', score: 3 }
   ]
 
-  effectiveDueDates =
-    1:
-      1:
-        due_at: '2013-09-15T10:00:00Z'
-        grading_period_id: '2'
-        in_closed_grading_period: true
-    2:
-      2:
-        due_at: '2013-09-15T10:00:00Z'
-        grading_period_id: '2'
-        in_closed_grading_period: true
-    3:
-      1:
-        due_at: '2013-12-01T10:00:00Z'
-        grading_period_id: '3'
-        in_closed_grading_period: false
-
   custom_columns: customColumns
   set_default_grade_response: default_grade_response
   students: students
@@ -580,7 +644,6 @@ define [
   sections: sections
   outcomes: outcomes
   outcome_rollups: outcomeRollups
-  effectiveDueDates: effectiveDueDates
   create: (overrides) ->
 
     window.ENV =
@@ -633,11 +696,6 @@ define [
         }
       }
 
-    ajax.defineFixture window.ENV.GRADEBOOK_OPTIONS.effective_due_dates_url,
-      response: clone effectiveDueDates
-      jqXHR: { getResponseHeader: -> {} }
-      textStatus: 'success'
-
     ajax.defineFixture window.ENV.GRADEBOOK_OPTIONS.enrollments_url,
       response: clone students
       jqXHR: { getResponseHeader: -> {} }
@@ -665,6 +723,13 @@ define [
 
     ajax.defineFixture window.ENV.GRADEBOOK_OPTIONS.custom_columns_url,
       response: clone customColumns
+      jqXHR: { getResponseHeader: -> {} }
+      textStatus: 'success'
+
+    # the qUnit specs were sending a request for this that was 404'ing so I just
+    # added this so it wouldn't
+    ajax.defineFixture window.ENV.GRADEBOOK_OPTIONS.custom_columns_url + '/1',
+      response: {}
       jqXHR: { getResponseHeader: -> {} }
       textStatus: 'success'
 

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -21,10 +21,10 @@ define [
   'jquery'
   'underscore'
   'Backbone'
-  'compiled/models/Outcome'
-  'compiled/models/OutcomeGroup'
-  'compiled/views/outcomes/OutcomesDirectoryView'
-  'compiled/views/outcomes/FindDirectoryView'
+  '../../models/Outcome'
+  '../../models/OutcomeGroup'
+  './OutcomesDirectoryView'
+  './FindDirectoryView'
 ], (I18n, $, _, Backbone, Outcome, OutcomeGroup, OutcomesDirectoryView, FindDirectoryView) ->
 
   findDialog = undefined
@@ -59,6 +59,12 @@ define [
       return unless clickedOutside
       dir = $(e.target).data 'view'
       @selectDir dir
+
+    resetSidebar: () =>
+      _.each @directories, (d) -> d.remove()
+      @directories = []
+      @cachedDirectories = {}
+      @addDirFor @rootOutcomeGroup
 
     # Adds a directory view for an outcome group.
     # Returns the directory view.
@@ -186,13 +192,15 @@ define [
 
     # passing in FindDialog because of circular dependency
     findDialog: (FindDialog) =>
-      unless findDialog
+      if !findDialog
         findDialog = new FindDialog
           title: I18n.t 'titles.find_outcomes', 'Find Outcomes'
           selectedGroup: @selectedGroup()
           directoryView: new FindDirectoryView
             outcomeGroup: @selectedGroup()
         findDialog.on 'import', @addAndSelect, this
+      else
+        findDialog.updateSelection(@selectedGroup())
       findDialog.show()
 
     # Find a directory for a given outcome group or add a new directory view.

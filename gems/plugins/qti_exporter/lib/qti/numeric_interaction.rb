@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2011 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require 'bigdecimal'
 
 module Qti
@@ -17,17 +34,20 @@ class NumericInteraction < AssessmentItemConverter
   end
 
   def get_answer_values
-    answer = {:weight=>100,:comments=>"",:id=>unique_local_id,:numerical_answer_type=>"range_answer"}
+    answer = {:weight=>100,:comments=>"",:id=>unique_local_id}
     if gte = @doc.at_css('responseCondition gte baseValue')
       answer[:start] = gte.text.to_f
     end
     if lte = @doc.at_css('responseCondition lte baseValue')
       answer[:end] = lte.text.to_f
     end
-    if equal = @doc.at_css('responseCondition equal baseValue')
+
+    if (answer[:start] && answer[:end])
+      answer[:numerical_answer_type] = "range_answer"
+      @question[:answers] << answer
+    elsif equal = @doc.at_css('responseCondition equal baseValue')
       answer[:exact] = equal.text.to_f
-    end
-    if (answer[:start] && answer[:end]) || answer[:exact]
+      answer[:numerical_answer_type] = "exact_answer"
       @question[:answers] << answer
     end
   end
@@ -46,7 +66,7 @@ class NumericInteraction < AssessmentItemConverter
         is_precision = false
         if (lower_node = or_node.at_css('and customOperator[class=vargt] baseValue')) &&
             (upper_node = or_node.at_css('and customOperator[class=varlte] baseValue')) &&
-            lower_node.text.end_with?("5") && upper_node.text.end_with?("5")
+            lower_node.text.gsub(/[0\.]/, "").end_with?("5") && upper_node.text.gsub(/[0\.]/, "").end_with?("5")
           # tl;dr - super hacky way to try to detect the precision answers
           upper = upper_node.text.to_d
           lower = lower_node.text.to_d

@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2016 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module MasterCourses::Restrictor
   def self.included(klass)
     klass.include(CommonMethods)
@@ -43,9 +60,12 @@ module MasterCourses::Restrictor
       @importing_migration = cm if cm && cm.master_course_subscription
     end
 
+    def skip_downstream_changes!
+      @skip_downstream_changes = true
+    end
+
     def check_for_restricted_column_changes
-      return true if @importing_migration || !is_child_content?
-      return true if new_record? && !self.respond_to?(:owner_for_restrictions) # shouldn't be able to create new collection items if owner is locked
+      return true if @importing_migration || !is_child_content? || !self.check_restrictions?
 
       restrictions = nil
       locked_columns = []
@@ -80,10 +100,19 @@ module MasterCourses::Restrictor
     end
   end
 
-  def mark_downstream_changes(changed_columns=nil)
-    return if @importing_migration || !is_child_content? # don't mark changes on import
+  def check_restrictions?
+    !self.new_record?
+  end
 
-    changed_columns ||= self.changes.keys & self.class.base_class.restricted_column_settings.values.flatten
+  def mark_downstream_changes(changed_columns=nil)
+    return if @importing_migration || @skip_downstream_changes || !is_child_content? # don't mark changes on import
+
+    changed_columns ||= self.saved_changes.keys & self.class.base_class.restricted_column_settings.values.flatten
+    state_column = self.is_a?(Attachment) ? "file_state" : "workflow_state"
+    if self.saved_changes[state_column]&.last == "deleted"
+      changed_columns.delete(state_column)
+      changed_columns << "manually_deleted"
+    end
     if changed_columns.any?
       if self.is_a?(Assignment) && submittable = self.submittable_object
         tag_content = submittable # mark on the owner's tag
@@ -108,7 +137,7 @@ module MasterCourses::Restrictor
   def create_child_content_tag
     # i thought about making this a bulk insert at the end of the migration but the race conditions seemed scary
     if @importing_migration && is_child_content?
-      @importing_migration.master_course_subscription.create_content_tag_for!(self)
+      @importing_migration.master_course_subscription.content_tag_for(self)
     end
   end
 
@@ -132,6 +161,17 @@ module MasterCourses::Restrictor
         end
       end
     end
+
+    state_column = self.is_a?(Attachment) ? "file_state" : "workflow_state"
+    if self.changes[state_column]&.first == "deleted" && child_tag.downstream_changes.include?("manually_deleted")
+      if self.editing_restricted?(:any)
+        child_tag.downstream_changes.delete("manually_deleted")
+        child_tag.save!
+      else
+        columns_to_restore << state_column # don't restore if we manually deleted it
+      end
+    end
+
     if columns_to_restore.any?
       @importing_migration.add_skipped_item(child_tag)
       Rails.logger.debug("Undoing imported changes to #{self.class} #{self.id} because changed downstream - #{columns_to_restore.join(', ')}")
@@ -150,7 +190,7 @@ module MasterCourses::Restrictor
 
     locked_types = []
     self.class.base_class.restricted_column_settings.each do |type, columns|
-      if (child_tag.downstream_changes & columns).any?
+      if !self.child_content_restrictions[type] && (child_tag.downstream_changes & columns).any?
         locked_types << type
       end
     end

@@ -1,16 +1,39 @@
+/*
+ * Copyright (C) 2015 - present Instructure, Inc.
+ *
+ * This file is part of Canvas.
+ *
+ * Canvas is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, version 3 of the License.
+ *
+ * Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 import I18n from 'i18n!react_files'
 import React from 'react'
 import FolderChild from 'compiled/react_files/components/FolderChild'
 import filesEnv from 'compiled/react_files/modules/filesEnv'
 import classnames from 'classnames'
-import ItemCog from 'jsx/files/ItemCog'
-import PublishCloud from 'jsx/shared/PublishCloud'
-import FilesystemObjectThumbnail from 'jsx/files/FilesystemObjectThumbnail'
-import UsageRightsIndicator from 'jsx/files/UsageRightsIndicator'
+import ItemCog from '../files/ItemCog'
+import PublishCloud from '../shared/PublishCloud'
+import MasterCourseLock from '../shared/MasterCourseLock'
+import FilesystemObjectThumbnail from '../files/FilesystemObjectThumbnail'
+import UsageRightsIndicator from '../files/UsageRightsIndicator'
 import Folder from 'compiled/models/Folder'
 import preventDefault from 'compiled/fn/preventDefault'
-import FriendlyDatetime from 'jsx/shared/FriendlyDatetime'
+import FriendlyDatetime from '../shared/FriendlyDatetime'
 import friendlyBytes from 'compiled/util/friendlyBytes'
+
+FolderChild.isFolder = function () {
+  return this.props.model instanceof Folder
+}
 
   FolderChild.renderItemCog = function (canManage) {
     if (!this.props.model.isNew() || this.props.model.get('locked_for_user')) {
@@ -42,21 +65,20 @@ import friendlyBytes from 'compiled/util/friendlyBytes'
     }
   }
   FolderChild.renderMasterCourseIcon = function (canManage) {
-    if (canManage && this.props.model.get('is_master_course_child_content')) {
-      if (this.props.model.get('restricted_by_master_course')) {
-        return (
-          <span className="master-course-cell">
-            <i className="icon-lock"></i>
-          </span>
-        );
-      } else {
-        return (
-          <span className="master-course-cell">
-            <i className="icon-unlock icon-Line"></i>
-          </span>
-        );
+    // never show if not involved in blueprint courses
+    if (!(this.props.model.get('is_master_course_master_content') || this.props.model.get('is_master_course_child_content'))) {
+      return null;
+    }
+    // Never show the lock on master course folders
+    // because we don't always have it's children to know if any are locked
+    if (this.isFolder()) {
+      if (this.props.model.get('is_master_course_master_content') || !this.props.model.get('restricted_by_master_course')) {
+        return null
       }
     }
+
+
+    return <MasterCourseLock model={this.props.model} canManage={canManage} />
   }
 
   FolderChild.renderEditingState = function () {
@@ -70,7 +92,7 @@ import friendlyBytes from 'compiled/util/friendlyBytes'
               ref='newName'
               className='ic-Input ef-edit-name-form__input'
               placeholder={I18n.t('name', 'Name')}
-              aria-label={(this.props.model instanceof Folder) ? I18n.t('folder_name', 'Folder Name') : I18n.t('File Name')}
+              aria-label={this.isFolder() ? I18n.t('folder_name', 'Folder Name') : I18n.t('File Name')}
               defaultValue={this.props.model.displayName()}
               maxLength='255'
               onKeyUp={function (event){ if (event.keyCode === 27) {this.cancelEditingName()} }.bind(this)}
@@ -94,20 +116,26 @@ import friendlyBytes from 'compiled/util/friendlyBytes'
           </div>
         </form>
       );
-    }else if(this.props.model instanceof Folder) {
+    } else if (this.isFolder()) {
       return (
         <a
           ref= 'nameLink'
           href={`${filesEnv.baseUrl}/folder/${this.props.model.urlPath()}`}
           className= 'ef-name-col__link'
-          onClick= {this.checkForAccess}
           params= {{splat: this.props.model.urlPath()}}
         >
-          <span className='ef-big-icon-container'>
-            <FilesystemObjectThumbnail model= {this.props.model} />
-          </span>
-          <span className='ef-name-col__text'>
-            {this.props.model.displayName()}
+          {/* we use an internal click wrapper span and handle a native js click event so we can
+              intercept the link click event before page.js gets it. We want to prevent page.js from
+              getting the click event if there is an error and we don't actually want to navigate.
+              React's simulated events happen after the native event has been fully dispatched, so
+              we can't use react events to intercept the event before page.js processes it. */}
+          <span className="ef-name-col__click-wrapper" ref={elt => { if (elt) elt.addEventListener('click', this.checkForAccess) }}>
+            <span className='ef-big-icon-container'>
+              <FilesystemObjectThumbnail model= {this.props.model} />
+            </span>
+            <span className='ef-name-col__text'>
+              {this.props.model.displayName()}
+            </span>
           </span>
         </a>
       );
@@ -185,7 +213,7 @@ import friendlyBytes from 'compiled/util/friendlyBytes'
         </div>
 
         <div className='ef-date-modified-col' role= 'gridcell'>
-          {!(this.props.model instanceof Folder) && (
+          {!(this.isFolder()) && (
             <FriendlyDatetime dateTime={this.props.model.get('modified_at')} />
           )}
         </div>

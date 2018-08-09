@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module SectionTabHelper
   def available_section_tabs(context)
     AvailableSectionTabs.new(
@@ -112,7 +129,6 @@ module SectionTabHelper
       { href: @tab.path,
         title: @tab.label,
         class: a_classes }.tap do |h|
-        h[:'aria-label'] = @tab.screenreader if @tab.screenreader?
         h[:target] = @tab.target if @tab.target?
       end
     end
@@ -126,13 +142,18 @@ module SectionTabHelper
 
     def li_classes
       [ 'section' ].tap do |a|
-        a << 'section-tab-hidden' if @tab.hide?
+        a << 'section-tab-hidden' if @tab.hide? || @tab.unused?
       end
     end
 
     def span_tag
-      if @tab.hide?
-        content_tag(:span, I18n.t('* No content has been added'), {
+      if @tab.hide? || @tab.unused?
+        if @tab.hide?
+          text = I18n.t('* Disabled in Course Settings')
+        else
+          text = I18n.t('* No content has been added')
+        end
+        content_tag(:span, text, {
           id: 'inactive_nav_link',
           class: 'screenreader-only'
         })

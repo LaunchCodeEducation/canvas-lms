@@ -1,13 +1,30 @@
+#
+# Copyright (C) 2014 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 define [
   'i18n!conferences'
   'jquery'
   'underscore'
   'timezone'
-  'compiled/views/DialogBaseView'
-  'compiled/util/deparam'
+  '../DialogBaseView'
+  '../../util/deparam'
   'jst/conferences/editConferenceForm'
   'jst/conferences/userSettingOptions'
-  'compiled/behaviors/authenticity_token',
+  '../../behaviors/authenticity_token',
   'jsx/shared/helpers/numberHelper'
 ], (I18n, $, _, tz, DialogBaseView, deparam, template, userSettingOptionsTemplate, authenticity_token, numberHelper) ->
 
@@ -131,8 +148,11 @@ define [
             when 'select'
               optionObj['isSelect'] = true
               break
+          return
         )
+        return
       )
+      return
 
     renderConferenceFormUserSettings: ->
       conferenceData = @toJSON()

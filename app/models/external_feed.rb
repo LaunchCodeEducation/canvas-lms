@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -58,6 +58,10 @@ class ExternalFeed < ActiveRecord::Base
   scope :to_be_polled, ->(start) {
     where("external_feeds.consecutive_failures<5 AND external_feeds.refresh_at<?", start).order(:refresh_at)
   }
+
+  def inactive?
+    !self.context || self.context.root_account.deleted? || self.context.inactive?
+  end
 
   def add_rss_entries(rss)
     items = rss.items.map{|item| add_entry(item, rss, :rss) }.compact

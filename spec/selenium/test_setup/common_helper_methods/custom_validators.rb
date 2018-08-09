@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 module CustomValidators
   def validate_breadcrumb_link(link_element, breadcrumb_text)
     expect_new_page_load { link_element.click }
@@ -82,7 +99,7 @@ module CustomValidators
 
   def wait_for_new_page_load(accept_alert = false)
     driver.execute_script("window.INST = window.INST || {}; INST.still_on_old_page = true;")
-    yield
+    yield if block_given?
     wait_for(method: :wait_for_new_page_load) do
       begin
         driver.execute_script("return window.INST && INST.still_on_old_page !== true;")

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -19,7 +19,7 @@
 define [
   'jquery'
   'underscore'
-  'compiled/views/PaginatedView'
+  '../PaginatedView'
   'jst/contexts/PageView'
 ], ($, _, PaginatedView, pageViewTemplate) ->
 

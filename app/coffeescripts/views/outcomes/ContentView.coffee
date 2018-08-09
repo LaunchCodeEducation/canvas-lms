@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2012 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -21,15 +21,15 @@ define [
   'underscore'
   'i18n!contentview'
   'Backbone'
-  'compiled/models/Outcome'
-  'compiled/models/OutcomeGroup'
-  'compiled/views/outcomes/OutcomeView'
-  'compiled/views/outcomes/OutcomeGroupView'
-  'compiled/views/TreeBrowserView'
-  'compiled/views/RootOutcomesFinder'
+  '../../models/Outcome'
+  '../../models/OutcomeGroup'
+  './OutcomeView'
+  './OutcomeGroupView'
+  '../TreeBrowserView'
+  '../RootOutcomesFinder'
   'jst/MoveOutcomeDialog'
   'jst/outcomes/noOutcomesWarning'
-  'compiled/backbone-ext/DefaultUrlMixin'
+  '../../backbone-ext/DefaultUrlMixin'
   'str/htmlEscape'
 ], ($, _, I18n, Backbone, Outcome, OutcomeGroup, OutcomeView, OutcomeGroupView, TreeBrowserView, RootOutcomesFinder, dialogTemplate, noOutcomesWarning, DefaultUrlMixin, htmlEscape) ->
 
@@ -66,6 +66,10 @@ define [
           new OutcomeGroupView viewOpts
       @render()
       @innerView.screenreaderTitleFocus() if @innerView instanceof OutcomeView
+
+    resetContent: () =>
+      @innerView = null
+      @render()
 
     render: ->
       @attachEvents()

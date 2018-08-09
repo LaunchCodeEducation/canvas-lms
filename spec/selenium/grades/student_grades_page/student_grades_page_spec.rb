@@ -1,5 +1,22 @@
+#
+# Copyright (C) 2015 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 require_relative '../../helpers/gradebook_common'
-require_relative '../page_objects/student_grades_page'
+require_relative '../pages/student_grades_page'
 
 describe "gradebook - logged in as a student" do
   include_context "in-process server selenium tests"
@@ -14,20 +31,28 @@ describe "gradebook - logged in as a student" do
     Factories::GradingPeriodHelper.new
   end
 
-  let(:student_grades_page) { StudentGradesPage.new }
+  describe 'total point displays' do
+    before(:each) do
+      course_with_student_logged_in
+      @teacher = User.create!
+      @course.enroll_teacher(@teacher)
+      assignment = @course.assignments.build(points_possible: 20)
+      assignment.publish
+      assignment.grade_student(@student, grade: 10, grader: @teacher)
+      assignment.assignment_group.update(group_weight: 1)
+      @course.show_total_grade_as_points = true
+      @course.save!
+    end
 
-  it 'should display total grades as points', priority: "2", test_id: 164229 do
-    course_with_student_logged_in
-    @teacher = User.create!
-    @course.enroll_teacher(@teacher)
-    assignment = @course.assignments.build
-    assignment.publish
-    assignment.grade_student(@student, grade: 10, grader: @teacher)
-    @course.show_total_grade_as_points = true
-    @course.save!
+    it 'should display total grades as points', priority: "2", test_id: 164229 do
+      StudentGradesPage.visit_as_student(@course)
+      expect(StudentGradesPage.final_grade).to include_text("10")
+    end
 
-    student_grades_page.visit_as_student(@course)
-    expect(student_grades_page.final_grade).to include_text("10")
+    it 'should display total "out of" point values' do
+      StudentGradesPage.visit_as_student(@course)
+      expect(StudentGradesPage.final_points_possible).to include_text("10.00 / 20.00")
+    end
   end
 
   context 'when testing grading periods' do
@@ -58,16 +83,15 @@ describe "gradebook - logged in as a student" do
         @course.assignments.create!(due_at: 1.week.from_now, title: current_assignment_name)
 
         # go to student grades page
-        student_grades_page.visit_as_teacher(@course, @student)
+        StudentGradesPage.visit_as_teacher(@course, @student)
       end
 
       it 'should only show assignments that belong to the selected grading period', priority: "1", test_id: 2528639 do
-        student_grades_page.select_period_by_name(past_period_name)
-        expect(student_grades_page.assignment_titles).to include(past_assignment_name)
-        expect(student_grades_page.assignment_titles).not_to include(current_assignment_name)
+        StudentGradesPage.select_period_by_name(past_period_name)
+        expect_new_page_load { StudentGradesPage.click_apply_button }
+        expect(StudentGradesPage.assignment_titles).to include(past_assignment_name)
+        expect(StudentGradesPage.assignment_titles).not_to include(current_assignment_name)
       end
     end
   end
 end
-
-

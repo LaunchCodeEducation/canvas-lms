@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2015 Instructure, Inc.
+# Copyright (C) 2015 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -17,13 +17,12 @@
 #
 
 define [
-  'i18n!dialog'
   'jquery'
   'underscore'
   'Backbone'
-  'compiled/views/DialogBaseView'
+  '../DialogBaseView'
   'jst/quiz/regrade'
-], (I18n, $, _, Backbone, DialogBaseView, template) ->
+], ($, _, Backbone, DialogBaseView, template) ->
 
   class QuizRegradeView extends DialogBaseView
 

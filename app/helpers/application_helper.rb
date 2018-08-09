@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -158,7 +158,7 @@ module ApplicationHelper
     includes.each{|i| @wiki_sidebar_data[i] ||= [] }
     if @context.respond_to?(:wiki)
       limit = Setting.get('wiki_sidebar_item_limit', 1000000).to_i
-      @wiki_sidebar_data[:wiki_pages] = @context.wiki.wiki_pages.active.order(:title).select('title, url, workflow_state').limit(limit)
+      @wiki_sidebar_data[:wiki_pages] = @context.wiki_pages.active.order(:title).select('title, url, workflow_state').limit(limit)
       @wiki_sidebar_data[:wiki] = @context.wiki
     end
     @wiki_sidebar_data[:wiki_pages] ||= []
@@ -195,16 +195,15 @@ module ApplicationHelper
     (use_optimized_js? ? '/dist/webpack-production' : '/dist/webpack-dev').freeze
   end
 
-  # Returns a <script> tag for each registered js_bundle
-  def include_js_bundles
+  def include_head_js
     # This contains the webpack runtime, it needs to be loaded first
     paths = ["#{js_base_url}/vendor"]
 
     # We preemptive load these timezone/locale data files so they are ready
     # by the time our app-code runs and so webpack doesn't need to know how to load them
-    paths << "/javascripts/vendor/timezone/#{js_env[:TIMEZONE]}.js" if js_env[:TIMEZONE]
-    paths << "/javascripts/vendor/timezone/#{js_env[:CONTEXT_TIMEZONE]}.js" if js_env[:CONTEXT_TIMEZONE]
-    paths << "/javascripts/vendor/timezone/#{js_env[:BIGEASY_LOCALE]}.js" if js_env[:BIGEASY_LOCALE]
+    paths << "/timezone/#{js_env[:TIMEZONE]}.js" if js_env[:TIMEZONE]
+    paths << "/timezone/#{js_env[:CONTEXT_TIMEZONE]}.js" if js_env[:CONTEXT_TIMEZONE]
+    paths << "/timezone/#{js_env[:BIGEASY_LOCALE]}.js" if js_env[:BIGEASY_LOCALE]
     paths << "#{js_base_url}/moment/locale/#{js_env[:MOMENT_LOCALE]}" if js_env[:MOMENT_LOCALE] && js_env[:MOMENT_LOCALE] != 'en'
 
     paths << "#{js_base_url}/appBootstrap"
@@ -213,7 +212,21 @@ module ApplicationHelper
     js_bundles.each do |(bundle, plugin)|
       paths << "#{js_base_url}/#{plugin ? "#{plugin}-" : ''}#{bundle}"
     end
-    javascript_include_tag(*paths, type: nil)
+    # now that we've rendered out a script tag for each bundle we were told about in controllers,
+    # empty out the js_bundles array so we don't re-render them later
+    @js_bundles_included_in_head = js_bundles.dup
+    js_bundles.clear
+
+    javascript_include_tag(*paths, defer: true)
+  end
+
+  # Returns a <script> tag for each registered js_bundle
+  def include_js_bundles
+    paths = []
+    (js_bundles - (@js_bundles_included_in_head || [])).each do |(bundle, plugin)|
+      paths << "#{js_base_url}/#{plugin ? "#{plugin}-" : ''}#{bundle}"
+    end
+    javascript_include_tag(*paths, defer: true)
   end
 
   def include_css_bundles
@@ -231,15 +244,26 @@ module ApplicationHelper
     Rails.env.test? && ENV.fetch("DISABLE_CSS_TRANSITIONS", "1") == "1"
   end
 
-  def css_variant
-    use_high_contrast = @current_user && @current_user.prefers_high_contrast?
-    'new_styles' + (use_high_contrast ? '_high_contrast' : '_normal_contrast')
+  def use_rtl?
+    @current_user.try(:feature_enabled?, :force_rtl) || (@domain_root_account.try(:feature_enabled?, :allow_rtl) && I18n.rtl?)
   end
 
-  def css_url_for(bundle_name, plugin=false)
+  # this is exactly the same as our sass helper with the same name
+  # see: https://www.npmjs.com/package/sass-direction
+  def direction(left_or_right)
+    use_rtl? ? {'left' => 'right', 'right' => 'left'}[left_or_right] : left_or_right
+  end
+
+  def css_variant(opts = {})
+    variant = use_responsive_layout? ? 'responsive_layout' : 'new_styles'
+    use_high_contrast = @current_user && @current_user.prefers_high_contrast? || opts[:force_high_contrast]
+    variant + (use_high_contrast ? '_high_contrast' : '_normal_contrast') + (use_rtl? ? '_rtl' : '')
+  end
+
+  def css_url_for(bundle_name, plugin=false, opts = {})
     bundle_path = "#{plugin ? "plugins/#{plugin}" : 'bundles'}/#{bundle_name}"
-    cache = BrandableCSS.cache_for(bundle_path, css_variant)
-    base_dir = cache[:includesNoVariables] ? 'no_variables' : File.join(active_brand_config.try(:md5).to_s, css_variant)
+    cache = BrandableCSS.cache_for(bundle_path, css_variant(opts))
+    base_dir = cache[:includesNoVariables] ? 'no_variables' : css_variant(opts)
     File.join('/dist', 'brandable_css', base_dir, "#{bundle_path}-#{cache[:combinedChecksum]}.css")
   end
 
@@ -340,12 +364,18 @@ module ApplicationHelper
     @include_license_dialog = true
     css_bundle('license_help')
     js_bundle('license_help')
-    link_to(image_tag('help.png', :alt => I18n.t("Help with content licensing")), '#', :class => 'license_help_link no-hover', :title => I18n.t("Help with content licensing"))
+    icon = safe_join [
+      "<i class='icon-question' aria-hidden='true'></i>".html_safe
+    ]
+    link_to(icon, '#', :class => 'license_help_link no-hover', :title => I18n.t("Help with content licensing"))
   end
 
   def visibility_help_link
     js_bundle('visibility_help')
-    link_to(image_tag('help.png', :alt => I18n.t("Help with course visibilities")), '#', :class => 'visibility_help_link no-hover', :title => I18n.t("Help with course visibilities"))
+    icon = safe_join [
+      "<i class='icon-question' aria-hidden='true'></i>".html_safe
+    ]
+    link_to(icon, '#', :class => 'visibility_help_link no-hover', :title => I18n.t("Help with course visibilities"))
   end
 
   def equella_enabled?
@@ -408,9 +438,7 @@ module ApplicationHelper
       :http_status              => @status,
       :error_id                 => @error && @error.id,
       :disableGooglePreviews    => !service_enabled?(:google_docs_previews),
-      :disableScribdPreviews    => !feature_enabled?(:scribd),
       :disableCrocodocPreviews  => !feature_enabled?(:crocodoc),
-      :enableScribdHtml5        => feature_enabled?(:scribd_html5),
       :logPageViews             => !@body_class_no_headers,
       :maxVisibleEditorButtons  => 3,
       :editorButtons            => editor_buttons,
@@ -537,6 +565,20 @@ module ApplicationHelper
     mapped
   end
 
+  # return enough group data for the planner to display items associated with groups
+  def map_groups_for_planner(groups)
+    mapped = groups.map do |g|
+      {
+        id: g.id,
+        assetString: g.asset_string,
+        name: g.name,
+        url: "/groups/#{g.id}"
+      }
+    end
+
+    mapped
+  end
+
   def show_feedback_link?
     Setting.get("show_feedback_link", "false") == "true"
   end
@@ -566,8 +608,12 @@ module ApplicationHelper
     (@domain_root_account && @domain_root_account.settings[:help_link_icon]) || 'help'
   end
 
+  def default_help_link_name
+    I18n.t('Help')
+  end
+
   def help_link_name
-    (@domain_root_account && @domain_root_account.settings[:help_link_name]) || I18n.t('Help')
+    (@domain_root_account && @domain_root_account.settings[:help_link_name]) || default_help_link_name
   end
 
   def help_link_data
@@ -593,7 +639,7 @@ module ApplicationHelper
   def active_brand_config(opts={})
     return active_brand_config_cache[opts] if active_brand_config_cache.key?(opts)
 
-    ignore_branding = (@current_user.try(:prefers_high_contrast?) && !opts[:ignore_high_contrast_preference])
+    ignore_branding = (@current_user.try(:prefers_high_contrast?) && !opts[:ignore_high_contrast_preference]) || opts[:force_high_contrast]
     active_brand_config_cache[opts] = if ignore_branding
       nil
     else
@@ -614,15 +660,9 @@ module ApplicationHelper
     end
   end
 
-  def active_brand_config_json_url(opts={})
-    path = active_brand_config(opts).try(:public_json_path)
-    path ||= BrandableCSS.public_default_json_path
-    "#{Canvas::Cdn.config.host}/#{path}"
-  end
-
-  def active_brand_config_js_url(opts={})
-    path = active_brand_config(opts).try(:public_js_path)
-    path ||= BrandableCSS.public_default_js_path
+  def active_brand_config_url(type, opts={})
+    path = active_brand_config(opts).try("public_#{type}_path")
+    path ||= BrandableCSS.public_default_path(type, @current_user&.prefers_high_contrast? || opts[:force_high_contrast])
     "#{Canvas::Cdn.config.host}/#{path}"
   end
 
@@ -654,7 +694,7 @@ module ApplicationHelper
   private :brand_config_for_account
 
   def include_account_js(options = {})
-    return if params[:global_includes] == '0'
+    return if params[:global_includes] == '0' || !@domain_root_account
 
     includes = if @domain_root_account.allow_global_includes? && (abc = active_brand_config(ignore_high_contrast_preference: true))
       abc.css_and_js_overrides[:js_overrides]
@@ -663,21 +703,8 @@ module ApplicationHelper
     end
 
     if includes.present?
-      if options[:raw]
-        includes = ["/optimized/vendor/jquery-1.7.2.js"] + includes
-        javascript_include_tag(*includes)
-      else
-        str = <<-ENDSCRIPT
-          require(['jquery'], function fnCanvasUsesToLoadAccountJSAfterJQueryIsReady () {
-            #{includes.to_json}.forEach(function (src) {
-              var s = document.createElement('script');
-              s.src = src;
-              document.body.appendChild(s);
-            });
-          });
-        ENDSCRIPT
-        javascript_tag(str)
-      end
+      includes.unshift("/node_modules/jquery/jquery.js") if options[:raw]
+      javascript_include_tag(*includes, defer: true)
     end
   end
 
@@ -688,7 +715,7 @@ module ApplicationHelper
   end
 
   def disable_account_css?
-    @disable_account_css || params[:global_includes] == '0'
+    @disable_account_css || params[:global_includes] == '0' || !@domain_root_account
   end
 
   def include_account_css
@@ -807,12 +834,10 @@ module ApplicationHelper
   def agree_to_terms
     # may be overridden by a plugin
     @agree_to_terms ||
-    t("I agree to the *terms of use* and **privacy policy**.",
+    t("I agree to the *terms of use*.",
       wrapper: {
-        '*' => link_to('\1', terms_of_use_url, target: '_blank'),
-        '**' => link_to('\1', privacy_policy_url, target: '_blank')
-      }
-    )
+        '*' => link_to('\1', "#", class: 'terms_of_service_link'),
+      })
   end
 
   def dashboard_url(opts={})
@@ -885,11 +910,109 @@ module ApplicationHelper
   end
 
   def planner_enabled?
-    @domain_root_account&.feature_enabled?(:student_planner)
+    @domain_root_account&.feature_enabled?(:student_planner) &&
+    @current_user.participating_student_course_ids.present?
+
   end
 
-  def show_planner?
-    @current_user.preferences[:dashboard_view] == 'planner'
+  def generate_access_verifier
+    Users::AccessVerifier.generate(
+      user: @current_user,
+      real_user: logged_in_user,
+      developer_key: @access_token&.developer_key,
+      root_account: @domain_root_account,
+      oauth_host: request.host_with_port
+    )
   end
 
+  def validate_access_verifier
+    Users::AccessVerifier.validate(params)
+  end
+
+  def file_access_user
+    if !@files_domain
+      @current_user
+    elsif session['file_access_user_id'].present?
+      @file_access_user ||= User.where(id: session['file_access_user_id']).first
+    else
+      nil
+    end
+  end
+
+  def file_access_real_user
+    if !@files_domain
+      logged_in_user
+    elsif session['file_access_real_user_id'].present?
+      @file_access_real_user ||= User.where(id: session['file_access_real_user_id']).first
+    else
+      file_access_user
+    end
+  end
+
+  def file_access_developer_key
+    if !@files_domain
+      @access_token&.developer_key
+    elsif session['file_access_developer_key_id'].present?
+      @file_access_developer_key ||= DeveloperKey.where(id: session['file_access_developer_key_id']).first
+    else
+      nil
+    end
+  end
+
+  def file_access_root_account
+    if !@files_domain
+      @domain_root_account
+    elsif session['file_access_root_account_id'].present?
+      @file_access_root_account ||= Account.where(id: session['file_access_root_account_id']).first
+    else
+      nil
+    end
+  end
+
+  def file_access_oauth_host
+    if logged_in_user && !@files_domain
+      request.host_with_port
+    elsif session['file_access_oauth_host'].present?
+      session['file_access_oauth_host']
+    else
+      nil
+    end
+  end
+
+  def file_authenticator
+    FileAuthenticator.new(
+      user: file_access_real_user,
+      acting_as: file_access_user,
+      access_token: @access_token,
+      # TODO: we prefer the access token when we have it, and we'll _need_ to
+      # before we can implement the long term API access solution (which means
+      # we'll need to stop going through the files domain). but if we don't
+      # have it (we're on the files domain, and can't safely get at the token
+      # itself, but can get the developer key id), we can use the developer key
+      # to "fake" an access token it for the short term work around (which only
+      # ends up looking at the developer key anyways)
+      developer_key: file_access_developer_key,
+      root_account: file_access_root_account,
+      oauth_host: file_access_oauth_host
+    )
+  end
+
+  def authenticated_download_url(attachment)
+    file_authenticator.download_url(attachment)
+  end
+
+  def authenticated_inline_url(attachment)
+    file_authenticator.inline_url(attachment)
+  end
+
+  def authenticated_thumbnail_url(attachment, options={})
+    file_authenticator.thumbnail_url(attachment, options)
+  end
+
+  def thumbnail_image_url(attachment, uuid=nil, url_options={})
+    # this thumbnail url is a route that redirects to local/s3 appropriately.
+    # deferred redirect through route because it may be saved for later use
+    # after a direct link to attachment.thumbnail_url would have expired
+    super(attachment, uuid || attachment.uuid, url_options)
+  end
 end

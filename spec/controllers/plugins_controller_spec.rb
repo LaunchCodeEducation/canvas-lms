@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -24,22 +24,39 @@ describe PluginsController do
   describe "#update" do
     it "still enables plugins even with no settings posted" do
       expect(PluginSetting.find_by(name: 'account_reports')).to be_nil
-      controller.stubs(:require_setting_site_admin).returns(true)
+      allow(controller).to receive(:require_setting_site_admin).and_return(true)
 
-      put 'update', id: 'account_reports', account_id: Account.default.id, plugin_setting: { disabled: false }
+      put 'update', params: {id: 'account_reports', account_id: Account.default.id, plugin_setting: { disabled: false }}
       expect(response).to be_redirect
       ps = PluginSetting.find_by!(name: 'account_reports')
       expect(ps).to be_enabled
     end
 
+    it 'it trims posted params' do
+      ps = PluginSetting.new(name: 'big_blue_button')
+      ps.settings = { }.with_indifferent_access
+      ps.disabled = false
+      ps.save!
+
+      allow(controller).to receive(:require_setting_site_admin).and_return(true)
+      # The 'all' parameter is necessary for this test to pass when the
+      # multiple root acoounts plugin is installed
+      put 'update', params: {id: 'big_blue_button', settings: { domain: ' abc ', secret: 'secret', recording_enabled: '0' }, all: 1}
+      expect(response).to be_redirect
+      ps.reload
+      expect(ps.settings[:domain]).to eq 'abc'
+    end
+
     context "account_reports" do
       it 'can disable reports' do
-        ps = PluginSetting.new(name: 'account_reports', account_id: Account.default.id)
+        ps = PluginSetting.new(name: 'account_reports')
         ps.settings = { course_storage_csv: true }.with_indifferent_access
         ps.save!
 
-        controller.stubs(:require_setting_site_admin).returns(true)
-        put 'update', id: 'account_reports', account_id: Account.default.id, settings: { 'course_storage_csv' => '0' }
+        allow(controller).to receive(:require_setting_site_admin).and_return(true)
+        # The 'all' parameter is necessary for this test to pass when the
+        # multiple root acoounts plugin is installed
+        put 'update', params: {id: 'account_reports', settings: { 'course_storage_csv' => '0' }, all: 1}
         expect(response).to be_redirect
         ps.reload
         expect(ps.settings[:course_storage_csv]).to eq false

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2012 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -18,7 +18,7 @@
 
 define [
   'Backbone'
-  'compiled/models/Section'
+  '../models/Section'
 ], ({Collection}, Section) ->
 
   # A collection for working with course sections returned from

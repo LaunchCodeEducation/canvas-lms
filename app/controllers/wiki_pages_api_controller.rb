@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2013 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -160,6 +160,26 @@ class WikiPagesApiController < ApplicationController
     show
   end
 
+  # @API Duplicate page
+  #
+  # Duplicate a wiki page
+  #
+  # @example_request
+  #     curl -X DELETE -H 'Authorization: Bearer <token>' \
+  #     https://<canvas>/api/v1/courses/123/pages/14/duplicate
+  #
+  # @returns Page
+  def duplicate
+    return unless authorized_action(@page, @current_user, :create)
+    if @page.deleted?
+      return render json: { error: 'cannot duplicate deleted page' }, status: :bad_request
+    end
+
+    new_page = @page.duplicate
+    new_page.save!
+    render :json => wiki_page_json(new_page, @current_user, session)
+  end
+
   # @API Update/create front page
   #
   # Update the title or contents of the front page
@@ -198,7 +218,7 @@ class WikiPagesApiController < ApplicationController
 
   # @API List pages
   #
-  # List the wiki pages associated with a course or group
+  # A paginated list of the wiki pages associated with a course or group
   #
   # @argument sort [String, "title"|"created_at"|"updated_at"]
   #   Sort results by this field.
@@ -223,7 +243,7 @@ class WikiPagesApiController < ApplicationController
     if authorized_action(@context.wiki, @current_user, :read) && tab_enabled?(@context.class::TAB_PAGES)
       pages_route = polymorphic_url([:api_v1, @context, :wiki_pages])
       # omit body from selection, since it's not included in index results
-      scope = @context.wiki.wiki_pages.select(WikiPage.column_names - ['body']).preload(:user)
+      scope = @context.wiki_pages.select(WikiPage.column_names - ['body']).preload(:user)
       if params.has_key?(:published)
         scope = value_to_boolean(params[:published]) ? scope.published : scope.unpublished
       else
@@ -243,11 +263,14 @@ class WikiPagesApiController < ApplicationController
           'wiki_pages.created_at'
         when 'updated_at'
           'wiki_pages.updated_at'
-        else
-          'wiki_pages.id'
       end
-      order_clause += ' DESC' if params[:order] == 'desc'
-      scope = scope.order(order_clause)
+      if order_clause
+        order_clause += ' DESC' if params[:order] == 'desc'
+        scope = scope.order(WikiPage.send(:sanitize_sql, order_clause))
+      end
+      id_clause = "wiki_pages.id"
+      id_clause += ' DESC' if params[:order] == 'desc'
+      scope = scope.order(id_clause)
 
       wiki_pages = Api.paginate(scope, self, pages_route)
 
@@ -301,7 +324,7 @@ class WikiPagesApiController < ApplicationController
     @page = @wiki.build_wiki_page(@current_user, initial_params)
     if authorized_action(@page, @current_user, :create)
       update_params = get_update_params(Set[:title, :body])
-
+      assign_todo_date
       if !update_params.is_a?(Symbol) && @page.update_attributes(update_params) && process_front_page
         log_asset_access(@page, "wiki", @wiki, 'participate')
         apply_assignment_parameters(assignment_params, @page) if @context.feature_enabled?(:conditional_release)
@@ -372,6 +395,7 @@ class WikiPagesApiController < ApplicationController
     end
 
     if perform_update
+      assign_todo_date
       update_params = get_update_params
       if !update_params.is_a?(Symbol) && @page.update_attributes(update_params) && process_front_page
         log_asset_access(@page, "wiki", @wiki, 'participate')
@@ -409,7 +433,7 @@ class WikiPagesApiController < ApplicationController
 
   # @API List revisions
   #
-  # List the revisions of a page. Callers must have update rights on the page in order to see page history.
+  # A paginated list of the revisions of a page. Callers must have update rights on the page in order to see page history.
   #
   # @example_request
   #     curl -H 'Authorization: Bearer <token>' \
@@ -628,6 +652,18 @@ class WikiPagesApiController < ApplicationController
 
   def assignment_params
     params[:wiki_page] && params[:wiki_page][:assignment]
+  end
+
+  def assign_todo_date
+    if @context.root_account.feature_enabled?(:student_planner) && @page.context.grants_any_right?(@current_user, session, :manage)
+      @page.todo_date = params[:wiki_page][:student_todo_at] if params[:wiki_page][:student_todo_at]
+      # Only clear out if the checkbox is explicitly specified in the request
+      if params[:wiki_page].key?("student_planner_checkbox") &&
+        !value_to_boolean(params[:wiki_page][:student_planner_checkbox])
+        @page.todo_date = nil
+      end
+      @page.save!
+    end
   end
 
   def process_front_page

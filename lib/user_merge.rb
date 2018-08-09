@@ -1,3 +1,20 @@
+#
+# Copyright (C) 2013 - present Instructure, Inc.
+#
+# This file is part of Canvas.
+#
+# Canvas is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, version 3 of the License.
+#
+# Canvas is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <http://www.gnu.org/licenses/>.
+
 class UserMerge
 
   def self.from(user)
@@ -46,8 +63,8 @@ class UserMerge
         Rails.cache.delete([cc.path, 'invited_enrollments2'].cache_key)
       end
       [
-        [:quiz_id, :'quizzes/quiz_submissions'],
-        [:assignment_id, :submissions]
+        [:assignment_id, :submissions],
+        [:quiz_id, :'quizzes/quiz_submissions']
       ].each do |unique_id, table|
         begin
           # Submissions are a special case since there's a unique index
@@ -57,30 +74,51 @@ class UserMerge
           model = table.to_s.classify.constantize
           already_scope = model.where(:user_id => target_user)
           scope = model.where(:user_id => from_user)
-          # empty submission objects from e.g. what_if grades will show up in the scope
-          # these records will not have associated quiz_submission records even if the assignment in question is a quiz,
-          # so we only need to fine-tune the scope for Submission
           if model.name == "Submission"
-            # we prefer submissions that are not simply empty objects
-            # also we delete empty objects in cases of collision so that we don't end up with multiple submission records for a given assignment
-            # for the target user, we
-            # a) delete empty submissions where there is a non-empty submission in the from user
-            # b) don't delete otherwise
-            subscope = scope.having_submission.select(unique_id)
-            scope_to_delete = already_scope.where(unique_id => subscope).without_submission
-            ModeratedGrading::ProvisionalGrade.where(:submission_id => scope_to_delete).delete_all
-            SubmissionComment.where(:submission_id => scope_to_delete).delete_all
-            scope_to_delete.delete_all
-          end
-          # for the from user
-          # a) we ignore the empty submissions in our update unless the target user has no submission
-          # b) move the empty submission over to the new user if there is no collision, as we don't mind persisting the what_if history in this case
-          # c) if there is an empty submission for each user for this assignment, prefer the target user
-          subscope = already_scope.select(unique_id)
-          scope = scope.where("#{unique_id} NOT IN (?)", subscope)
-          model.transaction do
-            update_versions(from_user, target_user, scope, table, :user_id)
-            scope.update_all(user_id: target_user.id)
+            # we prefer submissions that have grades then submissions that have
+            # a submission... that sort of makes sense.
+            # we swap empty objects in cases of collision so that we don't
+            # end up causing a unique index violation for a given assignment for
+            # the either user, but also so we don't destroy submissions in case
+            # of a user split.
+            to_move_ids = scope.graded.select(unique_id).where.not(unique_id => already_scope.graded.select(unique_id)).pluck(:id)
+            to_move_ids += scope.having_submission.select(unique_id).where.not(unique_id => already_scope.having_submission.select(unique_id), id: to_move_ids).pluck(:id)
+            to_move = scope.where(id: to_move_ids).to_a
+            move_back = already_scope.where(unique_id => to_move.map(&unique_id)).to_a
+            user_merge_data.add_more_data(to_move)
+            user_merge_data.add_more_data(move_back)
+            model.transaction do
+              # there is a unique index on assignment_id and user_id. Unique
+              # indexes are checked after every row during an update statement
+              # to get around this and to allow us to swap we are setting the
+              # user_id to the negative user_id and then the user_id, after the
+              # conflicting rows have been updated.
+              model.connection.execute("SET CONSTRAINTS #{model.connection.quote_table_name('fk_rails_8d85741475')} DEFERRED")
+              model.where(id: move_back).update_all(user_id: -from_user.id)
+              model.where(id: to_move_ids).update_all(user_id: target_user.id)
+              model.where(id: move_back).update_all(user_id: from_user.id)
+              update_versions(from_user, target_user, model.where(id: to_move), table, :user_id)
+              update_versions(target_user, from_user, model.where(id: move_back), table, :user_id)
+            end
+          elsif model.name == "Quizzes::QuizSubmission"
+            subscope = already_scope.to_a
+            to_move = model.where(user_id: from_user).joins(:submission).where(submissions: {user_id: target_user}).to_a
+            move_back = model.where(user_id: target_user).joins(:submission).where(submissions: {user_id: from_user}).to_a
+
+            to_move += scope.where("#{unique_id} NOT IN (?)", [subscope.map(&unique_id), move_back.map(&unique_id)].flatten).to_a
+            move_back += already_scope.where(unique_id => to_move.map(&unique_id)).to_a
+            user_merge_data.add_more_data(to_move)
+            user_merge_data.add_more_data(move_back)
+
+            model.transaction do
+              model.connection.execute("SET CONSTRAINTS #{model.connection.quote_table_name('fk_rails_04850db4b4')} DEFERRED")
+              model.where(id: move_back).update_all(user_id: -from_user.id)
+              model.where(id: to_move).update_all(user_id: target_user.id)
+              model.where(id: move_back).update_all(user_id: from_user.id)
+              update_versions(from_user, target_user, model.where(id: to_move), table, :user_id)
+              update_versions(target_user, from_user, model.where(id: move_back), table, :user_id)
+            end
+
           end
         rescue => e
           Rails.logger.error "migrating #{table} column user_id failed: #{e}"
@@ -261,20 +299,20 @@ class UserMerge
   def move_observees(target_user, user_merge_data)
     # record all the records before destroying them
     # pass the from_user since user_id will be the observer
-    user_merge_data.add_more_data(from_user.user_observees, user: from_user)
-    user_merge_data.add_more_data(from_user.user_observers)
+    user_merge_data.add_more_data(from_user.as_observer_observation_links, user: from_user)
+    user_merge_data.add_more_data(from_user.as_student_observation_links)
     # delete duplicate or invalid observers/observees, move the rest
-    from_user.user_observees.where(user_id: target_user.user_observees.map(&:user_id)).destroy_all
-    from_user.user_observees.where(user_id: target_user).destroy_all
-    user_merge_data.add_more_data(target_user.user_observees.where(user_id: from_user), user: target_user)
-    target_user.user_observees.where(user_id: from_user).destroy_all
-    from_user.user_observees.active.update_all(observer_id: target_user.id)
-    xor_observer_ids = UserObserver.where(user_id: [from_user, target_user]).distinct.pluck(:observer_id)
-    from_user.user_observers.where(observer_id: target_user.user_observers.map(&:observer_id)).destroy_all
-    from_user.user_observers.active.update_all(user_id: target_user.id)
+    from_user.as_observer_observation_links.where(user_id: target_user.as_observer_observation_links.map(&:user_id)).destroy_all
+    from_user.as_observer_observation_links.where(user_id: target_user).destroy_all
+    user_merge_data.add_more_data(target_user.as_observer_observation_links.where(user_id: from_user), user: target_user)
+    target_user.as_observer_observation_links.where(user_id: from_user).destroy_all
+    from_user.as_observer_observation_links.update_all(observer_id: target_user.id)
+    xor_observer_ids = UserObservationLink.where(student: [from_user, target_user]).distinct.pluck(:observer_id)
+    from_user.as_student_observation_links.where(observer_id: target_user.as_student_observation_links.map(&:observer_id)).destroy_all
+    from_user.as_student_observation_links.update_all(user_id: target_user.id)
     # for any observers not already watching both users, make sure they have
     # any missing observer enrollments added
-    target_user.user_observers.where(observer_id: xor_observer_ids).each(&:create_linked_enrollments)
+    target_user.as_student_observation_links.where(observer_id: xor_observer_ids).each(&:create_linked_enrollments)
   end
 
   def destroy_conflicting_module_progressions(from_user, target_user)

@@ -38,7 +38,7 @@ richer experience.
 Some substitutions may be used as 'enabled_capabilities' for LTI2 tools. These substitutions have a
 'Launch Parameter' label indicating the parameter name that will be sent in the tool launch if enabled.
 
-For more information on variable substitution, see the [https://www.imsglobal.org/specs/ltiv1p1p1/implementation-guide#toc-9](IMS LTI specification).
+For more information on variable substitution, see the <a href="https://www.imsglobal.org/specs/ltiv1p1p1/implementation-guide#toc-9">IMS LTI specification</a>.
 
 # Usage/Configuration
 Variable substitutions can be configured for a tool in 3 ways:
@@ -70,7 +70,7 @@ curl 'https://<domain>.instructure.com/api/v1/courses/<course_id>/external_tools
 ```
 
 ## Via XML Configuration
-Custom fields can also be <a href="http://canvas.docker/doc/api/file.tools_xml.html">configured via XML</a>.
+Custom fields can also be <a href="/doc/api/file.tools_xml.html">configured via XML</a>.
 
 This would create a tool in a course with custom fields, some of which are specific for a
 particular placement:
@@ -108,6 +108,93 @@ particular placement:
 ```
 
 # Supported Substitutions
+## Context.title
+The title of the context.
+
+**Availability**: *always*  
+**Launch Parameter**: *context_title*  
+
+```
+Example Course
+```
+## com.instructure.Editor.contents
+The contents of the text editor associated with the content item launch.
+
+**Availability**: *always*  
+**Launch Parameter**: *com_instructure_editor_contents*  
+
+```
+"This text was in the editor"
+```
+## com.instructure.Editor.selection
+The contents the user has selected in the text editor associated
+with the content item launch.
+
+**Availability**: *always*  
+**Launch Parameter**: *com_instructure_editor_selection*  
+
+```
+"this text was selected by the user"
+```
+## com.instructure.PostMessageToken
+A token that can be used for frontend communication between an LTI tool
+and Canvas via the Window.postMessage API.
+
+**Availability**: **  
+**Launch Parameter**: *com_instructure_post_message_token*  
+
+```
+9ae4170c-6b64-444d-9246-0b7dedd5f560
+```
+## com.instructure.Assignment.lti.id
+The LTI assignment id of an assignment. This value corresponds with
+the `ext_lti_assignment_id` send in various launches and webhooks.
+
+**Availability**: *always*  
+**Launch Parameter**: *com_instructure_assignment_lti_id*  
+
+```
+9ae4170c-6b64-444d-9246-0b7dedd5f560
+```
+## com.instructure.OriginalityReport.id
+The Canvas id of the Originality Report associated
+with the launch.
+
+**Availability**: **  
+**Launch Parameter**: *com_instructure_originality_report_id*  
+
+```
+23
+```
+## com.instructure.Submission.id
+The Canvas id of the submission associated with the
+launch.
+
+**Availability**: **  
+**Launch Parameter**: *com_instructure_submission_id*  
+
+```
+23
+```
+## com.instructure.File.id
+The Canvas id of the file associated with the submission
+in the launch.
+
+**Availability**: **  
+**Launch Parameter**: *com_instructure_file_id*  
+
+```
+23
+```
+## CourseOffering.sourcedId
+the LIS identifier for the course offering.
+
+**Availability**: *when launched in a course*  
+**Launch Parameter**: *lis_course_offering_sourcedid*  
+
+```
+1234
+```
 ## Context.id
 an opaque identifier that uniquely identifies the context of the tool launch.
 
@@ -116,6 +203,15 @@ an opaque identifier that uniquely identifies the context of the tool launch.
 
 ```
 cdca1fe2c392a208bd8a657f8865ddb9ca359534
+```
+## Context.sourcedId
+The sourced Id of the context.
+
+**Availability**: *always*  
+
+
+```
+1234
 ```
 ## Message.documentTarget
 communicates the kind of browser window/frame where the Canvas has launched a tool.
@@ -236,6 +332,36 @@ returns the URL for the external tool that was launched. Only available for LTI 
 ```
 http://example.url/path
 ```
+## com.instructure.brandConfigJSON.url
+returns the URL to retrieve the brand config JSON for the launching context.
+
+**Availability**: *always*  
+
+
+```
+http://example.url/path.json
+```
+## com.instructure.brandConfigJSON
+returns the brand config JSON itself for the launching context.
+
+**Availability**: *always*  
+
+
+```
+{"ic-brand-primary-darkened-5":"#0087D7"}
+```
+## com.instructure.brandConfigJS.url
+returns the URL to retrieve the brand config javascript for the launching context.
+This URL should be used as the src attribute for a script tag on the external tool
+provider's web page. It is configured to be used with the [instructure-ui node module](https://github.com/instructure/instructure-ui).
+More information on on how to use instructure ui react components can be found [here](http://instructure.github.io/instructure-ui/).
+
+**Availability**: *always*  
+
+
+```
+http://example.url/path.js
+```
 ## Canvas.css.common
 returns the URL for the common css file.
 
@@ -299,6 +425,15 @@ returns the current course id.
 ```
 1234
 ```
+## vnd.instructure.Course.uuid
+returns the current course uuid.
+
+**Availability**: *when launched in a course*  
+
+
+```
+S3vhRY2pBzG8iPdZ3OBPsPrEnqn5sdRoJOLXGbwc
+```
 ## Canvas.course.name
 returns the current course name.
 
@@ -345,6 +480,15 @@ returns the current course's term start date.
 ```
 YYY-MM-DD HH:MM:SS -0700
 ```
+## Canvas.term.name
+returns the current course's term name.
+
+**Availability**: **  
+**Launch Parameter**: *canvas_term_name*  
+
+```
+W1 2017
+```
 ## CourseSection.sourcedId
 returns the current course sis source id
 to return the section source id use Canvas.course.sectionIds.
@@ -368,7 +512,7 @@ active
 returns the current course membership roles.
 
 **Availability**: *when launched from a course or an account*  
-
+**Launch Parameter**: *canvas_membership_roles*  
 
 ```
 StudentEnrollment
@@ -383,16 +527,25 @@ This is a list of IMS LIS roles should have a different key.
 urn:lti:sysrole:ims/lis/None
 ```
 ## Canvas.course.previousContextIds
-Returns the context ids from the course that the current course was copied from (excludes cartridge imports).
+With respect to the current course, returns the context ids of the courses from which content has been copied (excludes cartridge imports).
 
 **Availability**: *when launched in a course*  
 
 
 ```
-1234
+1234,4567
+```
+## Canvas.course.previousContextIds.recursive
+With respect to the current course, recursively returns the context ids of the courses from which content has been copied (excludes cartridge imports).
+
+**Availability**: *when launched in a course*  
+
+
+```
+1234,4567
 ```
 ## Canvas.course.previousCourseIds
-Returns the course ids of the course that the current course was copied from (excludes cartridge imports).
+With respect to the current course, returns the course ids of the courses from which content has been copied (excludes cartridge imports).
 
 **Availability**: *when launched in a course*  
 
@@ -405,6 +558,15 @@ Returns the full name of the launching user.
 
 **Availability**: *when launched by a logged in user*  
 **Launch Parameter**: *lis_person_name_full*  
+
+```
+John Doe
+```
+## Person.name.display
+Returns the display name of the launching user.
+
+**Availability**: *when launched by a logged in user*  
+**Launch Parameter**: *person_name_display*  
 
 ```
 John Doe
@@ -481,6 +643,15 @@ Returns the Canvas user_id of the launching user.
 ```
 420000000000042
 ```
+## vnd.instructure.User.uuid [duplicates User.uuid]
+Returns the Canvas user_uuid of the launching user.
+
+**Availability**: *when launched by a logged in user*  
+
+
+```
+N2ST123dQ9zyhurykTkBfXFa3Vn1RVyaw9Os6vu3
+```
 ## Canvas.user.prefersHighContrast
 Returns the users preference for high contrast colors (an accessibility feature).
 
@@ -489,6 +660,15 @@ Returns the users preference for high contrast colors (an accessibility feature)
 
 ```
 false
+```
+## com.instructure.Course.groupIds
+returns the Canvas ids of all active groups in the current course.
+
+**Availability**: *when launched in a course*  
+**Launch Parameter**: *com_instructure_course_groupids*  
+
+```
+23,24,...
 ```
 ## Canvas.group.contextIds
 returns the context ids for the groups the user belongs to in the course.
@@ -510,6 +690,13 @@ http://purl.imsglobal.org/vocab/lis/v2/institution/person#Administrator
 ```
 ## Canvas.xuser.allRoles [duplicates ext_roles which is sent by default]
 Returns list of [LIS role full URNs](https://www.imsglobal.org/specs/ltiv1p0/implementation-guide#toc-16).
+Note that this will include all roles the user has.
+There are 3 different levels of roles defined: Context, Institution, System.
+Context role urns start with "urn:lti:ims" and include roles for the context where the launch occurred.
+Institution role urns start with "urn:lti:instrole" and include roles the user has in the institution. This
+will include roles they have in other courses or at the account level. Note that there is not a TA role at the
+Institution level. Instead Users with a TA enrollment will have an institution role of Instructor.
+System role urns start with "urn:lti:sysrole" and include roles for the entire system.
 
 **Availability**: *always*  
 
@@ -654,6 +841,15 @@ Returns a comma separated list of section sis_id's that the user is enrolled in.
 ```
 section_sis_id_1, section_sis_id_2
 ```
+## com.instructure.contextLabel
+Returns the course code.
+
+**Availability**: *when launched in a course*  
+**Launch Parameter**: *context_label*  
+
+```
+CS 124
+```
 ## Canvas.module.id
 Returns the module_id that the module item was launched from.
 
@@ -680,6 +876,26 @@ Returns the assignment_id of the assignment that was launched.
 
 ```
 1234
+```
+## com.instructure.Group.id
+Returns the Canvas id of the group the current user is in if launching
+from a group assignment.
+
+**Availability**: *when launched by a logged in user and when launched as an assignment*  
+**Launch Parameter**: *vnd_canvas_group_id*  
+
+```
+481
+```
+## com.instructure.Group.name
+Returns the name of the group the current user is in if launching
+from a group assignment.
+
+**Availability**: *when launched by a logged in user and when launched as an assignment*  
+**Launch Parameter**: *vnd_canvas_group_name*  
+
+```
+Group One
 ```
 ## Canvas.assignment.title
 Returns the title of the assignment that was launched.
@@ -800,6 +1016,33 @@ Only available for LTI 2.0.
 ```
 https://<domain>.instructure.com/api/lti/courses/<course_id>/tool_consumer_profile/<opaque_id>
 https://<domain>.instructure.com/api/lti/accounts/<account_id>/tool_consumer_profile/<opaque_id>
+```
+## vnd.Canvas.OriginalityReport.url
+The originality report LTI2 service endpoint.
+
+**Availability**: *always*  
+**Launch Parameter**: *vnd_canvas_originality_report_url*  
+
+```
+api/lti/assignments/{assignment_id}/submissions/{submission_id}/originality_report
+```
+## vnd.Canvas.submission.url
+The submission LTI2 service endpoint.
+
+**Availability**: *always*  
+**Launch Parameter**: *vnd_canvas_submission_url*  
+
+```
+api/lti/assignments/{assignment_id}/submissions/{submission_id}
+```
+## vnd.Canvas.submission.history.url
+The submission history LTI2 service endpoint.
+
+**Availability**: *always*  
+**Launch Parameter**: *vnd_canvas_submission_history_url*  
+
+```
+api/lti/assignments/{assignment_id}/submissions/{submission_id}/history
 ```
 ## Canvas.file.media.id
 

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2011 Instructure, Inc.
+# Copyright (C) 2011 - present Instructure, Inc.
 #
 # This file is part of Canvas.
 #
@@ -120,7 +120,7 @@ class TermsController < ApplicationController
   private
   def save_and_render_response
     params.require(:enrollment_term)
-    overrides = params[:enrollment_term][:overrides]
+    overrides = params[:enrollment_term][:overrides]&.to_unsafe_h
     if overrides.present?
       unless (overrides.keys.map(&:classify) - %w(StudentEnrollment TeacherEnrollment TaEnrollment DesignerEnrollment)).empty?
         return render :json => {:message => 'Invalid enrollment type in overrides'}, :status => :bad_request
