@@ -60,7 +60,7 @@
           <% if c.state == :unconfirmed && (c.grants_right?(@current_user, :force_confirm) || (@real_current_user && c.grants_right?(@real_current_user, :force_confirm))) %>
               <a href="<%= registration_confirmation_url(c.confirmation_code) %>" class="confirm_channel_link no-hover" aria-label="<%= t('titles.confirm_email_address_aria_label', "Confirm Email Address") %>"><i class="icon-check standalone-icon" alt="<%= t('titles.confirm_email_address_alt', "Confirm Email Address") %>" title="<%= t('titles.confirm_email_address', "Confirm Email Address") %>"></i></a>
           <% end %>
-          <% unless !@domain_root_account.edit_institution_email? && c.imported? %>
+          <% unless !@domain_root_account.edit_institution_email? %>
             <a href="<%= communication_channel_url(c.id) %>" class="delete_channel_link no-hover" aria-label="<%= t("Remove email address") %>" ><i class="icon-trash standalone-icon" alt="<%= t("Remove email address") %>" title="<%= t("Remove email address") %>"></i></a>
           <% end %>
           <span class="screenreader-only cant_delete_default_text"><%= t("You cannot remove your default email address") %></span>
