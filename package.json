@@ -67,7 +67,7 @@
     "lodash": "^4.16.4",
     "md5": "^2.2.1",
     "mediaelement": "https://github.com/instructure/mediaelement.git#master",
-    "moment": "~2.10.6",
+    "moment": "~2.19.3",
     "normalize-scroll-left": "^0.1.2",
     "page": "visionmedia/page.js#1.6.4",
     "parse-decimal-number": "1.0.0",
@@ -230,7 +230,7 @@
   },
   "resolutions": {
     "jquery": "https://github.com/ryankshaw/jquery.git#a755a3e9c99d5a70d8ea570836f94ae1ba56046d",
-    "moment": "2.10.6",
+    "moment": "2.19.3",
     "canvas-rce/**/babel-helper-evaluate-path": "0.4.1",
     "canvas-quizzes/grunt-contrib-jasmine/jasmine-core": "2.6.4",
     "graphael": "this is just here so yarn.lock looks the same whether the analytics plugin is checked out or not",
